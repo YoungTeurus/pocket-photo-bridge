@@ -21,8 +21,31 @@ A pocket-sized workflow to transfer a camera-selected photo from a **Sony RX100 
 
 See [Issue #1](https://github.com/YoungTeurus/pocket-photo-bridge/issues/1), [architecture](docs/architecture.md), and [Codex task prompt](docs/CODEX_PROMPT.md).
 
-## Build and test
+## MVP 1 implementation status
 
-No working Android app has been implemented **yet**. Codex should scaffold a Kotlin Android project, add a CI build, and supply reproducible test instructions. Download the generated debug APK from the Actions workflow artifact, install it on the Android tablet (allow installation from your browser/files app as prompted), and test while the camera is in **Send to Smartphone → Select on This Device**.
+An experimental Kotlin Android app is implemented for Android 10+ (API 29). It provides foreground Wi-Fi attachment, read-only service diagnostics, an evidence-backed Sony SOAP selected-JPEG receiver, a sampled preview, and unchanged-byte MediaStore export to `Pictures/Pocket Photo Bridge`.
 
-Never describe Sony photo transfer as working until verified with actual RX100 VII hardware.
+**The first RX100 VII end-to-end hardware test passed.** The user confirmed that version 0.1.1 on an Android API 36 tablet received one camera-selected JPEG (13,805,942 bytes), displayed its preview, and saved it to Gallery. The camera acknowledged TransferEnd; Wi-Fi disconnected after the save. This validates the tested camera/tablet combination; an SD-card original hash comparison, repeatability and negative device tests are still outstanding. It stops on unsupported service/selection responses; it never substitutes an arbitrary/latest photo or a full-card browser. See [the recorded hardware result and remaining checks](docs/sony-protocol.md).
+
+Pair through Android Wi-Fi Settings, which retains the camera password. The app does not collect QR codes, credentials, SSIDs, MAC addresses or location. All camera HTTP uses that Wi-Fi Network, including when it has no internet. No sign-in, server, cloud upload, printer or background scanning is included.
+
+## Install and test from an Android tablet
+
+1. Open [Actions → Android debug APK](https://github.com/YoungTeurus/pocket-photo-bridge/actions/workflows/android.yml), choose the latest successful run for the implementation branch/PR, and download **pocket-photo-bridge-debug** under Artifacts while signed in to GitHub.
+2. Extract its ZIP in Files and install `app-debug.apk`; allow installation from your browser/Files app when Android prompts. The ZIP also includes a SHA-256 checksum. No computer or Android Studio is needed.
+3. Select **one JPEG on the camera** using **Send to Smartphone → Select on This Device → This Image**. Join the displayed camera Wi-Fi in Android Settings and accept staying connected without internet.
+4. Return to Pocket Photo Bridge → **Connect to current Wi-Fi** → **Diagnose** → **Receive selected JPEG**. Confirm the preview matches the exact selected photo, then **Save to Gallery**.
+
+Follow [the complete tablet test and troubleshooting guide](docs/tablet-testing.md), including the older-photo and two-photo negative tests. Keep the app visible while receiving/saving. Diagnostics can be shared manually; they contain fixed stages, counts/statuses and error categories, never raw XML, network identifiers, credentials or photos.
+
+## Build and software verification
+
+GitHub Actions runs JVM protocol/transport tests, a Robolectric Android lifecycle regression, Android lint and `assembleDebug`, then uploads the APK/checksum and verification reports. CI pins action commits and the Gradle distribution checksum. Debug signing is for sideload testing; different runs may require uninstalling the prior APK due to changed debug keys.
+
+With Java 17 and an Android SDK installed:
+
+```sh
+./gradlew :sony:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+The pure Kotlin `sony` module can be reused with another HTTP transport. Fixture tests cover selected-list-only behavior, discovery, escaped DIDL, pagination, ambiguity, thumbnail/icon rejection, unsafe URLs/XML and interrupted downloads. Transport tests exercise cancellation interleavings; the Android API 29 lifecycle test ensures camera Wi-Fi loss does not discard a pending preview or stop a local save. Robolectric is a test-only dependency, not an emulator or a device validation. The user's tablet test confirms the basic Wi-Fi/receive/preview/Gallery path; repeatability and negative device tests follow the documented procedure. No camera/emulator is attached to the cloud implementation environment.
