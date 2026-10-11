@@ -1,0 +1,45 @@
+# Xiaomi direct printing: evidence and limits
+
+Investigated 2026-10-11. The user reports **TEJ4007CN**, an original Mi Portable Photo Printer with Micro-USB and sliding paper compartment. This is a user-reported SKU, not a successful firmware/protocol test. Pocket Photo Bridge's Xiaomi printing remains **hardware validation pending**.
+
+## Protocol evidence and licensing
+
+The starting reference is [fliptheweb/mi-portable-photo-printer](https://github.com/fliptheweb/mi-portable-photo-printer/tree/85335b639f3d818c3fe9a892e328864fc3d37250), pinned at 85335b639f3d818c3fe9a892e328864fc3d37250. Its authors report real-printer testing of `hannto.printer.basil`, retail XMKDDYJ01HM / firmware XMKDDYJHT02, on macOS. [Protocol notes](https://github.com/fliptheweb/mi-portable-photo-printer/blob/85335b639f3d818c3fe9a892e328864fc3d37250/docs/PROTOCOL.md) describe Classic RFCOMM SPP, frame layout, RC4, print methods and explicit job completion. This is community reverse engineering, not an official Xiaomi SDK.
+
+The reference is MIT licensed. The Kotlin framing/cipher and command flow adapt its documented protocol; the original MIT notice is included in `app/src/main/assets/licenses/mizink-LICENSE.txt` and in the APK. Its Python/macOS transport is not bundled. Android uses public Bluetooth APIs and native image encoding. Sony code is retained separately.
+
+[Xiaomi's official specifications](https://www.mi.com/pk/product/mi-portable-photo-printer/specs/) confirm Micro-USB, ZINK 50×76 mm paper and Bluetooth for the original product family. The reference's SKU/firmware and TEJ4007CN have not been proven equivalent from a primary firmware response. Marketing descriptions of BLE do not establish that image transport uses BLE. The referenced implementation specifically uses **Bluetooth Classic SPP**; BLE-only devices, the newer 1S and Pro are unsupported by this profile. Pro uses a different AES/Diffie–Hellman scheme, which is not implemented.
+
+## Authentication boundary
+
+Payloads use a fresh RC4 schedule for every frame, with a **device-specific 12-byte token** (24 hexadecimal characters). This is separate from Android's Bluetooth bond/link key. There is no documented shared/default printer token and no extra invented authentication packet.
+
+The reference's [key acquisition guide](https://github.com/fliptheweb/mi-portable-photo-printer/blob/85335b639f3d818c3fe9a892e328864fc3d37250/docs/GET_KEY.md) uses existing Home Assistant/Xiaomi account token data or a known-plaintext print capture. Those routes rely on a previously provisioned secret or a proprietary-app capture; they do not demonstrate a tablet-only, pairing-only offline acquisition method. This is the precise unresolved blocker for a printer whose user does not already possess its legitimate token.
+
+Pocket Photo Bridge accepts a user-owned token locally on the printer screen and keeps it in memory for one operation. The input clears when consumed or when leaving the screen; re-enter it for the next operation. It never logs, backs up or persists it. Do not send a token through chat or GitHub. The application makes no Xiaomi login/cloud request and does not require Xiaomi Home in its print flow. Without a token, it still provides device selection, actual SPP connection diagnostics and local image preparation, but stops with `KEY_REQUIRED` before encrypted status or job commands. No guessed token, plaintext print bypass or Pro cipher is attempted.
+
+## Implemented operations
+
+- Secure public Android SPP connection using UUID `00001101-0000-1000-8000-00805f9b34fb`; Android owns discovery/pairing through Bluetooth Settings. No reflective channel fallback, BLE write or background scan.
+- Bounded 0x7E/0x64 framing; little-endian sequence/package fields; checksum validation; frame-local RC4; bounded JSON response correlation. Only the documented encrypted JSON profile is accepted.
+- `mixed_status []` and `get_prop ["device_info"]` for read-only diagnosis. Device identities and raw responses are discarded, never included in shared reports.
+- `clean_data {delay_times:0}` without waiting for a nonexistent acknowledgment, then `print_job {copies:1,channel:64,job_type:0,file_size}`.
+- JPEG upload: channel 2, encoding 2, 924 JPEG bytes plus little-endian job id in each encrypted frame; one-based packages and multipart flag. Pacing follows the reference.
+- `confirm_job [job_id]` requires `["OK"]`; `job_info [job_id]` is polled and must explicitly report the same job `finished`. Idle alone is insufficient. `mixed_status` supplies known phases during processing.
+- Known busy rejection `-8006` is reported without automatic retries. Other printer faults stop generically; exact paper/cover/battery error-code mappings have not been established for TEJ4007CN. Check the printer physically rather than treating an unknown code as success.
+
+Connection/read/write/RPC deadlines are bounded, and the protocol's full job deadline is four minutes. Cancellation closes the socket and interrupts upload/polling; no undocumented printer cancel method is sent. A job already accepted by the printer may still produce a sheet.
+
+## Image and job integrity
+
+Images stay in private local cache. Source JPEG/PNG/WebP bytes are bounded; Android decodes a sampled image, applies all EXIF rotation/mirror cases, and renders **1040×1560** on white using fit or center crop. The user sees the prepared preview before one-copy confirmation. JPEG quality is 90, baseline output with **standard JPEG Annex K Huffman tables**. Android's [Skia encoder enables optimized tables](https://github.com/aosp-mirror/platform_external_skia/blob/android-10.0.0_r1/src/images/SkJpegEncoder.cpp), so a bounded JVM entropy transcoder replaces those tables and codes while preserving quantizers, sampling and image coefficients. Independent Pillow/libjpeg fixtures verify exact standard entropy bytes and identical decoded pixels; native Android preparation tests verify the standard DHT tables and baseline dimensions. The transcoder accepts a single 8-bit baseline grayscale/three-component scan, rejecting restart intervals/progressive/multiple scans; input photos are decoded and freshly encoded before this step. Prepared output is capped at 4 MiB. A physical print is still required to validate firmware compatibility. The original Sony file/Gallery export is unchanged.
+
+Before `print_job` is sent, a random non-secret unresolved reservation is synchronously persisted. A lost reply, disconnect, cancellation, malformed response, timeout or process death keeps that reservation and disables new submissions. A matching explicit finished signal or structured rejection resolves it. A stale worker cannot clear a newer reservation. The only override is an explicit **I checked the printer** confirmation; check for an active/printed job before clearing it. There is no automatic reconnect-and-reprint.
+
+Printer image copies survive Bluetooth Settings/picker round trips and screen rotation; the token and any active connection do not. Final screen destruction deletes the copies, and process startup removes abandoned caches. If a process-restored Sony stage has already disappeared, the screen reports `INVALID_IMAGE` and allows choosing another image. It never substitutes a test chart for an unavailable Sony image. The screen stays awake during foreground printing; leaving it still cancels the socket. Non-finished job states remain pending until explicit completion, a reported fault, cancellation or deadline, rather than inventing undocumented state meanings.
+
+## Hardware experiment and future portability
+
+Run [the Android-only printer experiment](printer-tablet-testing.md): first select/pair, verify SPP without a token and prepare the test chart; then, only if a legitimate token is already available, read encrypted status and attempt one explicitly confirmed print. Report safe stages and physical results. Finally test printing a Sony-received JPEG and rerun the established Sony receive/preview/Gallery flow.
+
+The `printer` module uses JVM Kotlin, byte arrays and a small JSON library; Android Bluetooth/image/cache/UI code remains in `app/printing`. A future Linux transport can implement the same write/read/close interface. Prepared image memory is bounded to sampled decoding plus a 1040×1560 bitmap; no Linux driver, embedded purchase or battery implementation is part of this PR.

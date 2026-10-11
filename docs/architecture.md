@@ -1,52 +1,36 @@
 # Design notes and test plan
 
-## MVP 1 implementation
+## Sony receive and Gallery export
 
-- `sony/`: platform-independent Kotlin `SonyTransferSession`, bounded SOAP/XML and selected-list parsing, fixed diagnostics and an injectable `CameraTransport`. Experimental XPushList/PushRoot support follows [the cited evidence](sony-protocol.md); no PTP/IP or PhotoRoot fallback.
-- `app/.../camera/network/`: Android Settings pairing, existing Wi-Fi route attachment and network-loss callback, HTTP bound to that specific Network with explicit timeouts and no redirects/system proxy. Android owns saved credentials; the app requests no location, QR, camera, media-read or storage permissions.
-- `app/.../photos/`: private per-activity cache, bounded/sample JPEG preview, and unchanged-byte MediaStore export via a pending row. Abandoned cache is cleared at process startup; activity cleanup is isolated from other sessions.
-- `MainActivity`: native Kotlin UI and one foreground worker, with HTTP close/drain on a separate cleanup executor. User actions expose Connect, Diagnose, Receive, Cancel/Disconnect, preview, Save and manual redacted-log sharing. Exiting the foreground cancels work and releases Wi-Fi callbacks/HTTP; activity recreation clears the preview. Network loss alone closes HTTP without invalidating a pending validated photo or interrupting a local Gallery save.
-- `.github/workflows/android.yml`: pinned Java/Gradle/SDK/actions, unit tests, lint, downloadable sideloadable debug APK/checksum and verification reports.
+- `sony/`: platform-independent Kotlin `SonyTransferSession`, bounded SOAP/XML and selected-list parsing, fixed diagnostics and an injectable `CameraTransport`. XPushList/PushRoot support follows [the cited evidence](sony-protocol.md); unsupported responses stop without a PTP/IP or full-card fallback.
+- `app/.../camera/network/`: Android Settings pairing, existing Wi-Fi route attachment and network-loss callback, HTTP bound to that specific Network with timeouts and no redirects/system proxy. Android owns saved Wi-Fi credentials; the app requests no QR, location, camera, media-read or storage permission.
+- `app/.../photos/`: private cache, bounded/sample JPEG preview and unchanged-byte MediaStore export via a pending row. Abandoned cache is cleared at process startup; activity cleanup is isolated from other sessions.
+- `MainActivity`: native Kotlin UI and foreground worker. Leaving the foreground cancels transport work and releases Wi-Fi callbacks. Camera network loss alone preserves a pending validated photo and permits a local Gallery save. **Print received JPEG** stages a separate private copy before opening the printer screen.
 
-The manual connection path is intentional for the initial tablet experiment. No app-managed credential store or guessed QR parser is needed. If a later release adds programmatic pairing, credentials must use Android-secure storage and the QR format must first be observed on hardware.
+The user's version 0.1.1 RX100 VII / Android API 36 hardware test received one camera-selected JPEG (**13,805,942 bytes**), displayed it and saved it to Gallery. The camera acknowledged TransferEnd; Wi-Fi disconnected after the save. This validates that tested combination. An SD-card original hash comparison, repeatability and negative device tests remain outstanding; follow [the Sony tablet guide](tablet-testing.md).
 
-Software build/tests alone do not establish camera compatibility. The user's 0.1.1 RX100 VII / Android API 36 test confirmed the basic selected-JPEG receive, preview and Gallery export flow. [Remaining tablet acceptance steps](tablet-testing.md) cover an older selected JPEG, full-original comparison, repeatability and interruption/multiple-selection behavior before Issue #1 is closed.
+## MVP 2 direct printer implementation
 
-## Phase 1: receiving a camera-selected JPEG
+The reported printer SKU is **TEJ4007CN**, with Micro-USB and a sliding paper compartment. The implemented original Mi Portable `basil` profile is experimental on this hardware. Its reference reports XMKDDYJ01HM / XMKDDYJHT02; retail SKU and firmware equivalence have not been demonstrated. A successful Bluetooth connection alone does not establish compatibility. See [protocol evidence and limits](xiaomi-protocol.md).
 
-Expected user journey:
-1. On Sony RX100 VII, open **Send to Smartphone → Select on This Device** and pick an image.
-2. Camera exposes Wi-Fi connection details (QR/SSID and possible password).
-3. Android app joins the camera network on an explicit user action (and reuses saved details where possible).
-4. App performs the Sony handshaking required to receive **the selected** JPEG, not an arbitrary/latest file.
-5. Show preview, metadata (if available), and **Save** to Android gallery.
+- `printer/`: JVM Kotlin framing/checksums, frame-local RC4, bounded JSON correlation, read-only diagnosis, one-copy job submission, JPEG upload, explicit matching job completion and an injectable read/write/close transport. `JpegHuffman` converts baseline JPEG entropy coding to standard Annex K Huffman tables without requantizing coefficients. Protocol evidence is MIT licensed and pinned at upstream [85335b639f3d818c3fe9a892e328864fc3d37250](https://github.com/fliptheweb/mi-portable-photo-printer/tree/85335b639f3d818c3fe9a892e328864fc3d37250); the APK contains its MIT notice.
+- `app/.../printing/AndroidPrinterTransport`: secure public Android Bluetooth Classic RFCOMM SPP, bounded connection/read/write deadlines and socket cancellation. Android Settings owns pairing; the app selects from bonded devices and requests Nearby devices permission on Android 12+. Device names are shown locally; identifiers are not shared. No BLE printing or reflective channel fallback is used.
+- `PrinterImages`: bounded local JPEG/PNG/WebP import and sampled decode, EXIF rotation/mirror handling, FIT or centered CROP on white at **1040×1560**, quality-90 baseline JPEG with standard Annex K Huffman tables, and preview of the prepared file. A generated orientation/color chart supports testing without the Sony camera.
+- `PrinterActivity`: foreground-only selection, diagnose, image preview and explicit one-copy confirmation. The screen is secure against screenshots; the token field excludes saved state/autofill. Image files and placement survive rotation and Settings return, while tokens, device selection and active workers are not retained across recreation. Final screen cleanup deletes its private files; process startup clears abandoned printer cache/staging.
+- `StoredPrintJobGuard`: synchronously persists a random non-secret unresolved reservation before job submission. Matching explicit completion or an established rejection resolves it. Disconnect, cancellation, timeout, malformed/lost replies and process death can retain it. A stale worker cannot resolve a newer reservation. New submissions remain blocked until completion or an explicit checked-printer acknowledgement.
 
-### Modules
+Pairing and encryption are separate. The profile requires a device-specific **12-byte token (24 hexadecimal characters)** that the user already legitimately owns. It is accepted locally for one operation, cleared when consumed and on `onStop`, and never stored, logged, backed up or sent to a server. **Connect / Diagnose** without a token performs SPP connection diagnostics, then reports `KEY_REQUIRED` before encrypted commands. No verified tablet-only offline token bootstrap has been established. The application makes no Xiaomi Home/cloud request and invents no handshake, token or authentication bypass.
 
-- `camera/network`: Android Wi-Fi permission prompts, network request or suggestion, per-network socket binding, state transitions.
-- `camera/sony`: discovery + protocol transport, selected-photo transfer, retries, timeouts and structured diagnostics.
-- `photos`: memory-efficient JPEG handling, temporary storage and gallery MediaStore export.
-- `ui`: minimal Kotlin/Compose screens for pairing, connect, session diagnostics, photo preview and Save.
+Printing performs preflight diagnosis, reserves one job, uploads the prepared JPEG, confirms that job and polls for its explicit finished response. Idle is insufficient evidence of completion. Known busy/error states stop without automatic retry; exact TEJ4007CN paper/cover/battery fault mappings await hardware testing. Operation cancellation closes the socket rather than sending an undocumented printer cancel command. `onStop` cancels foreground transport and clears the token; an accepted printer job may still produce a sheet. The full job deadline is bounded to four minutes.
 
-### Key uncertainties to investigate
+## Verification and tablet acceptance
 
-- Sony RX100 VII's exact camera-selected transfer protocol/port/handshake. Do not assume port 15740 or PTP/IP without evidence.
-- Whether the camera network credentials remain stable across reboots; validate on device.
-- Wi-Fi connection lifecycle on Android versions with restricted network switching, especially when the camera's hotspot has no internet.
-- Whether the camera requires a pre-existing app pairing token beyond SSID/password.
+`.github/workflows/android.yml` pins Java/Gradle/SDK/actions, runs Sony and printer JVM tests, Android regressions, lint and a debug build, then publishes the APK/checksum and reports. Robolectric and synthetic transports verify software behavior; they are not printer hardware validation.
 
-### Milestone acceptance
+Follow [the printer tablet guide](printer-tablet-testing.md) in stages: pair/select and diagnose SPP without a token, prepare the chart and a local FIT/CROP image, then attempt encrypted diagnosis and one manually confirmed print only if an existing owned token is available. Check orientation, physical output and completion. Exercise cancellation/unknown-job recovery and Sony image handoff, then rerun Sony receive/preview/Gallery. Record safe diagnostics and physical observations; leave real print acceptance pending until observed.
 
-GitHub Actions builds an installable debug APK; app starts on Android; user can connect to the camera network and see status/logs. The end-to-end selected-JPEG flow is validated with real hardware or documented as an explicit blocker with a diagnostic test plan. Do not falsely mark transfer complete.
+## Data handling and future portability
 
-## Future phases
+Private camera originals and prepared printer copies have separate ownership; printing does not alter Sony Gallery bytes. Shared diagnostics contain fixed stages, bounded progress and error categories, not raw replies, Bluetooth identities, credentials or photo contents. Sharing is a manual user action. The durable guard contains only a non-secret reservation and is deliberately retained across restart.
 
-**Xiaomi Bluetooth:** early Mi Portable Photo Printer with micro-USB and sliding paper cover. Verify exact model from label; investigate community reverse engineering (for example, fliptheweb/mi-portable-photo-printer), pairing, crypto/token and direct Android printing.
-
-**Standalone bridge:** evaluate a Wi-Fi + Bluetooth Linux SBC such as Pi Zero 2 W, rechargeable battery, power budget and printer-side mounting. Reuse protocol understanding, not Android-specific networking code.
-
-## Data handling
-
-- Camera Wi-Fi password stored in Android-secure storage when needed; not in repository.
-- Never export raw pairing QR, Wi-Fi key, location or images in logs.
-- Keep architecture suitable for future Linux implementation.
+The `sony` and `printer` JVM modules remain separate from Android routing, Bluetooth, image decoding and UI. A future Linux transport can reuse the documented framing/job interface; a Linux bridge, battery or enclosure is outside MVP 2.

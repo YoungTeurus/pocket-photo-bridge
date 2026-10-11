@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "PocketPhotoBridge"
-include(":sony", ":app")
+include(":sony", ":printer", ":app")

@@ -32,7 +32,7 @@ jobs:
       - name: Install pinned Android SDK packages
         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
       - name: Test, lint and build debug APK
-        run: ./gradlew --no-daemon :sony:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+        run: ./gradlew --no-daemon :sony:test :printer:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
       - name: Create APK checksum
         working-directory: app/build/outputs/apk/debug
         run: sha256sum app-debug.apk > app-debug.apk.sha256
@@ -53,6 +53,8 @@ jobs:
           path: |
             sony/build/reports/tests/test/
             sony/build/test-results/test/
+            printer/build/reports/tests/test/
+            printer/build/test-results/test/
             app/build/reports/tests/testDebugUnitTest/
             app/build/test-results/testDebugUnitTest/
             app/build/reports/lint-results-debug.*

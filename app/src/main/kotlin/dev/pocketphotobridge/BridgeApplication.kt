@@ -8,5 +8,7 @@ class BridgeApplication : Application() {
         super.onCreate()
         // Clean abandoned previews once per process, before any Activity starts a new session.
         File(cacheDir, "received").deleteRecursively()
+        File(cacheDir, "printer-images").deleteRecursively()
+        File(cacheDir, "printer-staging").deleteRecursively()
     }
 }

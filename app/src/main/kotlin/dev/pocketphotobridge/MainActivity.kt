@@ -17,6 +17,8 @@ import dev.pocketphotobridge.camera.network.AttachedWifi
 import dev.pocketphotobridge.camera.network.NetworkCameraTransport
 import dev.pocketphotobridge.camera.network.WifiConnector
 import dev.pocketphotobridge.photos.PhotoStore
+import dev.pocketphotobridge.printing.PrinterActivity
+import dev.pocketphotobridge.printing.PrinterImages
 import dev.pocketphotobridge.sony.ProtocolFailure
 import dev.pocketphotobridge.sony.ReceivedPhoto
 import dev.pocketphotobridge.sony.SonyTransferSession
@@ -36,6 +38,8 @@ class MainActivity : Activity() {
     private lateinit var receive: Button
     private lateinit var save: Button
     private lateinit var cancel: Button
+    private lateinit var print: Button
+    private lateinit var testPrint: Button
     private val worker = Executors.newSingleThreadExecutor()
     private val connectionCleanup = Executors.newSingleThreadExecutor()
     private val lines = ArrayDeque<String>()
@@ -91,6 +95,8 @@ class MainActivity : Activity() {
             content.addView(this, LinearLayout.LayoutParams(-1, (300 * resources.displayMetrics.density).toInt()))
         }
         save = button("Save to Gallery", ::save)
+        print = button("Print received JPEG", ::printPhoto)
+        testPrint = button("Print test image") { startActivity(Intent(this, PrinterActivity::class.java)) }
         label("Session diagnostics", 20f)
         diagnostics = label("").apply { setTextIsSelectable(true) }
         button("Share safe diagnostics") {
@@ -114,6 +120,8 @@ class MainActivity : Activity() {
         diagnose.isEnabled = !busy && attached != null
         receive.isEnabled = !busy && attached != null
         save.isEnabled = !busy && photo != null
+        print.isEnabled = !busy && photo != null
+        testPrint.isEnabled = !busy
         cancel.isEnabled = busy || attached != null
     }
 
@@ -218,6 +226,17 @@ class MainActivity : Activity() {
                 log("GALLERY_SAVED")
                 status.text = getString(R.string.saved)
                 clearPreview()
+            }
+        }
+    }
+
+    private fun printPhoto() {
+        val current = photo ?: return
+        status.text = "Preparing a private copy for printing…"
+        runOperation(saving = true) { token, _ ->
+            val staged = PrinterImages.stageSony(applicationContext, current.file)
+            deliver(token) {
+                startActivity(Intent(this, PrinterActivity::class.java).putExtra(PrinterActivity.STAGED_IMAGE, staged))
             }
         }
     }
