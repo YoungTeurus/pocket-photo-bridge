@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Pocket Photo Bridge</string>
+    <string name="wifi_attached">Wi-Fi attached. Confirm this is the camera AP; Diagnose or Receive.</string>
+    <string name="operation_failed">%1$s. See diagnostics and the tablet testing guide; re-enter camera sharing to retry.</string>
+    <string name="diagnosing">Reading the advertised push service…</string>
+    <string name="diagnosed">Push service and actions found. Select one JPEG on camera, then Receive.</string>
+    <string name="receiving">Receiving the camera selection…</string>
+    <string name="received">JPEG received (%1$d bytes). Confirm it matches the selected photo, then Save.</string>
+    <string name="saving">Saving unchanged JPEG bytes to Gallery…</string>
+    <string name="saved">Saved to Pictures/Pocket Photo Bridge.</string>
+</resources>

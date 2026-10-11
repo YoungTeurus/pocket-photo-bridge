@@ -1,5 +1,17 @@
 # Design notes and test plan
 
+## MVP 1 implementation
+
+- `sony/`: platform-independent Kotlin `SonyTransferSession`, bounded SOAP/XML and selected-list parsing, fixed diagnostics and an injectable `CameraTransport`. Experimental XPushList/PushRoot support follows [the cited evidence](sony-protocol.md); no PTP/IP or PhotoRoot fallback.
+- `app/.../camera/network/`: Android Settings pairing, existing Wi-Fi route attachment and network-loss callback, HTTP bound to that specific Network with explicit timeouts and no redirects/system proxy. Android owns saved credentials; the app requests no location, QR, camera, media-read or storage permissions.
+- `app/.../photos/`: private per-activity cache, bounded/sample JPEG preview, and unchanged-byte MediaStore export via a pending row. Abandoned cache is cleared at process startup; activity cleanup is isolated from other sessions.
+- `MainActivity`: native Kotlin UI and one foreground worker. User actions expose Connect, Diagnose, Receive, Cancel/Disconnect, preview, Save and manual redacted-log sharing. Exiting the foreground cancels work and releases Wi-Fi callbacks/HTTP; activity recreation clears the preview.
+- `.github/workflows/android.yml`: pinned Java/Gradle/SDK/actions, unit tests, lint, downloadable sideloadable debug APK/checksum and verification reports.
+
+The manual connection path is intentional for the initial tablet experiment. No app-managed credential store or guessed QR parser is needed. If a later release adds programmatic pairing, credentials must use Android-secure storage and the QR format must first be observed on hardware.
+
+Software build/tests do not establish camera compatibility. [Tablet acceptance steps](tablet-testing.md) must confirm the camera-selected older JPEG, full-quality resource, gallery export and connection lifecycle before Issue #1 is closed.
+
 ## Phase 1: receiving a camera-selected JPEG
 
 Expected user journey:
