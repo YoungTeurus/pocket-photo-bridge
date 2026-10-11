@@ -7,6 +7,8 @@
 3. Open `app-debug.apk`, allow installation from your browser/Files app when Android prompts, and launch **Pocket Photo Bridge**. Android 10 or newer is required. No Android Studio or local build is needed.
 4. These are debug builds. Different CI runs may use different debug signing keys; if an update reports a signature conflict, uninstall the previous app and install the new APK. Gallery photos already saved remain; private preview files do not.
 
+For the first hardware-test failure (`DESCRIPTOR → HTTP_STATUS 200 → INVALID_XML` on 0.1.0), install **0.1.1 or later**. The version appears below the app title and in shared diagnostics. A reproduced service-description parser bug counted nested argument names as action names. After updating, re-enter the camera's send mode, Connect, then Diagnose; expect `ACTIONS` before trying Receive.
+
 ## Five-minute selected-photo experiment
 
 1. On the RX100 VII, pick an easily recognized **JPEG that is not the newest photo**. Record its displayed file number privately. Avoid RAW/movie selection and select just one photo.
@@ -28,7 +30,7 @@ Keep the app visible during transfer/save. Cancel, switch apps, lock the screen,
 | Multiple Wi-Fi networks | Use Android Settings to leave the other Wi-Fi connection, then Connect. The app refuses an ambiguous route. |
 | GATEWAY_FALLBACK + TIMEOUT/IO_ERROR | Confirm the AP is the camera and the camera is still on its send screen. Tell us that the gateway was unavailable; do not export addresses or a network screenshot. |
 | DESCRIPTOR failure / WRONG_MODE | Exit and re-enter **Select on This Device**, select one JPEG, rejoin AP and rerun Diagnose. Select on Smartphone/Send to Computer are not equivalent. |
-| UNSUPPORTED_SERVICE / INVALID_XML | The advertised push service differs from the researched flow. Share the redacted trace and firmware version; do not paste raw XML or QR data. Implementation needs that firmware's descriptor/action/selection evidence. |
+| UNSUPPORTED_SERVICE / INVALID_XML | The service/action response was unsupported or rejected by the parser. First verify the installed version is 0.1.1 or later. Share the redacted trace and firmware version; do not paste raw XML or QR data. This can indicate a parser compatibility problem as well as a firmware difference. |
 | PUSH_PAGE / WRONG_MODE | PushRoot was rejected. Confirm camera-side selection and retry. The app will not fall back to all card images. |
 | NO_JPEG | Select a JPEG, not RAW/movie; thumbnail-only or unrecognized resources are rejected. Share the redacted trace. |
 | AMBIGUOUS_SELECTION | Select exactly one JPEG on camera. Multiple files are outside this MVP. |
@@ -40,4 +42,4 @@ Tap **Share safe diagnostics** after the failure or success. The share sheet inc
 
 ## Acceptance status
 
-Cloud build, protocol fixture tests and lint can establish software behavior. No physical camera or Android emulator is attached to this cloud task. Real-device Wi-Fi association, selected-image identity, original-quality resource, preview and Gallery save must be checked using this procedure. Until that evidence is recorded, MVP 1 is an experimental implementation and Issue #1 remains open.
+The first user test on Android API 36 confirmed Wi-Fi attachment, a gateway obtained from Wi-Fi, and HTTP 200 responses for the main descriptor and advertised action description. It stopped before transfer with INVALID_XML; 0.1.1 fixes a parser defect reproduced with a realistic SCPD fixture. The actual camera XML was not collected. Selected-image identity, original-quality resource, preview and Gallery save remain unverified and need the retest above. No physical camera or Android emulator is attached to this cloud task. MVP 1 remains experimental and Issue #1 stays open until hardware acceptance.

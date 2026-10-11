@@ -44,11 +44,17 @@ internal object SonyXml {
     private fun Element.text(name: String): String = elements(name).singleOrNull()?.textContent?.trim()
         ?: throw ProtocolFailure(Failure.INVALID_XML)
 
+    private fun Element.childText(name: String): String = (0 until childNodes.length)
+        .map { childNodes.item(it) }.filterIsInstance<Element>()
+        .filter { (it.localName ?: it.tagName) == name }.singleOrNull()?.textContent?.trim()
+        ?: throw ProtocolFailure(Failure.INVALID_XML)
+
     fun services(xml: String): List<Service> = parse(xml).documentElement.elements("service").map {
         Service(it.text("serviceType"), it.text("controlURL"), it.text("SCPDURL"))
     }
 
-    fun actions(xml: String): Set<String> = parse(xml).documentElement.elements("action").map { it.text("name") }.toSet()
+    // SCPD argument names are nested inside the action; only its own name identifies the action.
+    fun actions(xml: String): Set<String> = parse(xml).documentElement.elements("action").map { it.childText("name") }.toSet()
 
     fun checkSoap(xml: String) {
         if (parse(xml).documentElement.elements("Fault").isNotEmpty()) throw ProtocolFailure(Failure.HTTP_ERROR)

@@ -75,7 +75,7 @@ class MainActivity : Activity() {
             this.text = text; setOnClickListener { action() }; content.addView(this)
         }
         label("Pocket Photo Bridge", 26f)
-        label("Experimental RX100 VII receiver · hardware validation pending")
+        label("Experimental RX100 VII receiver · ${BuildConfig.VERSION_NAME} · hardware validation pending")
         label("1. On camera: Send to Smartphone → Select on This Device → one JPEG.\n2. Join the camera Wi-Fi in Android Settings and accept no internet.\n3. Return here, Connect, then Receive. Keep this app visible.")
         button("Open Wi-Fi settings") { startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
         connect = button("Connect to current Wi-Fi", ::attach)
@@ -94,7 +94,7 @@ class MainActivity : Activity() {
         label("Session diagnostics", 20f)
         diagnostics = label("").apply { setTextIsSelectable(true) }
         button("Share safe diagnostics") {
-            val report = "Pocket Photo Bridge 0.1.0 · Android API ${Build.VERSION.SDK_INT}\n" + lines.joinToString("\n")
+            val report = "Pocket Photo Bridge ${BuildConfig.VERSION_NAME} · Android API ${Build.VERSION.SDK_INT}\n" + lines.joinToString("\n")
             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"; putExtra(Intent.EXTRA_TEXT, report)
             }, "Share safe diagnostics"))

@@ -27,7 +27,12 @@ class SonyTransferSessionTest {
         private val advertisedLength: Long = payload.size.toLong(),
         private val rejectPush: Boolean = false,
         private val endFails: Boolean = false,
-        private val actions: String = "<action><name>X_TransferStart</name></action><action><name>X_TransferEnd</name></action>"
+        private val actions: String = """
+            <action><name>X_TransferStart</name></action>
+            <action><name>X_TransferEnd</name><argumentList>
+                <argument><name>ErrCode</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_ErrCode</relatedStateVariable></argument>
+            </argumentList></action>
+        """
     ) : CameraTransport {
         val requests = mutableListOf<CameraRequest>()
         var pageIndex = 0
@@ -42,7 +47,7 @@ class SonyTransferSessionTest {
                     <service><serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType><controlURL>/content</controlURL><SCPDURL>/content.xml</SCPDURL></service>
                     </serviceList></device></root>
                 """.toByteArray()
-                request.uri.path == "/actions.xml" -> bytes = "<scpd><actionList>$actions</actionList></scpd>".toByteArray()
+                request.uri.path == "/actions.xml" -> bytes = "<scpd xmlns=\"urn:schemas-upnp-org:service-1-0\"><actionList>$actions</actionList></scpd>".toByteArray()
                 request.action?.endsWith("#Browse") == true -> {
                     if (rejectPush) { status = 500; bytes = "<Fault/>".toByteArray() }
                     else bytes = pages[pageIndex++].toByteArray()

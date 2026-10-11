@@ -1,6 +1,6 @@
 # Sony smartphone transfer: evidence and implementation
 
-Investigated 2026-10-11. This receiver is **experimental and not yet tested on the user's RX100 VII**. A successful build or fixture test is not camera compatibility certification.
+Investigated 2026-10-11. This receiver is **experimental; selected-photo transfer has not yet been validated on the user's RX100 VII**. A successful build or fixture test is not camera compatibility certification.
 
 ## Relevant evidence
 
@@ -26,6 +26,12 @@ No third-party application source is bundled or copied. The Kotlin implementatio
 HTTP requests use the chosen Wi-Fi network without a system proxy or redirects. Advertised URLs must be HTTP to the exact camera IPv4 address; a separately advertised media port is permitted. XML is size-bounded, DTD/entity declarations are rejected, and raw XML/URLs/file names are never exported. Only private IPv4 camera endpoints are accepted.
 
 Connection establishment and header exchange are coordinated with transport closure. Cancellation marks the transport immediately and drains bounded active requests off the UI thread. Wi-Fi loss cancels network I/O without interrupting the worker or discarding its validated local JPEG; user Cancel/foreground exit remains a separate interruption. Known JPEG thumbnail and icon profiles are excluded before resource selection.
+
+## First tablet result and parser correction
+
+The user's 0.1.0 test on Android API 36 reported `WIFI_ATTACHED`, `GATEWAY_FROM_WIFI`, then `HTTP_STATUS 200 → DESCRIPTOR → HTTP_STATUS 200 → INVALID_XML`, consistently across retries. This confirms access to the camera's main descriptor and advertised action-description endpoint, but no transfer started.
+
+The SCPD parser searched all descendants for an action's `name`. A standard action with an `argumentList` also contains argument `name` elements (including the researched TransferEnd input ErrCode), so valid XML was rejected as ambiguous. Version 0.1.1 reads only the action's direct-child name. Regression fixtures cover namespaced, prefixed and unnamespaced SCPD responses, and reject missing/duplicate action names. Session fixtures now include the nested TransferEnd argument. These are independently written protocol fixtures, not captured XML from this camera. Retesting the updated APK is needed to confirm the observed failure is resolved on hardware.
 
 ## Remaining hardware questions
 

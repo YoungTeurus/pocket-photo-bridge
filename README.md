@@ -25,7 +25,7 @@ See [Issue #1](https://github.com/YoungTeurus/pocket-photo-bridge/issues/1), [ar
 
 An experimental Kotlin Android app is implemented for Android 10+ (API 29). It provides foreground Wi-Fi attachment, read-only service diagnostics, an evidence-backed Sony SOAP selected-JPEG receiver, a sampled preview, and unchanged-byte MediaStore export to `Pictures/Pocket Photo Bridge`.
 
-**RX100 VII hardware validation is pending.** The community implementation reports compatibility, but this app has not been run against the user's camera. It stops on unsupported service/selection responses; it never substitutes an arbitrary/latest photo or a full-card browser. See [protocol evidence and remaining questions](docs/sony-protocol.md).
+**RX100 VII hardware acceptance is pending.** The first tablet test on Android API 36 reached the camera and parsed its main service descriptor, then stopped at action-description parsing. Version 0.1.1 fixes a reproduced parser bug involving nested action argument names; receiving the selected JPEG, preview and Gallery save still require a camera retest. It stops on unsupported service/selection responses; it never substitutes an arbitrary/latest photo or a full-card browser. See [protocol evidence and remaining questions](docs/sony-protocol.md).
 
 Pair through Android Wi-Fi Settings, which retains the camera password. The app does not collect QR codes, credentials, SSIDs, MAC addresses or location. All camera HTTP uses that Wi-Fi Network, including when it has no internet. No sign-in, server, cloud upload, printer or background scanning is included.
 
