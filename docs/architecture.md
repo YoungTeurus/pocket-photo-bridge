@@ -10,7 +10,7 @@
 
 The manual connection path is intentional for the initial tablet experiment. No app-managed credential store or guessed QR parser is needed. If a later release adds programmatic pairing, credentials must use Android-secure storage and the QR format must first be observed on hardware.
 
-Software build/tests do not establish camera compatibility. [Tablet acceptance steps](tablet-testing.md) must confirm the camera-selected older JPEG, full-quality resource, gallery export and connection lifecycle before Issue #1 is closed.
+Software build/tests alone do not establish camera compatibility. The user's 0.1.1 RX100 VII / Android API 36 test confirmed the basic selected-JPEG receive, preview and Gallery export flow. [Remaining tablet acceptance steps](tablet-testing.md) cover an older selected JPEG, full-original comparison, repeatability and interruption/multiple-selection behavior before Issue #1 is closed.
 
 ## Phase 1: receiving a camera-selected JPEG
 

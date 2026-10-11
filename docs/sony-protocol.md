@@ -1,6 +1,6 @@
 # Sony smartphone transfer: evidence and implementation
 
-Investigated 2026-10-11. This receiver is **experimental; selected-photo transfer has not yet been validated on the user's RX100 VII**. A successful build or fixture test is not camera compatibility certification.
+Investigated 2026-10-11. This receiver is **experimental, with one successful end-to-end user test on the RX100 VII and an Android API 36 tablet using version 0.1.1**. The result applies to that tested setup; it does not establish compatibility with every firmware or tablet.
 
 ## Relevant evidence
 
@@ -31,13 +31,37 @@ Connection establishment and header exchange are coordinated with transport clos
 
 The user's 0.1.0 test on Android API 36 reported `WIFI_ATTACHED`, `GATEWAY_FROM_WIFI`, then `HTTP_STATUS 200 → DESCRIPTOR → HTTP_STATUS 200 → INVALID_XML`, consistently across retries. This confirms access to the camera's main descriptor and advertised action-description endpoint, but no transfer started.
 
-The SCPD parser searched all descendants for an action's `name`. A standard action with an `argumentList` also contains argument `name` elements (including the researched TransferEnd input ErrCode), so valid XML was rejected as ambiguous. Version 0.1.1 reads only the action's direct-child name. Regression fixtures cover namespaced, prefixed and unnamespaced SCPD responses, and reject missing/duplicate action names. Session fixtures now include the nested TransferEnd argument. These are independently written protocol fixtures, not captured XML from this camera. Retesting the updated APK is needed to confirm the observed failure is resolved on hardware.
+The SCPD parser searched all descendants for an action's `name`. A standard action with an `argumentList` also contains argument `name` elements (including the researched TransferEnd input ErrCode), so valid XML was rejected as ambiguous. Version 0.1.1 reads only the action's direct-child name. Regression fixtures cover namespaced, prefixed and unnamespaced SCPD responses, and reject missing/duplicate action names. Session fixtures now include the nested TransferEnd argument. These are independently written protocol fixtures, not captured XML from this camera. The user's subsequent 0.1.1 test passed action discovery and completed the transfer, confirming that the fix resolved the observed hardware failure.
+
+## Successful 0.1.1 hardware retest
+
+The user reported “It worked!” and supplied this redacted success sequence on Android API 36:
+
+```text
+WIFI_ATTACHED
+GATEWAY_FROM_WIFI
+DESCRIPTOR
+ACTIONS
+TRANSFER_START
+PUSH_PAGE count=1
+SELECTION count=1
+JPEG_BYTES count=13805942
+TRANSFER_END
+PREVIEW_READY
+GALLERY_SAVED
+WIFI_LOST
+DISCONNECTED
+```
+
+Every recorded HTTP response was 200. This establishes that the tested RX100 VII exposes the researched service/actions and PushRoot selection flow, and that the tablet received a JPEG, decoded it, displayed a preview and completed MediaStore save. Wi-Fi loss occurred after Gallery save, so it did not interrupt this transfer. Manual Wi-Fi association was sufficient in this run. No camera XML, photo, credentials or network identifiers were collected.
+
+The camera firmware/tablet model, an older-than-newest selected-image comparison and an SD-card original hash comparison were not supplied. The 13,805,942-byte transfer count alone does not establish full-original byte equivalence. The `HARDWARE_VALIDATION_PENDING` line in 0.1.1 is a static marker from the build produced before this test, rather than a transfer failure.
 
 ## Remaining hardware questions
 
-- Does this RX100M7 firmware advertise the same push descriptor/actions and selected-list behavior? Is SSID/password alone enough, or does it require another pairing negotiation?
+- Does the successful service/selection flow repeat after camera/tablet restarts and on other firmware/tablets? Record firmware and tablet model when available.
 - Does the largest non-thumbnail JPEG resource contain the full original image on this firmware? A camera-side selected **JPEG**, dimensions, file size and preferably SHA-256 comparison against the SD-card original are needed to claim byte-exact original quality. RAW conversion and movies are deliberately rejected.
-- Does Android keep the camera AP connected while its no-internet prompt is accepted? Does its IPv4 route expose the correct gateway? Do credentials persist across camera/tablet restarts?
-- Does X_TransferEnd drop Wi-Fi before its HTTP response reaches Android? This case is reported separately and does not discard a complete JPEG.
+- Do Wi-Fi credentials and the working gateway route persist across camera/tablet restarts? Both attachment and gateway routing worked during the successful test.
+- What happens on interruption, multiple selection, or camera Wi-Fi loss before the TransferEnd response? The successful run acknowledged TransferEnd and lost Wi-Fi only after save; other lifecycle cases still need device testing.
 
-If the descriptor/actions/PushRoot differ, the app stops with diagnostics; the precise blocker is the unobserved RX100M7 service/selection handshake. Run [the tablet experiment](tablet-testing.md). No packet capture, PC, or Imaging Edge installation is required for the first test. An optional Imaging Edge comparison may help isolate a firmware/pairing problem, but it is not part of this receiver's normal flow.
+If another camera setup has different descriptor/actions/PushRoot responses, the app stops with diagnostics. Use [the tablet procedure](tablet-testing.md) to establish the failing stage. No packet capture, PC, or Imaging Edge installation is required for the basic test. An optional Imaging Edge comparison may help isolate a firmware/pairing problem, but it is not part of this receiver's normal flow.
