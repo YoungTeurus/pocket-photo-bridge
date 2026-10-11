@@ -25,6 +25,8 @@ No third-party application source is bundled or copied. The Kotlin implementatio
 
 HTTP requests use the chosen Wi-Fi network without a system proxy or redirects. Advertised URLs must be HTTP to the exact camera IPv4 address; a separately advertised media port is permitted. XML is size-bounded, DTD/entity declarations are rejected, and raw XML/URLs/file names are never exported. Only private IPv4 camera endpoints are accepted.
 
+Connection establishment and header exchange are coordinated with transport closure. Cancellation marks the transport immediately and drains bounded active requests off the UI thread. Wi-Fi loss cancels network I/O without interrupting the worker or discarding its validated local JPEG; user Cancel/foreground exit remains a separate interruption. Known JPEG thumbnail and icon profiles are excluded before resource selection.
+
 ## Remaining hardware questions
 
 - Does this RX100M7 firmware advertise the same push descriptor/actions and selected-list behavior? Is SSID/password alone enough, or does it require another pairing negotiation?

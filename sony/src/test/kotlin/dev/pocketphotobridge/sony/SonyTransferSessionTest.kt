@@ -192,4 +192,12 @@ class SonyTransferSessionTest {
             fails(Failure.UNSAFE_URL) { CameraEndpoint(it) }
         }
     }
+
+    @Test fun rejectsBothSmallAndLargeJpegIcons() = withDirectory { dir ->
+        listOf("JPEG_SM_ICO", "JPEG_LRG_ICO").forEach { profile ->
+            val camera = Camera(pages = listOf(page(item(resources = """<res protocolInfo="http-get:*:image/jpeg:DLNA.ORG_PN=$profile" size="8">http://192.168.122.1:64321/original.jpg</res>"""))))
+            fails(Failure.NO_JPEG) { SonyTransferSession(camera, endpoint).receive(dir) }
+            assertTrue(camera.requests.none { it.uri.path.endsWith(".jpg") })
+        }
+    }
 }

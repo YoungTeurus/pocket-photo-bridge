@@ -101,7 +101,8 @@ class SonyTransferSession(private val transport: CameraTransport, private val en
         return item.resources.filter {
             val fields = it.protocol.split(':', limit = 4)
             fields.size == 4 && fields[0] == "http-get" && fields[2].equals("image/jpeg", true) &&
-                !Regex("JPEG_(TN|SM|MED)\\b", RegexOption.IGNORE_CASE).containsMatchIn(fields[3]) && it.size > 0
+                !Regex("JPEG_(TN|SM|MED)(?:_|\\b)|JPEG_[A-Z0-9_]*ICO\\b", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(fields[3]) && it.size > 0
         }.maxByOrNull { it.size } ?: throw ProtocolFailure(Failure.NO_JPEG)
     }
 

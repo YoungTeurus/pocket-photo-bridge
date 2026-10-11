@@ -24,11 +24,15 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
       - uses: gradle/actions/setup-gradle@41ad77ca97e46ee2e825d5e6b9a95d8169fcc44c # v4.4.2; includes wrapper validation
       - name: Install pinned Android SDK packages
         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
       - name: Test, lint and build debug APK
-        run: ./gradlew --no-daemon :sony:test :app:lintDebug :app:assembleDebug
+        run: ./gradlew --no-daemon :sony:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
       - name: Create APK checksum
         working-directory: app/build/outputs/apk/debug
         run: sha256sum app-debug.apk > app-debug.apk.sha256
@@ -49,5 +53,7 @@ jobs:
           path: |
             sony/build/reports/tests/test/
             sony/build/test-results/test/
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
             app/build/reports/lint-results-debug.*
           retention-days: 14

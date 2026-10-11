@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var save: Button
     private lateinit var cancel: Button
     private val worker = Executors.newSingleThreadExecutor()
+    private val connectionCleanup = Executors.newSingleThreadExecutor()
     private val lines = ArrayDeque<String>()
     private var attached: AttachedWifi? = null
     private var transport: NetworkCameraTransport? = null
@@ -119,10 +120,7 @@ class MainActivity : Activity() {
     private fun attach() {
         disconnect(null)
         try {
-            attached = wifi.attach {
-                disconnect("Camera Wi-Fi lost. Join it again and tap Connect.")
-                log("WIFI_LOST")
-            }
+            attached = wifi.attach(::handleWifiLoss)
             log("WIFI_ATTACHED")
             log(if (attached!!.gatewayFromWifi) "GATEWAY_FROM_WIFI" else "GATEWAY_FALLBACK")
             status.text = getString(R.string.wifi_attached)
@@ -226,11 +224,29 @@ class MainActivity : Activity() {
 
     private fun disconnect(message: String?) {
         ++generation
-        transport?.close(); transport = null
+        closeTransport()
         task?.cancel(true); task = null
         wifi.release(); attached = null; busy = false
         message?.let { status.text = it; log("DISCONNECTED") }
         if (::connect.isInitialized) controls()
+    }
+
+    internal fun handleWifiLoss() {
+        // Camera may close its AP during successful TransferEnd. Abort only network I/O,
+        // preserving the worker/token that can still deliver a validated local JPEG or save.
+        closeTransport()
+        wifi.release(); attached = null
+        log("WIFI_LOST")
+        status.text = getString(R.string.wifi_lost)
+        controls()
+    }
+
+    private fun closeTransport() {
+        val current = transport ?: return
+        transport = null
+        current.cancel()
+        // close waits for a bounded active handshake; never block the Android UI on it.
+        connectionCleanup.submit { current.close() }
     }
 
     override fun onStop() {
@@ -244,6 +260,7 @@ class MainActivity : Activity() {
         // Queue cleanup after the cancelled worker so it cannot leave a partial cache file.
         worker.submit { photos.clear() }
         worker.shutdown()
+        connectionCleanup.shutdown()
         super.onDestroy()
     }
 }

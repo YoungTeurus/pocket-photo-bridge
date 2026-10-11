@@ -40,12 +40,12 @@ Follow [the complete tablet test and troubleshooting guide](docs/tablet-testing.
 
 ## Build and software verification
 
-GitHub Actions runs JVM protocol tests, Android lint and `assembleDebug`, then uploads the APK/checksum and verification reports. CI pins action commits and the Gradle distribution checksum. Debug signing is for sideload testing; different runs may require uninstalling the prior APK due to changed debug keys.
+GitHub Actions runs JVM protocol/transport tests, a Robolectric Android lifecycle regression, Android lint and `assembleDebug`, then uploads the APK/checksum and verification reports. CI pins action commits and the Gradle distribution checksum. Debug signing is for sideload testing; different runs may require uninstalling the prior APK due to changed debug keys.
 
 With Java 17 and an Android SDK installed:
 
 ```sh
-./gradlew :sony:test :app:lintDebug :app:assembleDebug
+./gradlew :sony:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-The pure Kotlin `sony` module can be reused with another HTTP transport. Fixture tests cover selected-list-only behavior, discovery, escaped DIDL, pagination, ambiguity, thumbnail rejection, unsafe URLs/XML and interrupted downloads. Android Wi-Fi, rendering, Gallery integration and actual camera behavior require the documented device test. No camera/emulator is attached to the cloud implementation environment.
+The pure Kotlin `sony` module can be reused with another HTTP transport. Fixture tests cover selected-list-only behavior, discovery, escaped DIDL, pagination, ambiguity, thumbnail/icon rejection, unsafe URLs/XML and interrupted downloads. Transport tests exercise cancellation interleavings; the Android API 29 lifecycle test ensures camera Wi-Fi loss does not discard a pending preview or stop a local save. Robolectric is a test-only dependency, not an emulator or a device validation. Android Wi-Fi, rendering, Gallery integration and actual camera behavior require the documented device test. No camera/emulator is attached to the cloud implementation environment.
