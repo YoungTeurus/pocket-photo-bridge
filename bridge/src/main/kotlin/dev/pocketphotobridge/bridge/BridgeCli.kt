@@ -12,7 +12,7 @@ import kotlin.system.exitProcess
 fun main(arguments: Array<String>) { exitProcess(BridgeCli.run(arguments)) }
 
 object BridgeCli {
-    const val VERSION = "0.4.2"
+    const val VERSION = "0.4.3"
 
     fun run(arguments: Array<String>, output: PrintStream = System.out, defaultState: Path? = null): Int {
         output.println("Pocket Photo Bridge $VERSION | headless bridge")

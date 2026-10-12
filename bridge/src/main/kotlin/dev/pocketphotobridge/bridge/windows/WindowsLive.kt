@@ -60,6 +60,7 @@ object WindowsLive {
         override fun nativeCheck(report:(String)->Unit) {
             WindowsBluetooth.nativeSelfTest()
             report("WINDOWS_WINSOCK_BINDINGS_READY")
+            report("WINDOWS_WINSOCK_ERROR_CAPTURE_READY")
             try { report("WINDOWS_PAIRED_DEVICES count=${WindowsBluetooth.pairedDevices().size}") }
             catch(e:WindowsBluetoothFailure) { report("WINDOWS_BLUETOOTH_UNAVAILABLE category=${e.code.name}") }
             catch(_:LinkageError) { report("WINDOWS_BLUETOOTH_UNAVAILABLE category=NATIVE_UNAVAILABLE") }

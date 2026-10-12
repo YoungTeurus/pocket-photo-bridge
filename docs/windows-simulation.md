@@ -1,4 +1,4 @@
-# Windows portable simulation (0.4.2)
+# Windows portable simulation (0.4.3)
 
 The Windows 10/11 **x64** package runs directly on Windows. It includes an EXE launcher and its Java 17 runtime; you do not need WSL, a JDK, Gradle or an IDE. Keep the entire `PocketPhotoBridge` folder together. Copying only the EXE will break it.
 
@@ -7,12 +7,12 @@ The EXE's default mode is an offline simulation. Synthetic camera and printer de
 ## Download and run
 
 1. Open the repository's **Actions → Headless bridge** workflow and select a successful run for the intended revision.
-2. Download the artifact named `pocket-photo-bridge-windows-x64-0.4.2`. GitHub's artifact download is an outer ZIP. Extract it to obtain `PocketPhotoBridge-0.4.2-windows-x64.zip` and its `.zip.sha256` file.
+2. Download the artifact named `pocket-photo-bridge-windows-x64-0.4.3`. GitHub's artifact download is an outer ZIP. Extract it to obtain `PocketPhotoBridge-0.4.3-windows-x64.zip` and its `.zip.sha256` file.
 3. Optionally verify the package in PowerShell from that folder:
 
    ```powershell
-   Get-FileHash .\PocketPhotoBridge-0.4.2-windows-x64.zip -Algorithm SHA256
-   Get-Content .\PocketPhotoBridge-0.4.2-windows-x64.zip.sha256
+   Get-FileHash .\PocketPhotoBridge-0.4.3-windows-x64.zip -Algorithm SHA256
+   Get-Content .\PocketPhotoBridge-0.4.3-windows-x64.zip.sha256
    ```
 
    The two SHA-256 hashes must match, ignoring letter case. The checksum detects a damaged or changed download; obtain both files from the same trusted run.

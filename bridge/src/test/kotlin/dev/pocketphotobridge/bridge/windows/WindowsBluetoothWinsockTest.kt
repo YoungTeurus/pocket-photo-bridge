@@ -1,6 +1,7 @@
 package dev.pocketphotobridge.bridge.windows
 
 import com.sun.jna.Pointer
+import com.sun.jna.Native
 import com.sun.jna.ptr.IntByReference
 import dev.pocketphotobridge.printer.PrinterFailure
 import dev.pocketphotobridge.printer.PrinterFailureCode
@@ -18,6 +19,7 @@ class WindowsBluetoothWinsockTest {
         assertEquals(1, api.binds)
         assertEquals(1, api.listens)
         assertEquals(1, api.selects)
+        assertEquals(1, api.invalidSocketChecks)
     }
 
     @Test fun `WSAStartup negotiates 2 2 and is shared across socket operations`() {
@@ -58,6 +60,34 @@ class WindowsBluetoothWinsockTest {
         assertEquals(0x1101, api.connectService)
     }
 
+    @Test fun `pending connect uses JNA captured error when a raw getter loses it`() {
+        val api = Api().apply { connectResult = -1; error = 10035; loseRawError = true }
+        val events = mutableListOf<String>()
+        assertFalse(WindowsWinsockBackend(api, WindowsBluetoothDiagnostics(events::add)).beginConnect(api.handle, 0x001122334455))
+        assertTrue(events.contains("WINDOWS_BLUETOOTH_CONNECT_PENDING reason=PENDING native_error=10035 count=0"))
+        assertFalse(events.any { it.contains("reason=FAILED") })
+    }
+
+    @Test fun `receive preserves captured would block instead of treating it as disconnected`() {
+        val api = Api().apply { receiveResult = -1; error = 10035; loseRawError = true }
+        assertEquals(-1, WindowsWinsockBackend(api).receive(api.handle, ByteArray(64)))
+    }
+
+    @Test fun `native self test refuses an incorrect captured socket error`() {
+        val api = Api().apply { invalidSocketError = 10022 }
+        val failure = assertThrows(WindowsBluetoothFailure::class.java) { WindowsWinsockBackend(api).nativeSelfTest() }
+        assertEquals(WindowsBluetoothFailureCode.NATIVE_SELF_TEST_FAILED, failure.code)
+        assertEquals(1, api.invalidSocketChecks)
+    }
+
+    @Test fun `native self test cannot pass using a stale error from an earlier call`() {
+        Native.setLastError(10038)
+        val api = Api().apply { invalidSocketError = null }
+        val failure = assertThrows(WindowsBluetoothFailure::class.java) { WindowsWinsockBackend(api).nativeSelfTest() }
+        assertEquals(WindowsBluetoothFailureCode.NATIVE_SELF_TEST_FAILED, failure.code)
+        assertEquals(1, api.invalidSocketChecks)
+    }
+
     @Test fun `select supplies provider readiness using a full Windows fd set`() {
         val api = Api().apply { readiness = WindowsPoll.WRITE }
         val backend = WindowsWinsockBackend(api)
@@ -78,7 +108,7 @@ class WindowsBluetoothWinsockTest {
         val events = mutableListOf<String>()
         val backend = WindowsWinsockBackend(api, WindowsBluetoothDiagnostics { event ->
             events += event
-            if (event.contains("reason=FAILED")) api.error = 10054
+            if (event.contains("reason=FAILED")) { api.error = 10054; Native.setLastError(10054) }
         })
         val failure = assertThrows(PrinterFailure::class.java) { backend.beginConnect(api.handle, 0x001122334455) }
         assertEquals(PrinterFailureCode.TIMEOUT, failure.code)
@@ -87,7 +117,7 @@ class WindowsBluetoothWinsockTest {
 
     @Test fun `each native connection stage identifies errors with fixed labels`() {
         fun verify(stage: String, configure: Api.() -> Unit, operation: (WindowsWinsockBackend, Api) -> Unit) {
-            val api = Api().apply(configure)
+            val api = Api().apply(configure).apply { loseRawError = true }
             val events = mutableListOf<String>()
             val backend = WindowsWinsockBackend(api, WindowsBluetoothDiagnostics(events::add))
             assertThrows(PrinterFailure::class.java) { operation(backend, api) }
@@ -197,7 +227,7 @@ class WindowsBluetoothWinsockTest {
     }
 
     @Test fun `would block is retryable but native errors never escape`() {
-        val api = Api().apply { sendResult = -1; error = 10035 }
+        val api = Api().apply { sendResult = -1; error = 10035; loseRawError = true }
         val backend = WindowsWinsockBackend(api)
         assertEquals(-1, backend.send(api.handle, byteArrayOf(1), 0, 1))
         api.error = 10054
@@ -217,6 +247,9 @@ class WindowsBluetoothWinsockTest {
         var selects = 0
         var startupError = 0
         var error = 0
+        var loseRawError = false
+        var invalidSocketChecks = 0
+        var invalidSocketError: Int? = 10038
         var closeResult = 0
         var socketResult = handle
         var ioctlResult = 0
@@ -238,6 +271,7 @@ class WindowsBluetoothWinsockTest {
         var sendResult = 0
         var sent = byteArrayOf()
         var received = byteArrayOf()
+        var receiveResult: Int? = null
         val opened = mutableListOf<List<Int>>()
         override fun WSAStartup(version: Short, data: Pointer): Int {
             assertEquals(0x0202.toShort(), version)
@@ -246,13 +280,14 @@ class WindowsBluetoothWinsockTest {
             return startupError
         }
         override fun WSACleanup() = 0
-        override fun socket(family: Int, type: Int, protocol: Int): Long { opened += listOf(family, type, protocol); return socketResult }
+        override fun socket(family: Int, type: Int, protocol: Int): Long { opened += listOf(family, type, protocol); captureError(); return socketResult }
         override fun ioctlsocket(socket: Long, command: Int, value: IntByReference): Int {
-            assertEquals(handle, socket); ioctlCommand = command; ioctlValue = value.value; return ioctlResult
+            if (socket == -1L) { invalidSocketChecks++; invalidSocketError?.let(Native::setLastError); return -1 }
+            assertEquals(handle, socket); ioctlCommand = command; ioctlValue = value.value; captureError(); return ioctlResult
         }
         override fun connect(socket: Long, address: Pointer, size: Int): Int {
             assertEquals(handle, socket); connects++; connectSize = size; connectAddress = address.getLong(2)
-            connectService = address.getInt(10); connectPort = address.getInt(26); return connectResult
+            connectService = address.getInt(10); connectPort = address.getInt(26); captureError(); return connectResult
         }
         override fun select(nfds: Int, read: Pointer?, write: Pointer?, except: Pointer?, timeout: Pointer): Int {
             selects++
@@ -260,7 +295,7 @@ class WindowsBluetoothWinsockTest {
             pollTimeout = timeout.getInt(0) * 1000 + timeout.getInt(4) / 1000
             pollEvents = if (read != null) WindowsPoll.READ else WindowsPoll.WRITE
             val status = selectResult ?: if (readiness == 0) 0 else 1
-            if (status == -1) return -1
+            if (status == -1) { captureError(); return -1 }
             listOf(read to WindowsPoll.READ, write to WindowsPoll.WRITE, except to WindowsPoll.ERROR).forEach { (set, flag) ->
                 if (set != null) {
                     assertEquals(1, set.getInt(0))
@@ -268,7 +303,7 @@ class WindowsBluetoothWinsockTest {
                     set.setInt(0, if (readiness and flag != 0) 1 else 0)
                 }
             }
-            return status
+            captureError(); return status
         }
         override fun bind(socket: Long, address: Pointer, size: Int): Int {
             assertEquals(handle, socket)
@@ -277,27 +312,31 @@ class WindowsBluetoothWinsockTest {
             assertEquals(0.toShort(), address.getShort(2))
             assertArrayEquals(byteArrayOf(127, 0, 0, 1), address.getByteArray(4, 4))
             binds++
-            return bindResult
+            captureError(); return bindResult
         }
         override fun listen(socket: Long, backlog: Int): Int {
             assertEquals(handle, socket)
             assertEquals(1, backlog)
             listens++
-            return listenResult
+            captureError(); return listenResult
         }
         override fun getsockopt(socket: Long, level: Int, option: Int, value: IntByReference, size: IntByReference): Int {
             assertEquals(handle, socket); assertEquals(0xffff, level); assertEquals(0x1007, option); assertEquals(4, size.value)
-            value.value = socketError; return getOptionResult
+            value.value = socketError; captureError(); return getOptionResult
         }
         override fun send(socket: Long, bytes: Pointer, length: Int, flags: Int): Int {
-            assertEquals(handle, socket); assertEquals(0, flags); sent = bytes.getByteArray(0, length); return sendResult
+            assertEquals(handle, socket); assertEquals(0, flags); sent = bytes.getByteArray(0, length); captureError(); return sendResult
         }
         override fun recv(socket: Long, bytes: Pointer, length: Int, flags: Int): Int {
             assertEquals(handle, socket); assertEquals(0, flags)
-            bytes.write(0, received, 0, received.size); return received.size
+            bytes.write(0, received, 0, received.size); captureError(); return receiveResult ?: received.size
         }
-        override fun shutdown(socket: Long, how: Int): Int { assertEquals(handle, socket); assertEquals(2, how); return 0 }
-        override fun closesocket(socket: Long): Int { assertEquals(handle, socket); closes++; return closeResult }
-        override fun WSAGetLastError() = error
+        override fun shutdown(socket: Long, how: Int): Int { assertEquals(handle, socket); assertEquals(2, how); captureError(); return 0 }
+        override fun closesocket(socket: Long): Int { assertEquals(handle, socket); closes++; captureError(); return closeResult }
+        // Model JNA's saved value independently from the live value a second DLL call would see.
+        private fun captureError() {
+            Native.setLastError(error)
+            if (loseRawError) error = 0
+        }
     }
 }

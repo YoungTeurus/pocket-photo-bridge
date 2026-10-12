@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'The portable EXE smoke test requires Windows.' }
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-if (-not $ZipPath) { $ZipPath = Join-Path $repository 'bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.2-windows-x64.zip' }
+if (-not $ZipPath) { $ZipPath = Join-Path $repository 'bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.3-windows-x64.zip' }
 $ZipPath = [IO.Path]::GetFullPath($ZipPath)
 $work = Join-Path $repository 'bridge/build/portable/Windows smoke extraction with spaces'
 $reports = Join-Path $repository 'bridge/build/reports/smoke/windows'
@@ -95,7 +95,7 @@ $onePrint = '(?m)^SIMULATED_PRINTS count=1\r?$'
 $suitePass = '(?m)^SIMULATION_SUITE_PASS checks=[0-9]+\r?$'
 
 Invoke-SmokeCase -Name help -ExpectedExit 0 -CommandArguments @('--help') -ExpectedPatterns @('--simulate-all') -CheckMarkers $false
-Invoke-SmokeCase -Name native-bindings -ExpectedExit 0 -CommandArguments @('--windows-native-check') -ExpectedPatterns @('WINDOWS_WINSOCK_BINDINGS_READY', 'WINDOWS_CAMERA_LINK_CANDIDATES count=', 'NO_PHYSICAL_PRINT') -CheckMarkers $false
+Invoke-SmokeCase -Name native-bindings -ExpectedExit 0 -CommandArguments @('--windows-native-check') -ExpectedPatterns @('WINDOWS_WINSOCK_BINDINGS_READY', 'WINDOWS_WINSOCK_ERROR_CAPTURE_READY', 'WINDOWS_CAMERA_LINK_CANDIDATES count=', 'NO_PHYSICAL_PRINT') -CheckMarkers $false
 Invoke-SmokeCase -Name live-console-refused -ExpectedExit 64 -CommandArguments @('--windows-live') -ExpectedPatterns @('WINDOWS_LIVE_CONSOLE_REQUIRED') -CheckMarkers $false
 Invoke-SmokeCase -Name suite -ExpectedExit 0 -CommandArguments @('--simulate-all', "--state-dir=$(Get-StateDirectory suite)") -ExpectedPatterns @($suitePass)
 # No console exists with redirected stdio, so the Explorer default must not pause.

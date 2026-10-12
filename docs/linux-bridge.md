@@ -6,7 +6,7 @@ The coordinator, Sony/printer protocols, bounded JPEG preparation and durable gu
 
 ## Run the offline simulation
 
-Download `pocket-photo-bridge-jvm-0.4.2` from a successful **Headless bridge** Actions run. Extract GitHub's outer artifact ZIP to obtain `bridge-0.4.2.tar`, `bridge-0.4.2.zip` and `bridge-0.4.2.sha256`. The archives contain the same application and require a local matching Java runtime.
+Download `pocket-photo-bridge-jvm-0.4.3` from a successful **Headless bridge** Actions run. Extract GitHub's outer artifact ZIP to obtain `bridge-0.4.3.tar`, `bridge-0.4.3.zip` and `bridge-0.4.3.sha256`. The archives contain the same application and require a local matching Java runtime.
 
 On Debian/Ubuntu, including their ARM64 variants, install Java and the native font dependencies used by headless Java desktop imaging:
 
@@ -15,9 +15,9 @@ sudo apt-get update
 sudo apt-get install --no-install-recommends openjdk-17-jre-headless libfreetype6 fontconfig
 java -version
 java --list-modules | grep '^java.desktop@'
-sha256sum -c bridge-0.4.2.sha256
-tar -xf bridge-0.4.2.tar
-cd bridge-0.4.2
+sha256sum -c bridge-0.4.3.sha256
+tar -xf bridge-0.4.3.tar
+cd bridge-0.4.3
 export JAVA_OPTS='-Djava.awt.headless=true -Xmx512m'
 ./bin/bridge --help
 ./bin/bridge --simulate-all
@@ -66,7 +66,7 @@ The Windows x64, Linux x64 and Linux ARM64 jobs use Java 17.0.12 and pinned Acti
 
 ```bash
 ./gradlew --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist :bridge:distZip :bridge:distTar
-bash bridge/packaging/smoke-linux.sh bridge/build/distributions/bridge-0.4.2.tar
+bash bridge/packaging/smoke-linux.sh bridge/build/distributions/bridge-0.4.3.tar
 ```
 
 The Linux smoke script extracts into a path with spaces and checks normal, crop, duplicate, all deterministic faults, suite and power-cut recovery in bounded child processes. Safe reports upload as `bridge-verification-linux-x64` and `bridge-verification-linux-arm64`. The existing Android workflow remains separate. The JVM archives include documentation, inactive deployment examples and project/mizink MIT notices; licenses for the separately installed Java runtime come from its distributor.

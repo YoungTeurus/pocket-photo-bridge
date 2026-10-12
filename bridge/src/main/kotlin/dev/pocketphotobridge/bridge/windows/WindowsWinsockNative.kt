@@ -1,6 +1,7 @@
 package dev.pocketphotobridge.bridge.windows
 
 import com.sun.jna.Memory
+import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.ptr.IntByReference
 import com.sun.jna.win32.StdCallLibrary
@@ -24,7 +25,6 @@ internal interface WindowsWinsockApi : StdCallLibrary {
     fun recv(socket: Long, bytes: Pointer, length: Int, flags: Int): Int
     fun shutdown(socket: Long, how: Int): Int
     fun closesocket(socket: Long): Int
-    fun WSAGetLastError(): Int
 }
 
 internal class WindowsWinsockBackend private constructor(private val api: WindowsWinsockApi,
@@ -38,6 +38,14 @@ internal class WindowsWinsockBackend private constructor(private val api: Window
     fun nativeSelfTest() {
         try {
             startup.ensureStarted(diagnostics)
+            // JNA saves Win32 last-error immediately after each mapped call. A second
+            // mapped WSAGetLastError can lose it during JNI/VM transitions. Exercise a
+            // deterministic real failure on Windows, with no radio or remote endpoint.
+            Native.setLastError(0) // A stale 10038 must not make the probe pass.
+            val rejected = api.ioctlsocket(-1L, 0x8004667e.toInt(), IntByReference(1))
+            val captured = Native.getLastError()
+            if (rejected != -1 || captured != 10038) // WSAENOTSOCK for INVALID_SOCKET.
+                throw WindowsBluetoothFailure(WindowsBluetoothFailureCode.NATIVE_SELF_TEST_FAILED)
             // AF_INET/SOCK_STREAM/IPPROTO_TCP validates Winsock independently of AF_BTH/radios.
             val socket = api.socket(2, 1, 6)
             if (socket == -1L) throw PrinterFailure(PrinterFailureCode.DISCONNECTED)
@@ -108,7 +116,7 @@ internal class WindowsWinsockBackend private constructor(private val api: Window
                 return true
             }
             // Capture errno before a sink can make another native call and alter thread-local error state.
-            val error = api.WSAGetLastError()
+            val error = Native.getLastError()
             if (error in 10035..10037) {
                 diagnostics.emit(CONNECT_PENDING, PENDING, error)
                 return false
@@ -181,7 +189,7 @@ internal class WindowsWinsockBackend private constructor(private val api: Window
 
     override fun shutdown(socket: Long) {
         if (api.shutdown(socket, 2) != 0) {
-            val error = api.WSAGetLastError()
+            val error = Native.getLastError()
             diagnostics.emit(SHUTDOWN, FAILED, error)
         }
     } // SD_BOTH; cleanup tolerates unconnected sockets.
@@ -190,7 +198,7 @@ internal class WindowsWinsockBackend private constructor(private val api: Window
         diagnostics.emit(CLOSE, OK)
     }
     private fun wouldBlockOrFail(stage: WindowsBluetoothDiagnosticStage): Int {
-        val error = api.WSAGetLastError()
+        val error = Native.getLastError()
         if (error == 10035) {
             diagnostics.emit(stage, PENDING, error)
             return -1
@@ -199,7 +207,7 @@ internal class WindowsWinsockBackend private constructor(private val api: Window
         fail(error)
     }
     private fun nativeFailure(stage: WindowsBluetoothDiagnosticStage): Nothing {
-        val error = api.WSAGetLastError()
+        val error = Native.getLastError()
         diagnostics.emit(stage, FAILED, error)
         fail(error)
     }
