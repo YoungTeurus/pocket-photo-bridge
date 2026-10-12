@@ -19,6 +19,8 @@ import javax.imageio.ImageIO
 class JvmPrintImagePreparerTest {
     @get:Rule val temporary = TemporaryFolder()
     private val preparer = JvmPrintImagePreparer()
+    // Keep the existing isolated FIT/CROP and EXIF geometry assertions without the paper turn.
+    private val exifOnlyPreparer = JvmPrintImagePreparer(rotateLandscapeToPaper = false)
 
     @Test fun producesPrinterSizeBaselineRgbWithExactAnnexKTablesAndJpeg90Quantizers() {
         val jpeg = preparer.prepare(source(quadrants()))
@@ -40,7 +42,7 @@ class JvmPrintImagePreparerTest {
     }
 
     @Test fun fitCentersTheCompleteImageOnWhite() {
-        val output = decode(preparer.prepare(source(quadrants())))
+        val output = decode(exifOnlyPreparer.prepare(source(quadrants())))
         assertColor(Color.WHITE, output, 520, 100)
         assertColor(Color.WHITE, output, 520, 1460)
         assertCorners(output, 1)
@@ -55,10 +57,10 @@ class JvmPrintImagePreparerTest {
             dispose()
         }
         val file = source(jpeg(image))
-        val fit = decode(preparer.prepare(file, crop = false))
+        val fit = decode(exifOnlyPreparer.prepare(file, crop = false))
         assertColor(Color.RED, fit, 50, 780)
         assertColor(Color.BLUE, fit, 990, 780)
-        val crop = decode(preparer.prepare(file, crop = true))
+        val crop = decode(exifOnlyPreparer.prepare(file, crop = true))
         for ((x, y) in listOf(20 to 20, 1020 to 20, 20 to 1540, 1020 to 1540, 520 to 780))
             assertColor(Color.GREEN, crop, x, y)
     }
@@ -66,7 +68,7 @@ class JvmPrintImagePreparerTest {
     @Test fun appliesAllEightExifRotationsAndMirrorsBeforePlacement() {
         for (orientation in 1..8) {
             val bytes = app1(quadrants(), exif(orientation, littleEndian = orientation % 2 == 0))
-            val output = decode(preparer.prepare(source(bytes)))
+            val output = decode(exifOnlyPreparer.prepare(source(bytes)))
             assertCorners(output, orientation)
             if (orientation <= 4) assertColor(Color.WHITE, output, 520, 100)
             else {
@@ -74,6 +76,58 @@ class JvmPrintImagePreparerTest {
                 assertColor(Color.WHITE, output, 1000, 780)
             }
         }
+    }
+
+    @Test fun landscapePhotoRotatesClockwiseToFillPortraitPaperInFitAndCrop() {
+        val original = quadrants(300, 200)
+        val file = source(original)
+        preparer.validateSource(file)
+        for (crop in listOf(false, true)) {
+            val output = decode(preparer.prepare(file, crop))
+            assertPaperCorners(output, listOf(2, 0, 3, 1))
+        }
+        assertArrayEquals(original, file.readBytes())
+    }
+
+    @Test fun portraitPhotoKeepsItsPixelOrderInFitAndCrop() {
+        val file = source(quadrants(200, 300))
+        for (crop in listOf(false, true))
+            assertPaperCorners(decode(preparer.prepare(file, crop)), listOf(0, 1, 2, 3))
+    }
+
+    @Test fun exifSixPortraitIsNotRotatedAgainForPaper() {
+        val file = source(app1(quadrants(300, 200), exif(6)))
+        for (crop in listOf(false, true))
+            assertPaperCorners(decode(preparer.prepare(file, crop)), listOf(2, 0, 3, 1))
+    }
+
+    @Test fun composesPaperRotationAfterAllEightExifRotationsAndMirrors() {
+        // Explicit expected corner order after EXIF and, only for a landscape result, a clockwise turn.
+        val landscapeOrders = listOf(listOf(2, 0, 3, 1), listOf(3, 1, 2, 0), listOf(1, 3, 0, 2),
+            listOf(0, 2, 1, 3), listOf(0, 2, 1, 3), listOf(2, 0, 3, 1),
+            listOf(3, 1, 2, 0), listOf(1, 3, 0, 2))
+        val portraitOrders = listOf(listOf(0, 1, 2, 3), listOf(1, 0, 3, 2), listOf(3, 2, 1, 0),
+            listOf(2, 3, 0, 1), listOf(1, 0, 3, 2), listOf(3, 2, 1, 0),
+            listOf(2, 3, 0, 1), listOf(0, 1, 2, 3))
+        for ((width, height, orders) in listOf(Triple(300, 200, landscapeOrders), Triple(200, 300, portraitOrders))) {
+            for (orientation in 1..8) {
+                val original = app1(quadrants(width, height), exif(orientation, littleEndian = orientation % 2 == 0))
+                val file = source(original)
+                for (crop in listOf(false, true)) {
+                    val output = decode(preparer.prepare(file, crop))
+                    assertPaperCorners(output, orders[orientation - 1])
+                }
+                assertArrayEquals(original, file.readBytes())
+            }
+        }
+    }
+
+    @Test fun landscapeFitUsesWhiteSideMarginsAfterTheClockwisePaperTurn() {
+        val output = decode(preparer.prepare(source(quadrants())))
+        assertColor(Color.WHITE, output, 40, 780)
+        assertColor(Color.WHITE, output, 1000, 780)
+        for ((index, point) in listOf(208 to 156, 832 to 156, 208 to 1404, 832 to 1404).withIndex())
+            assertColor(listOf(Color.BLUE, Color.RED, Color.YELLOW, Color.GREEN)[index], output, point.first, point.second)
     }
 
     @Test fun leavesTheReceivedSourceBytesUnchangedAfterValidationFitAndCrop() {
@@ -87,7 +141,7 @@ class JvmPrintImagePreparerTest {
 
     @Test fun ignoresUnrelatedApp1MetadataAndExifWithoutOrientation() {
         for (metadata in listOf("http://ns.adobe.com/xap/1.0/\u0000unrelated".toByteArray(), exif(null))) {
-            val output = decode(preparer.prepare(source(app1(quadrants(), metadata))))
+            val output = decode(exifOnlyPreparer.prepare(source(app1(quadrants(), metadata))))
             assertCorners(output, 1)
         }
     }
@@ -196,6 +250,14 @@ class JvmPrintImagePreparerTest {
         coordinates.forEachIndexed { index, (x, y) -> assertColor(colors[order[index]], output, x, y) }
     }
 
+    private fun assertPaperCorners(output: BufferedImage, order: List<Int>) {
+        assertEquals(1040, output.width)
+        assertEquals(1560, output.height)
+        val colors = listOf(Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW)
+        val corners = listOf(20 to 20, 1020 to 20, 20 to 1540, 1020 to 1540)
+        corners.forEachIndexed { index, (x, y) -> assertColor(colors[order[index]], output, x, y) }
+    }
+
     private fun assertColor(expected: Color, image: BufferedImage, x: Int, y: Int) {
         val actual = Color(image.getRGB(x, y))
         for ((want, got) in listOf(expected.red to actual.red, expected.green to actual.green, expected.blue to actual.blue))
@@ -205,13 +267,13 @@ class JvmPrintImagePreparerTest {
     private fun source(bytes: ByteArray) = temporary.newFile().also { it.writeBytes(bytes) }
     private fun fixture(name: String) = requireNotNull(javaClass.getResourceAsStream("/jpeg/$name")).use { it.readBytes() }
     private fun decode(bytes: ByteArray) = requireNotNull(ImageIO.read(ByteArrayInputStream(bytes)))
-    private fun quadrants(): ByteArray {
-        val image = BufferedImage(400, 200, BufferedImage.TYPE_INT_RGB)
+    private fun quadrants(width: Int = 400, height: Int = 200): ByteArray {
+        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
         image.createGraphics().apply {
-            color = Color.RED; fillRect(0, 0, 200, 100)
-            color = Color.GREEN; fillRect(200, 0, 200, 100)
-            color = Color.BLUE; fillRect(0, 100, 200, 100)
-            color = Color.YELLOW; fillRect(200, 100, 200, 100)
+            color = Color.RED; fillRect(0, 0, width / 2, height / 2)
+            color = Color.GREEN; fillRect(width / 2, 0, width / 2, height / 2)
+            color = Color.BLUE; fillRect(0, height / 2, width / 2, height / 2)
+            color = Color.YELLOW; fillRect(width / 2, height / 2, width / 2, height / 2)
             dispose()
         }
         return jpeg(image)

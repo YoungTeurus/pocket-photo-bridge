@@ -31,7 +31,8 @@ internal object WindowsPoll {
 internal class WindowsBluetoothAdapter(
     private val backend: WindowsSocketBackend,
     private val nanoTime: () -> Long = System::nanoTime,
-    private val writeTimeoutMillis: Int = 15_000
+    private val writeTimeoutMillis: Int = 15_000,
+    private val diagnostics: WindowsBluetoothDiagnostics = WindowsBluetoothDiagnostics()
 ) {
     fun connect(device: WindowsPairedDevice, timeoutMillis: Int): PrinterTransport {
         checkInterrupted()
@@ -45,6 +46,7 @@ internal class WindowsBluetoothAdapter(
             }
             deadline.check()
             handle.check()
+            diagnostics.emit(WindowsBluetoothDiagnosticStage.CONNECTED, WindowsBluetoothDiagnosticReason.OK)
             return Transport(handle)
         } catch (failure: Throwable) {
             handle.close()

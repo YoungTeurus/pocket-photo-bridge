@@ -5,6 +5,8 @@ import com.sun.jna.Native
 import com.sun.jna.Pointer
 import com.sun.jna.win32.StdCallLibrary
 import java.nio.file.Path
+import dev.pocketphotobridge.printer.PrinterFailure
+import dev.pocketphotobridge.printer.PrinterFailureCode
 
 /* Platform declarations, not copied implementations:
  * https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/ws2bth.h
@@ -12,6 +14,8 @@ import java.nio.file.Path
  * https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/bluetoothapis.h
  * https://learn.microsoft.com/windows/win32/api/bluetoothapis/nf-bluetoothapis-bluetoothfindfirstdevice
  * https://learn.microsoft.com/windows/win32/bluetooth/bluetooth-and-connect
+ * https://learn.microsoft.com/windows/win32/bluetooth/bluetooth-and-listen-select-and-closesocket
+ * https://learn.microsoft.com/windows/win32/api/winsock2/nf-winsock2-select
  * The SDK's pshpack1.h makes SOCKADDR_BTH 30 bytes. Socket connects use SPP UUID + port=0 for SDP.
  * BluetoothFindFirstDevice documents Bthprops.cpl; newer systems also export via BluetoothAPIs.dll.
  * JNA 5.17.0 is an external LGPL2.1/Apache2 dual-licensed dependency; distribution includes its notices.
@@ -47,9 +51,24 @@ internal object WindowsBluetoothAbi {
         }
         return WindowsPairedDevice(address, name.toString())
     }
-    fun pollFd(socket: Long, events: Int): Memory = cleared(16).apply {
-        setLong(0, socket)
-        setShort(8, events.toShort())
+    // WinSock2.h: u_int fd_count, 4 bytes alignment padding, SOCKET fd_array[64].
+    fun fdSet(socket: Long): Memory = cleared(520).apply {
+        setInt(0, 1)
+        setLong(8, socket)
+    }
+    fun containsSocket(set: Pointer, socket: Long): Boolean {
+        val count = set.getInt(0)
+        if (count !in 0..64) throw PrinterFailure(PrinterFailureCode.DISCONNECTED)
+        return (0 until count).any { set.getLong(8L + it * 8) == socket }
+    }
+    // Windows long is 32 bits, including under LLP64. This is not JNA NativeLong on Linux.
+    fun timeval(timeoutMillis: Int): Memory = cleared(8).apply {
+        setInt(0, timeoutMillis / 1000)
+        setInt(4, (timeoutMillis % 1000) * 1000)
+    }
+    fun loopbackAddress(): Memory = cleared(16).apply {
+        setShort(0, 2) // AF_INET; port zero lets Windows allocate an ephemeral loopback port.
+        write(4, byteArrayOf(127, 0, 0, 1), 0, 4)
     }
     private fun cleared(size: Long) = Memory(size).apply { clear() }
 }

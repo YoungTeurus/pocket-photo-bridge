@@ -12,6 +12,25 @@ import java.util.concurrent.atomic.AtomicReference
 class WindowsBluetoothSocketTest {
     private val device = WindowsPairedDevice(0x001122334455, "local printer")
 
+    @Test fun `successful connected event is private and belongs only to that connection`() {
+        val first = mutableListOf<String>()
+        val second = mutableListOf<String>()
+        val native = FakeSocket()
+        WindowsBluetoothAdapter(native, diagnostics = WindowsBluetoothDiagnostics(first::add)).connect(device, 500).close()
+        WindowsBluetoothAdapter(native, diagnostics = WindowsBluetoothDiagnostics(second::add)).connect(device, 500).close()
+        assertEquals(listOf("WINDOWS_BLUETOOTH_CONNECTED reason=OK native_error=0 count=0"), first)
+        assertEquals(first, second)
+        assertFalse(first.joinToString().contains(device.name))
+        assertFalse(first.joinToString().contains(device.address.toString()))
+    }
+
+    @Test fun `throwing connected report cannot change socket success or cleanup`() {
+        val native = FakeSocket()
+        WindowsBluetoothAdapter(native, diagnostics = WindowsBluetoothDiagnostics { throw UnsatisfiedLinkError("secret handle") })
+            .connect(device, 500).close()
+        assertEquals(1, native.closeCount)
+    }
+
     @Test fun `writes every byte exactly once after partial writes and backpressure`() {
         val native = FakeSocket()
         native.sends.addAll(listOf(2, -1, 1, 2))

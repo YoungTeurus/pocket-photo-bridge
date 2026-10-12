@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'The portable EXE smoke test requires Windows.' }
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-if (-not $ZipPath) { $ZipPath = Join-Path $repository 'bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.1-windows-x64.zip' }
+if (-not $ZipPath) { $ZipPath = Join-Path $repository 'bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.2-windows-x64.zip' }
 $ZipPath = [IO.Path]::GetFullPath($ZipPath)
 $work = Join-Path $repository 'bridge/build/portable/Windows smoke extraction with spaces'
 $reports = Join-Path $repository 'bridge/build/reports/smoke/windows'

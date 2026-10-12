@@ -6,6 +6,31 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WindowsBluetoothNativeTest {
+    @Test fun `fd set matches the x64 Win32 header and keeps full socket values`() {
+        WindowsBluetoothAbi.fdSet(0x1234567800000042).use { set ->
+            assertEquals(520L, set.size())
+            assertEquals(1, set.getInt(0))
+            assertEquals(0, set.getInt(4))
+            assertEquals(0x1234567800000042L, set.getLong(8))
+            assertArrayEquals(ByteArray(504), set.getByteArray(16, 504))
+        }
+    }
+
+    @Test fun `select timeout uses two Windows 32 bit longs`() {
+        WindowsBluetoothAbi.timeval(2333).use { timeout ->
+            assertEquals(8L, timeout.size())
+            assertEquals(2, timeout.getInt(0))
+            assertEquals(333000, timeout.getInt(4))
+        }
+    }
+
+    @Test fun `self test binds only loopback with an ephemeral port`() {
+        WindowsBluetoothAbi.loopbackAddress().use { address ->
+            assertEquals(16L, address.size())
+            assertArrayEquals(byteArrayOf(2, 0, 0, 0, 127, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0), address.getByteArray(0, 16))
+        }
+    }
+
     @Test fun `SPP socket address is packed and delegates channel discovery to SDP`() {
         WindowsBluetoothAbi.socketAddress(0x001122334455).use { address ->
             assertEquals(30L, address.size())
@@ -43,19 +68,6 @@ class WindowsBluetoothNativeTest {
             assertNotNull(WindowsBluetoothAbi.pairedDevice(info))
             info.setLong(8, -1)
             assertNull(WindowsBluetoothAbi.pairedDevice(info))
-        }
-    }
-
-    @Test fun `poll layout keeps a 64 bit socket and Windows event flags`() {
-        WindowsBluetoothAbi.pollFd(0x1234567800000042, WindowsPoll.READ).use { fd ->
-            assertEquals(16L, fd.size())
-            assertEquals(0x1234567800000042, fd.getLong(0))
-            assertEquals(0x0100.toShort(), fd.getShort(8))
-            assertEquals(0.toShort(), fd.getShort(10))
-            assertEquals(0x0010, WindowsPoll.WRITE)
-            assertEquals(1, WindowsPoll.ERROR)
-            assertEquals(2, WindowsPoll.HANGUP)
-            assertEquals(4, WindowsPoll.INVALID)
         }
     }
 

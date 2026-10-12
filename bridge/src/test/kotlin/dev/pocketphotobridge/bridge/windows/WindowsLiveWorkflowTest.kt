@@ -87,6 +87,24 @@ class WindowsLiveWorkflowTest {
         val text=Files.readString(s.resolve("diagnostics.txt"))
         assertTrue(text.contains("BRIDGE_UNKNOWN_OUTCOME")); assertFalse(text.contains("native-secret"))
     }
+    @Test fun exportsNativeConnectionStageAndErrorNumberWithoutPersonalText() {
+        val devices=object:LiveDeviceAccess {
+            override fun camera(ui:LiveUi):CameraWifiConnector = throw AssertionError("status must not touch camera")
+            override fun printer(ui:LiveUi):PrinterConnector = PrinterConnector { throw dev.pocketphotobridge.printer.PrinterFailure(dev.pocketphotobridge.printer.PrinterFailureCode.DISCONNECTED) }
+            override fun printer(ui:LiveUi,report:(String)->Unit):PrinterConnector = PrinterConnector {
+                report("WINDOWS_BLUETOOTH_SOCKET_CREATE reason=OK native_error=0 count=0")
+                report("WINDOWS_BLUETOOTH_CONNECT_START reason=FAILED native_error=10051 count=0")
+                throw dev.pocketphotobridge.printer.PrinterFailure(dev.pocketphotobridge.printer.PrinterFailureCode.DISCONNECTED)
+            }
+            override fun nativeCheck(report:(String)->Unit) {}
+        }
+        val s=state()
+        assertEquals(2,WindowsLiveWorkflow(devices,Ui()).run(LiveAction.STATUS,s))
+        val text=Files.readString(s.resolve("diagnostics.txt"))
+        assertTrue(text.contains("WINDOWS_BLUETOOTH_SOCKET_CREATE reason=OK"))
+        assertTrue(text.contains("reason=FAILED native_error=10051 count=0"))
+        assertFalse(text.contains(s.toString()))
+    }
     @Test fun exportedReportsNeverContainInteractiveSecretsPathsOrInjectedMessages() {
         val d=object:LiveDeviceAccess {
             override fun camera(ui:LiveUi):CameraWifiConnector = throw IllegalStateException("secret-name /private/path")

@@ -49,12 +49,13 @@ object WindowsLive {
             val selected=select(ui,choices,"Choose the Wi-Fi interface connected to the Sony camera:")
             return CameraWifiConnector { WindowsCameraNetworking.connect(selected) }
         }
-        override fun printer(ui:LiveUi):PrinterConnector {
+        override fun printer(ui:LiveUi):PrinterConnector = printer(ui, {})
+        override fun printer(ui:LiveUi,report:(String)->Unit):PrinterConnector {
             val choices=WindowsBluetooth.pairedDevices()
             if (choices.isEmpty()) { ui.line("No paired printer found. Pair Xiaomi in Windows Bluetooth Settings first; close Xiaomi Home."); throw BridgeFailure(BridgeFailureCode.PRINTER_OFFLINE) }
             choices.forEachIndexed { i,choice -> ui.line("${i+1}: ${localName(choice.name)}") }
             val selected=select(ui,choices,"Choose your Xiaomi photo printer:")
-            return PrinterConnector { WindowsBluetooth.connect(selected) }
+            return PrinterConnector { WindowsBluetooth.connect(selected, report=report) }
         }
         override fun nativeCheck(report:(String)->Unit) {
             WindowsBluetooth.nativeSelfTest()

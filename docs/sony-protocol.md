@@ -61,6 +61,10 @@ The camera firmware/tablet model, an older-than-newest selected-image comparison
 
 With the working 0.2.2 setup, the user confirmed: **"Full flow is complete! I downloaded the photo from the camera and printed it just right from the app!"** This provides a successful Sony receive → direct in-app Xiaomi print regression on the tested setup. See [the printer hardware results](xiaomi-protocol.md#sony-photo-to-physical-print-2026-10-12). No additional byte count/hash or Gallery save after printing was reported; the original 0.1.1 Gallery result remains the recorded save evidence.
 
+## Windows receive result, 0.4.1
+
+The user's Windows PC received the camera-selected JPEG successfully: `SONY_SELECTION count=1`, `SONY_JPEG_BYTES count=11215541`, `SONY_TRANSFER_END`, `LIVE_PHOTO_SAVED`, and `LIVE_CAMERA_RECEIVED`. The user also inspected the prepared preview. This confirms the Windows source-bound HTTP adapter and existing Sony session on that PC/RX100 VII setup. The large FIT bars in its landscape preview are addressed by desktop paper rotation in 0.4.2, independently of the received bytes. No SD-card hash comparison was supplied, and no personal image or network identity is included in repository fixtures. Linux/Orange Pi radio integration remains untested.
+
 ## Remaining hardware questions
 
 - Does the successful service/selection flow repeat after camera/tablet restarts and on other firmware/tablets? Record firmware and tablet model when available.

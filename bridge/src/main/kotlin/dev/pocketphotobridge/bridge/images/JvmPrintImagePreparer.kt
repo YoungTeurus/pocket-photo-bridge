@@ -31,10 +31,11 @@ import javax.imageio.stream.MemoryCacheImageOutputStream
  * Portable JPEG preparation for Sony transfers; other source formats are deliberately rejected.
  * Source limits: 64 MiB, 1 MiB of JPEG headers, 32768 pixels/axis and 268,435,456 pixels.
  * Header dimensions are checked before decoding, whose raster is at most 2048 pixels/axis.
- * EXIF IFD0 orientation is applied before centered FIT/CROP; the source is never written.
+ * EXIF IFD0 orientation and a clockwise landscape-to-paper turn precede centered FIT/CROP.
+ * The source is never written.
  * Requires the standard JDK java.desktop module, with no platform-specific image library.
  */
-class JvmPrintImagePreparer : PrintImagePreparer {
+class JvmPrintImagePreparer(private val rotateLandscapeToPaper: Boolean = true) : PrintImagePreparer {
     override fun validateSource(source: File) = safely { decode(source).image.flush() }
 
     override fun prepare(source: File, crop: Boolean): ByteArray = safely {
@@ -151,11 +152,16 @@ class JvmPrintImagePreparer : PrintImagePreparer {
         checkActive()
         val header = decoded.header
         val swapped = header.orientation >= 5
-        val placement = PrinterImageLayout.place(if (swapped) header.height else header.width,
-            if (swapped) header.width else header.height, crop)
+        val orientedWidth = if (swapped) header.height else header.width
+        val orientedHeight = if (swapped) header.width else header.height
+        val turnForPaper = rotateLandscapeToPaper && orientedWidth > orientedHeight
+        val placement = PrinterImageLayout.place(if (turnForPaper) orientedHeight else orientedWidth,
+            if (turnForPaper) orientedWidth else orientedHeight, crop)
         val image = decoded.image
         val width = image.width.toDouble()
         val height = image.height.toDouble()
+        val orientedRasterWidth = if (swapped) height else width
+        val orientedRasterHeight = if (swapped) width else height
         val orientation = when (header.orientation) {
             2 -> AffineTransform(-1.0, 0.0, 0.0, 1.0, width, 0.0)
             3 -> AffineTransform(-1.0, 0.0, 0.0, -1.0, width, height)
@@ -168,8 +174,9 @@ class JvmPrintImagePreparer : PrintImagePreparer {
         }
         val transform = AffineTransform().apply {
             translate(placement.left.toDouble(), placement.top.toDouble())
-            scale(placement.width / if (swapped) height else width,
-                placement.height / if (swapped) width else height)
+            scale(placement.width / if (turnForPaper) orientedRasterHeight else orientedRasterWidth,
+                placement.height / if (turnForPaper) orientedRasterWidth else orientedRasterHeight)
+            if (turnForPaper) concatenate(AffineTransform(0.0, 1.0, -1.0, 0.0, orientedRasterHeight, 0.0))
             concatenate(orientation)
         }
         val output = BufferedImage(PrinterImageLayout.WIDTH, PrinterImageLayout.HEIGHT, BufferedImage.TYPE_INT_RGB)

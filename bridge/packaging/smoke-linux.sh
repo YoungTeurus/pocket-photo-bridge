@@ -3,14 +3,14 @@
 set -euo pipefail
 
 repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-archive=${1:-"$repository/bridge/build/distributions/bridge-0.4.1.tar"}
+archive=${1:-"$repository/bridge/build/distributions/bridge-0.4.2.tar"}
 work="$repository/bridge/build/portable/Linux smoke extraction with spaces"
 reports="$repository/bridge/build/reports/smoke/linux"
 rm -rf -- "$work" "$reports"
 mkdir -p -- "$work" "$reports"
 tar -xf "$archive" -C "$work"
-launcher="$work/bridge-0.4.1/bin/bridge"
-for file in "$launcher" "$work/bridge-0.4.1/licenses/mizink-LICENSE.txt" "$work/bridge-0.4.1/licenses/PocketPhotoBridge-LICENSE.txt" "$work/bridge-0.4.1/linux-bridge.md"; do
+launcher="$work/bridge-0.4.2/bin/bridge"
+for file in "$launcher" "$work/bridge-0.4.2/licenses/mizink-LICENSE.txt" "$work/bridge-0.4.2/licenses/PocketPhotoBridge-LICENSE.txt" "$work/bridge-0.4.2/linux-bridge.md"; do
     [[ -f "$file" ]] || { printf '%s\n' 'The extracted JVM distribution is incomplete.' >&2; exit 1; }
 done
 [[ -x "$launcher" ]] || { printf '%s\n' 'The distribution launcher is not executable.' >&2; exit 1; }

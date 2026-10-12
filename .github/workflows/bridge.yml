@@ -41,20 +41,20 @@ jobs:
       - name: Test and build JVM distributions without Android SDK
         run: ./gradlew --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist :bridge:distZip :bridge:distTar
       - name: Smoke test the extracted JVM distribution on this architecture
-        run: bash bridge/packaging/smoke-linux.sh bridge/build/distributions/bridge-0.4.1.tar
+        run: bash bridge/packaging/smoke-linux.sh bridge/build/distributions/bridge-0.4.2.tar
       - name: Create JVM archive checksums
         if: matrix.label == 'x64'
         working-directory: bridge/build/distributions
-        run: sha256sum bridge-0.4.1.zip bridge-0.4.1.tar > bridge-0.4.1.sha256
+        run: sha256sum bridge-0.4.2.zip bridge-0.4.2.tar > bridge-0.4.2.sha256
       - name: Upload architecture-independent JVM distributions
         if: matrix.label == 'x64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: pocket-photo-bridge-jvm-0.4.1
+          name: pocket-photo-bridge-jvm-0.4.2
           path: |
-            bridge/build/distributions/bridge-0.4.1.zip
-            bridge/build/distributions/bridge-0.4.1.tar
-            bridge/build/distributions/bridge-0.4.1.sha256
+            bridge/build/distributions/bridge-0.4.2.zip
+            bridge/build/distributions/bridge-0.4.2.tar
+            bridge/build/distributions/bridge-0.4.2.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Upload Linux verification reports
@@ -98,10 +98,10 @@ jobs:
       - name: Upload portable Windows ZIP and checksum
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: pocket-photo-bridge-windows-x64-0.4.1
+          name: pocket-photo-bridge-windows-x64-0.4.2
           path: |
-            bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.1-windows-x64.zip
-            bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.1-windows-x64.zip.sha256
+            bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.2-windows-x64.zip
+            bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.2-windows-x64.zip.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Upload Windows verification reports

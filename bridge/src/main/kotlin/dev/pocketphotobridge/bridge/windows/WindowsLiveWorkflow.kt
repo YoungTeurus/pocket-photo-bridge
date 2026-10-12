@@ -19,6 +19,7 @@ interface LiveUi {
 interface LiveDeviceAccess {
     fun camera(ui: LiveUi): CameraWifiConnector
     fun printer(ui: LiveUi): PrinterConnector
+    fun printer(ui: LiveUi, report: (String) -> Unit): PrinterConnector = printer(ui)
     fun nativeCheck(report: (String) -> Unit)
 }
 enum class LiveAction { RECEIVE, STATUS, PRINT, NATIVE, ACKNOWLEDGE }
@@ -76,7 +77,7 @@ class WindowsLiveWorkflow(private val devices: LiveDeviceAccess, private val ui:
     }
 
     private fun status(report: LiveReport): Int {
-        val printer = devices.printer(ui)
+        val printer = devices.printer(ui, report::emit)
         val token = readToken()
         printer.connect().use { transport ->
             PrinterSession(transport, token, { report.emit(it.safeText()) }, now, pause).use { session ->
@@ -94,7 +95,7 @@ class WindowsLiveWorkflow(private val devices: LiveDeviceAccess, private val ui:
         FileBridgeJournal(policy).use { journal ->
             if (printing && journal.unresolved) { report.emit("BRIDGE_UNKNOWN_OUTCOME category=UNRESOLVED_JOB"); return 3 }
             val camera = devices.camera(ui)
-            val printer = if (printing) devices.printer(ui) else null
+            val printer = if (printing) devices.printer(ui, report::emit) else null
             val token = if (printing) readToken() else ""
             var retained = false
             val retainingImages = object : PrintImagePreparer {

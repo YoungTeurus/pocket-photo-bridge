@@ -12,8 +12,12 @@ class WindowsBluetoothFailure(val code: WindowsBluetoothFailureCode) : RuntimeEx
 
 object WindowsBluetooth {
     fun pairedDevices(): List<WindowsPairedDevice> = nativeCall { WindowsBluetoothLibraries.devices.pairedDevices() }
-    fun connect(device: WindowsPairedDevice, timeoutMillis: Int = 15_000): PrinterTransport =
-        nativeCall { WindowsBluetoothAdapter(WindowsBluetoothLibraries.winsock).connect(device, timeoutMillis) }
+    fun connect(device: WindowsPairedDevice, timeoutMillis: Int = 15_000, report: (String) -> Unit = {}): PrinterTransport =
+        nativeCall {
+            val diagnostics = WindowsBluetoothDiagnostics(report)
+            val backend = WindowsBluetoothLibraries.winsock.withDiagnostics(diagnostics)
+            WindowsBluetoothAdapter(backend, diagnostics = diagnostics).connect(device, timeoutMillis)
+        }
     fun nativeSelfTest(): Unit = nativeCall { WindowsBluetoothLibraries.winsock.nativeSelfTest() }
 
     private fun <T> nativeCall(block: () -> T): T {
@@ -27,5 +31,22 @@ object WindowsBluetooth {
         catch (failure: PrinterFailure) { throw failure }
         catch (_: Exception) { throw WindowsBluetoothFailure(WindowsBluetoothFailureCode.NATIVE_UNAVAILABLE) }
         catch (_: LinkageError) { throw WindowsBluetoothFailure(WindowsBluetoothFailureCode.NATIVE_UNAVAILABLE) }
+    }
+}
+
+internal enum class WindowsBluetoothDiagnosticStage {
+    WINSOCK_STARTUP, SOCKET_CREATE, SET_NONBLOCKING, CONNECT_START, CONNECT_PENDING,
+    SELECT, SO_ERROR, CONNECTED, SEND, RECEIVE, SHUTDOWN, CLOSE, SELF_TEST_BIND, SELF_TEST_LISTEN
+}
+internal enum class WindowsBluetoothDiagnosticReason { START, OK, PENDING, READY, TIMEOUT, FAILED, EOF }
+
+/** Only typed stages, reasons and numeric native metadata reach the per-connection sink. */
+internal class WindowsBluetoothDiagnostics(private val report: (String) -> Unit = {}) {
+    fun emit(stage: WindowsBluetoothDiagnosticStage, reason: WindowsBluetoothDiagnosticReason,
+        nativeError: Int = 0, count: Int = 0) {
+        val event = "WINDOWS_BLUETOOTH_${stage.name} reason=${reason.name}" +
+            " native_error=${nativeError.coerceAtLeast(0)} count=${count.coerceAtLeast(0)}"
+        // Diagnostic sinks cannot replace a native failure or prevent socket cleanup.
+        try { report(event) } catch (_: Throwable) { }
     }
 }
