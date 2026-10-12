@@ -1,6 +1,17 @@
 # Xiaomi printer test from an Android tablet
 
-Version **0.2.2** supports local image preparation and experimental direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. SPP connection and image preparation passed the tablet experiment; a physical print on this particular printer/firmware is **not yet verified**. [Protocol evidence](xiaomi-protocol.md) distinguishes the upstream tested models from this reported SKU.
+Version **0.2.2** supports local image preparation and direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. The first physical print passed on the user's **Android API 36** tablet on **2026-10-12**. [Protocol evidence](xiaomi-protocol.md) records that result separately from the upstream tested models and remaining compatibility limits.
+
+## Recorded result and remaining checks
+
+The user shared parsed encrypted status and matching job replies ending in `PRINTER_PRINT_FINISHED`, then confirmed, **"It worked! I got the print."** The locally entered token worked on this unit; its value was never supplied to the project. The source image type and detailed sheet quality were not reported. The repeated `PRINTER_PRINTING` entries are polling while awaiting the matching finished job, not separate print submissions.
+
+Keep using the working [0.2.2 APK from run #15](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38222694644/artifacts/11734967296) for the next checks; recording the result does not change application code or require reinstalling. Its static `PRINTER_HARDWARE_VALIDATION_PENDING` startup label predates this confirmation and is not a printer error.
+
+- Test the complete [Sony preview Print → Gallery handoff](#sony-photo-handoff-and-regression).
+- Inspect orientation, color, borders and cropping; use the generated chart if these have not been checked.
+- Confirm repeatability with another separately approved job.
+- Exercise hardware errors and controlled cancellation/unknown-job recovery. These remain unverified, as does compatibility with other firmware or units.
 
 ## Install and prepare
 
@@ -36,9 +47,9 @@ A successful encrypted diagnosis shows a known printer phase and, when available
 
 ## Diagnosing protocol differences
 
-The user's 0.2.0 trace reached `PRINTER_SPP_CONNECTED`, then `PRINTER_PROTOCOL_ERROR` after entering a 24-character field named `TOKEN`. This proves SPP attachment; the generic error does not show which reply differed. The secret was not supplied to the project. There is no evidence yet that the key itself is wrong or that encrypted status/printing succeeds.
+The user's earlier 0.2.0 trace reached `PRINTER_SPP_CONNECTED`, then `PRINTER_PROTOCOL_ERROR` after entering a 24-character field named `TOKEN`. That trace proved SPP attachment but did not show which reply differed or establish whether the key worked. The secret was not supplied to the project. The later 0.2.2 trace and physical sheet established successful encrypted replies and printing on this unit.
 
-The 0.2.1 retest located a version-1, interactive-6 frame that the old receiver rejected at `FRAME_VERSION`. Version 0.2.2 accepts that inbound header convention alongside the reference's version 100, and considers type-6/7 JSON replies while ignoring method-bearing notifications/requests. Checksum, encryption, reply correlation and schema checks remain enabled; transmitted version stays 100. The old rejection occurred before decryption, so no key acceptance or valid status is established yet.
+The 0.2.1 retest located a version-1, interactive-6 frame that the old receiver rejected at `FRAME_VERSION` before decryption. Version 0.2.2 accepts that inbound header convention alongside the reference's version 100, and considers type-6/7 JSON replies while ignoring method-bearing notifications/requests. Checksum, encryption, reply correlation and schema checks remain enabled; transmitted version stays 100. Use the following read-only procedure if diagnosis fails on another unit or a later test.
 
 1. Install 0.2.2, close other printer apps, open **Print test image** and select the paired printer. Keep the app visible.
 2. Enter the token locally again and tap **Connect / Diagnose** once. **Do not tap Print for this experiment.** Diagnosis sends only `mixed_status` and, if status parses, `get_prop ["device_info"]`; it sends no reset, job submission or JPEG upload.
@@ -66,7 +77,7 @@ Strict checks remain enabled. Unsupported values are not printed into diagnostic
 4. Success requires an explicit matching job-finished response. Check the physical sheet separately: one copy, TOP/BOTTOM orientation, complete border/circle, sensible colors and no visible truncation/corruption. An idle status, completed upload or quiet printer does not establish success.
 5. Record the app version, Android API, reported printer SKU, safe stages/error category, whether the printer produced a sheet, and the observed rendering. Do not include tokens, Bluetooth addresses/names or personal photos. If the first chart works, repeat with one manually confirmed local FIT/CROP image.
 
-Until this succeeds on real hardware, printer compatibility and physical image quality remain pending even when software tests pass.
+The first physical print has passed on the reported TEJ4007CN/API 36 combination. Continue these checks for image quality and repeatability; that first result does not establish every image path, fault behavior or firmware variant.
 
 ## Cancellation and an unknown outcome
 
