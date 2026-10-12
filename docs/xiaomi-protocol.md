@@ -2,6 +2,10 @@
 
 Investigated 2026-10-11. The user reports **TEJ4007CN**, an original Mi Portable Photo Printer with Micro-USB and sliding paper compartment. This is a user-reported SKU, not a successful firmware/protocol test. Pocket Photo Bridge's Xiaomi printing remains **hardware validation pending**.
 
+Hardware update, 2026-10-12: the user's 0.2.0/API 36 trace confirms `IMAGE_READY` and `SPP_CONNECTED`. After obtaining a 24-character field named `TOKEN`, diagnosis stops at generic `PROTOCOL_ERROR`. No secret was shared with the project. The log cannot distinguish a frame-validation problem from an unexpected matched status/device-info schema and does not prove key rejection or physical printing.
+
+Version 0.2.1 instruments those boundaries: fixed query/parse/correlation stages, receive byte counts, structural header fields without sequences or bodies, and enum-only rejection reasons. Diagnose now exports the session's reports. A proven UI bug that silently truncated longer pasted keys is also fixed; the reported 24-character length does not implicate that bug in this hardware failure. Accepted frame/schema rules, RC4 and job submission are unchanged. Follow the [read-only tablet retest](printer-tablet-testing.md#investigating-the-020-protocol-error-with-021) to identify the actual reply difference before changing protocol acceptance.
+
 ## Protocol evidence and licensing
 
 The starting reference is [fliptheweb/mi-portable-photo-printer](https://github.com/fliptheweb/mi-portable-photo-printer/tree/85335b639f3d818c3fe9a892e328864fc3d37250), pinned at 85335b639f3d818c3fe9a892e328864fc3d37250. Its authors report real-printer testing of `hannto.printer.basil`, retail XMKDDYJ01HM / firmware XMKDDYJHT02, on macOS. [Protocol notes](https://github.com/fliptheweb/mi-portable-photo-printer/blob/85335b639f3d818c3fe9a892e328864fc3d37250/docs/PROTOCOL.md) describe Classic RFCOMM SPP, frame layout, RC4, print methods and explicit job completion. This is community reverse engineering, not an official Xiaomi SDK.

@@ -5,7 +5,22 @@ enum class PrinterFailureCode {
     PROTOCOL_ERROR, LIMIT_EXCEEDED, INVALID_IMAGE, UNSUPPORTED_STATUS, BUSY, PRINTER_FAULT,
     JOB_REJECTED, UNRESOLVED_JOB, PERSISTENCE_ERROR
 }
-class PrinterFailure(val code: PrinterFailureCode) : RuntimeException(code.name)
+enum class PrinterFailureReason {
+    STREAM_HEADER, FRAME_SHORT, FRAME_DELIMITER, FRAME_VERSION, FRAME_RESERVED, FRAME_LENGTH,
+    FRAME_ATTRIBUTES, FRAME_CHECKSUM, FRAME_CHANNEL, FRAME_INTERACTIVE, FRAME_ENCODING,
+    FRAME_ENCRYPTION, FRAME_PACKAGE, FRAME_MULTIPART,
+    RPC_RESULT_MISSING, REPLY_PROFILE, REPLY_JSON,
+    STATUS_RESULT_TYPE, STATUS_CATEGORY_MISSING, STATUS_CATEGORY_TYPE, STATUS_CATEGORY_UNKNOWN,
+    STATUS_PHASE_MISSING, STATUS_PHASE_TYPE, STATUS_PHASE_UNKNOWN, DEVICE_INFO_RESULT_TYPE, RESPONSE_SHAPE
+}
+class PrinterFailure(val code: PrinterFailureCode, val reason: PrinterFailureReason? = null) : RuntimeException(code.name)
+/** Structural fields only. Sequence numbers, body bytes, identities and keys are excluded. */
+data class PrinterFrameMetadata(val version: Int, val reserved: Int, val channel: Int,
+    val interactive: Int, val encoding: Int, val encryption: Int,
+    val total: Int, val part: Int, val bodyBytes: Int, val attributes: Int) {
+    fun safeText() = "version=$version reserved=$reserved channel=$channel interactive=$interactive" +
+        " encoding=$encoding encryption=$encryption parts=$total part=$part bytes=$bodyBytes attributes=$attributes"
+}
 interface PrinterTransport : java.io.Closeable {
     fun write(bytes: ByteArray)
     fun read(timeoutMs: Long): ByteArray
@@ -36,35 +51,51 @@ object PrinterProtocol {
         return packet
     }
 
-    fun decode(packet: ByteArray): PrinterFrame {
-        if (packet.size < 22 || packet[0] != 0x7e.toByte() || packet[1] != 0x64.toByte() ||
-            packet[2] != 0.toByte() || packet.last() != 0x7e.toByte()) invalid()
+    fun decode(packet: ByteArray, observe: (PrinterFrameMetadata) -> Unit = {}): PrinterFrame {
+        if (packet.size < 22) invalid(PrinterFailureReason.FRAME_SHORT)
+        if (packet[0] != 0x7e.toByte()) invalid(PrinterFailureReason.FRAME_DELIMITER)
+        observe(metadata(packet))
+        if (packet[1] != 0x64.toByte()) invalid(PrinterFailureReason.FRAME_VERSION)
+        if (packet[2] != 0.toByte()) invalid(PrinterFailureReason.FRAME_RESERVED)
+        if (packet.last() != 0x7e.toByte()) invalid(PrinterFailureReason.FRAME_DELIMITER)
         val attr = get(packet, 18, 2).toInt()
         val size = attr and 0x3ff
-        if (packet.size != size + 22 || attr and 0xc000 != 0 ||
-            (packet[packet.lastIndex - 1].toInt() and 255) != checksum(packet, packet.size - 2)) invalid()
+        if (packet.size != size + 22) invalid(PrinterFailureReason.FRAME_LENGTH)
+        if (attr and 0xc000 != 0) invalid(PrinterFailureReason.FRAME_ATTRIBUTES)
+        if ((packet[packet.lastIndex - 1].toInt() and 255) != checksum(packet, packet.size - 2))
+            invalid(PrinterFailureReason.FRAME_CHECKSUM)
         val frame = PrinterFrame(packet[3].toInt() and 255, get(packet, 10, 4), packet.copyOfRange(20, 20 + size),
             (attr shr 10) and 7, packet[5].toInt() and 255, packet[4].toInt() and 255,
             get(packet, 14, 2).toInt(), get(packet, 16, 2).toInt())
         validate(frame)
-        if ((attr and 0x2000 != 0) != (frame.total > 1)) invalid()
+        if ((attr and 0x2000 != 0) != (frame.total > 1)) invalid(PrinterFailureReason.FRAME_MULTIPART)
         return frame
     }
 
     private fun validate(frame: PrinterFrame) {
-        if (frame.channel !in listOf(1, 2, 255) || frame.interactive !in listOf(6, 7) ||
-            frame.encoding !in 1..3 || frame.encryption !in listOf(0, 4) || frame.sequence !in 0..0xffffffffL ||
-            frame.total !in 1..65535 || frame.part !in 1..frame.total) invalid()
+        if (frame.channel !in listOf(1, 2, 255)) invalid(PrinterFailureReason.FRAME_CHANNEL)
+        if (frame.interactive !in listOf(6, 7)) invalid(PrinterFailureReason.FRAME_INTERACTIVE)
+        if (frame.encoding !in 1..3) invalid(PrinterFailureReason.FRAME_ENCODING)
+        if (frame.encryption !in listOf(0, 4)) invalid(PrinterFailureReason.FRAME_ENCRYPTION)
+        if (frame.sequence !in 0..0xffffffffL) invalid(PrinterFailureReason.RESPONSE_SHAPE)
+        if (frame.total !in 1..65535 || frame.part !in 1..frame.total) invalid(PrinterFailureReason.FRAME_PACKAGE)
+    }
+    internal fun metadata(bytes: ByteArray, offset: Int = 0): PrinterFrameMetadata {
+        val attr = get(bytes, offset + 18, 2).toInt()
+        return PrinterFrameMetadata(bytes[offset + 1].toInt() and 255, bytes[offset + 2].toInt() and 255,
+            bytes[offset + 3].toInt() and 255, bytes[offset + 4].toInt() and 255, bytes[offset + 5].toInt() and 255,
+            (attr shr 10) and 7, get(bytes, offset + 14, 2).toInt(), get(bytes, offset + 16, 2).toInt(),
+            attr and 0x3ff, attr)
     }
     private fun checksum(bytes: ByteArray, end: Int) = ((0 until end).sumOf { bytes[it].toInt() and 255 } - 126) and 255
-    private fun invalid(): Nothing = throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR)
+    private fun invalid(reason: PrinterFailureReason): Nothing = throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR, reason)
     internal fun put(bytes: ByteArray, start: Int, value: Long, length: Int) {
         repeat(length) { bytes[start + it] = (value ushr (8 * it)).toByte() }
     }
     internal fun get(bytes: ByteArray, start: Int, length: Int): Long = (0 until length)
         .fold(0L) { value, i -> value or ((bytes[start + i].toLong() and 255) shl (8 * i)) }
 }
-class PrinterFrameReader {
+class PrinterFrameReader(private val observe: (PrinterFrameMetadata) -> Unit = {}) {
     private var pending = ByteArray(0)
     fun accept(bytes: ByteArray): List<PrinterFrame> {
         if (pending.size + bytes.size > 8192) throw PrinterFailure(PrinterFailureCode.LIMIT_EXCEEDED)
@@ -72,11 +103,15 @@ class PrinterFrameReader {
         val frames = mutableListOf<PrinterFrame>()
         var offset = 0
         while (pending.size - offset >= 22) {
-            if (pending[offset] != 0x7e.toByte() || pending[offset + 1] != 0x64.toByte())
-                throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR)
+            if (pending[offset] != 0x7e.toByte())
+                throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR, PrinterFailureReason.STREAM_HEADER)
+            if (pending[offset + 1] != 0x64.toByte()) {
+                observe(PrinterProtocol.metadata(pending, offset))
+                throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR, PrinterFailureReason.FRAME_VERSION)
+            }
             val size = (PrinterProtocol.get(pending, offset + 18, 2).toInt() and 0x3ff) + 22
             if (pending.size - offset < size) break
-            frames += PrinterProtocol.decode(pending.copyOfRange(offset, offset + size))
+            frames += PrinterProtocol.decode(pending.copyOfRange(offset, offset + size), observe)
             offset += size
         }
         pending = pending.copyOfRange(offset, pending.size)

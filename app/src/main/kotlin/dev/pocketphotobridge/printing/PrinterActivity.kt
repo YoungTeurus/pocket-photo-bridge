@@ -13,7 +13,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputFilter
 import android.text.InputType
 import android.view.View
 import android.view.WindowInsets
@@ -109,7 +108,7 @@ class PrinterActivity : Activity() {
         tokenInput = EditText(this).apply {
             hint = "24 hex characters · kept only during this operation"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            filters = arrayOf(InputFilter.LengthFilter(24))
+            // Validate the whole value; a length filter can manufacture a valid-looking prefix.
             isSaveEnabled = false
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             imeOptions = EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
@@ -203,7 +202,10 @@ class PrinterActivity : Activity() {
         } catch (_: SecurityException) { log("PRINTER_PERMISSION_REQUIRED"); status.text = "Allow Nearby devices in Android app settings." }
     }
 
-    private fun captureToken(): String = tokenInput.text.toString().trim().also { tokenInput.text.clear() }
+    private fun captureToken(): String = tokenInput.text.toString().trim().also {
+        tokenInput.text.clear()
+        log("PRINTER_KEY_LENGTH count=${it.length}")
+    }
 
     private fun diagnose() {
         val selected = device ?: run { status.text = "Select a paired printer first."; return }
@@ -213,10 +215,9 @@ class PrinterActivity : Activity() {
             withConnection(selected, ticket) { connection ->
                 deliver(ticket) { log("PRINTER_SPP_CONNECTED") }
                 if (token.isEmpty()) throw PrinterFailure(PrinterFailureCode.KEY_REQUIRED)
-                PrinterSession(connection, token).use { session ->
+                PrinterSession(connection, token, report = { event -> deliver(ticket) { log(event.safeText()) } }).use { session ->
                     val state = session.diagnose()
                     deliver(ticket) {
-                        log("PRINTER_STATUS_READY")
                         status.text = "Printer status: ${state.phase}" + (state.battery?.let { " · battery $it%" } ?: "")
                     }
                 }
@@ -330,7 +331,9 @@ class PrinterActivity : Activity() {
                     log("PRINTER_${code.name}")
                     status.text = when (code) {
                         PrinterFailureCode.KEY_REQUIRED -> keyRequiredMessage()
-                        PrinterFailureCode.INVALID_KEY, PrinterFailureCode.KEY_OR_PROFILE_REJECTED -> "Token or printer profile rejected. Check your own token and printer model."
+                        PrinterFailureCode.INVALID_KEY -> "Expected exactly 24 hexadecimal characters. The input is not shortened into a token; check the field and format."
+                        PrinterFailureCode.KEY_OR_PROFILE_REJECTED -> "Token or printer profile rejected. Check your own token and printer model."
+                        PrinterFailureCode.PROTOCOL_ERROR, PrinterFailureCode.UNSUPPORTED_STATUS -> "Printer reply differs from the supported protocol. Share safe diagnostics; the rejection reason identifies the failed step."
                         PrinterFailureCode.PRINTER_FAULT -> "Printer reported a fault. Check paper, cover and battery; exact fault codes await hardware testing."
                         PrinterFailureCode.BUSY -> "Printer is busy. No automatic retry; check it before another attempt."
                         PrinterFailureCode.INVALID_IMAGE -> "Image unavailable or unsupported. Choose a local JPEG/PNG/WebP and prepare again."

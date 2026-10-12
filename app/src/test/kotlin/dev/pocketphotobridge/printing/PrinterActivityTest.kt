@@ -26,6 +26,25 @@ import java.util.concurrent.TimeUnit
 @Config(sdk = [29])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PrinterActivityTest {
+    @Test fun longerTokenInputIsRejectedWholeRatherThanSilentlyTruncated() {
+        val screen = Robolectric.buildActivity(PrinterActivity::class.java).setup()
+        try {
+            val activity = screen.get()
+            finishWork(activity)
+            val input = field(activity, "tokenInput") as EditText
+            for (synthetic in listOf("0".repeat(32), "0".repeat(24) + " ".repeat(232) + "invalid suffix")) {
+                input.setText(synthetic)
+                val captured = PrinterActivity::class.java.getDeclaredMethod("captureToken").apply { isAccessible = true }.invoke(activity) as String
+                assertEquals("Pasting a different key format must not produce a plausible 24-character token", synthetic, captured)
+                assertEquals(dev.pocketphotobridge.printer.PrinterFailureCode.INVALID_KEY,
+                    assertThrows(dev.pocketphotobridge.printer.PrinterFailure::class.java) {
+                        dev.pocketphotobridge.printer.PrinterCipher(captured)
+                    }.code)
+                assertEquals("", input.text.toString())
+            }
+        } finally { screen.pause().stop().destroy() }
+    }
+
     @Test fun pickerResultAfterRecreationWaitsForInitialPreparationInsteadOfBeingDropped() {
         val screen = Robolectric.buildActivity(PrinterActivity::class.java).setup()
         val context = RuntimeEnvironment.getApplication()

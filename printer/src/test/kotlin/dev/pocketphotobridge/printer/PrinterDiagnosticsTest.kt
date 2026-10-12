@@ -1,0 +1,91 @@
+package dev.pocketphotobridge.printer
+
+import com.google.gson.JsonParser
+import org.junit.Assert.*
+import org.junit.Test
+
+class PrinterDiagnosticsTest {
+    private val token = "000102030405060708090a0b" // Synthetic fixture, never a printer credential.
+    private class Transport(private val reply: (String, Long) -> ByteArray) : PrinterTransport {
+        val methods = mutableListOf<String>()
+        private val incoming = ArrayDeque<ByteArray>()
+        private val cipher = PrinterCipher("000102030405060708090a0b")
+        override fun write(bytes: ByteArray) {
+            val frame = PrinterProtocol.decode(bytes)
+            val request = JsonParser.parseString(cipher.crypt(frame.body).toString(Charsets.UTF_8)).asJsonObject
+            val method = request["method"].asString
+            methods += method
+            incoming += reply(method, request["id"].asLong)
+        }
+        override fun read(timeoutMs: Long) = incoming.removeFirst()
+        override fun close() { cipher.close() }
+    }
+    private fun packet(id: Long, result: String): ByteArray = PrinterCipher(token).use { cipher ->
+        PrinterProtocol.encode(PrinterFrame(1, id, cipher.crypt("{\"id\":$id,\"result\":$result}".toByteArray()), interactive = 7))
+    }
+    private fun trace(transport: Transport, expected: PrinterFailureCode = PrinterFailureCode.PROTOCOL_ERROR): List<String> {
+        val events = mutableListOf<PrinterDiagnostic>()
+        PrinterSession(transport, token, events::add).use { session ->
+            assertEquals(expected, assertThrows(PrinterFailure::class.java) { session.diagnose() }.code)
+        }
+        return events.map { it.safeText() }
+    }
+    @Test fun distinguishesMissingStatusCategoryWithoutExportingReplyContents() {
+        val transport = Transport { _, id -> packet(id, "{\"sub_category\":\"init\",\"sn\":\"private-serial\"}") }
+        val lines = trace(transport)
+        assertEquals("PRINTER_QUERY_STATUS", lines.first())
+        assertTrue(lines.contains("PRINTER_REJECTED reason=STATUS_CATEGORY_MISSING"))
+        assertFalse(lines.joinToString().contains("private-serial"))
+        assertEquals(listOf("mixed_status"), transport.methods)
+    }
+    @Test fun distinguishesNumericStatusPhaseWithoutGuessingItsMeaning() {
+        val transport = Transport { _, id -> packet(id, "{\"category\":\"idle\",\"sub_category\":0}") }
+        val lines = trace(transport)
+        assertTrue(lines.contains("PRINTER_REJECTED reason=STATUS_PHASE_TYPE"))
+        assertEquals(listOf("mixed_status"), transport.methods)
+    }
+    @Test fun identifiesSecondRequestFailureAfterStatusParsedSuccessfully() {
+        val transport = Transport { method, id ->
+            if (method == "mixed_status") packet(id, "{\"category\":\"idle\",\"sub_category\":\"init\"}")
+            else PrinterCipher(token).use { cipher -> PrinterProtocol.encode(PrinterFrame(1, id,
+                cipher.crypt("{\"id\":$id,\"mac\":\"private-device-id\"}".toByteArray()), interactive = 7)) }
+        }
+        val lines = trace(transport)
+        assertTrue(lines.contains("PRINTER_STATUS_PARSED"))
+        assertTrue(lines.contains("PRINTER_QUERY_DEVICE_INFO"))
+        assertTrue(lines.contains("PRINTER_REJECTED reason=RPC_RESULT_MISSING"))
+        assertFalse(lines.joinToString().contains("private-device-id"))
+        assertEquals(listOf("mixed_status", "get_prop"), transport.methods)
+    }
+    @Test fun checksumFailureReportsFrameStructureBeforeDecryption() {
+        val transport = Transport { _, id -> packet(id, "{}").apply { this[lastIndex - 1] = (this[lastIndex - 1].toInt() xor 1).toByte() } }
+        val lines = trace(transport)
+        assertTrue(lines.any { it.startsWith("PRINTER_RX_BYTES count=") })
+        assertTrue(lines.any { it.startsWith("PRINTER_RX_FRAME version=100 reserved=0 channel=1 interactive=7 encoding=3 encryption=4") })
+        assertTrue(lines.contains("PRINTER_REJECTED reason=FRAME_CHECKSUM"))
+        assertFalse(lines.any { it.startsWith("PRINTER_REPLY_MATCHED") })
+    }
+    @Test fun unsupportedCipherIsReportedWithoutTryingAnotherProfile() {
+        val transport = Transport { _, id -> packet(id, "{}").apply {
+            this[19] = ((this[19].toInt() and 255 and 0xe3) or (5 shl 2)).toByte()
+            this[lastIndex - 1] = (((0 until size - 2).sumOf { this[it].toInt() and 255 } - 126) and 255).toByte()
+        } }
+        val lines = trace(transport)
+        assertTrue(lines.any { it.contains("encryption=5") })
+        assertTrue(lines.contains("PRINTER_REJECTED reason=FRAME_ENCRYPTION"))
+        assertEquals(listOf("mixed_status"), transport.methods)
+    }
+    @Test fun unknownStatusValuesAndIdentifiersStayOutOfDiagnostics() {
+        val transport = Transport { _, id -> packet(id, "{\"category\":\"secret-or-unknown-state\",\"sub_category\":\"init\"}") }
+        val lines = trace(transport, PrinterFailureCode.UNSUPPORTED_STATUS)
+        assertTrue(lines.contains("PRINTER_REJECTED reason=STATUS_CATEGORY_UNKNOWN"))
+        assertFalse(lines.joinToString().contains("secret-or-unknown-state"))
+        assertFalse(lines.any { it.contains("sequence=") || it.contains(token) })
+    }
+    @Test fun prefixFailureIsSpecificAndDoesNotDumpTheStream() {
+        val transport = Transport { _, _ -> "private-unframed-greeting".toByteArray() }
+        val lines = trace(transport)
+        assertTrue(lines.contains("PRINTER_REJECTED reason=STREAM_HEADER"))
+        assertFalse(lines.joinToString().contains("private-unframed-greeting"))
+    }
+}

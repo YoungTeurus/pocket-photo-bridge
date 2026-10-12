@@ -1,6 +1,6 @@
 # Xiaomi printer test from an Android tablet
 
-Version **0.2.0** supports local image preparation and experimental direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. A physical print on this particular printer/firmware is **not yet verified**. [Protocol evidence](xiaomi-protocol.md) distinguishes the upstream tested models from this reported SKU.
+Version **0.2.1** supports local image preparation and experimental direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. SPP connection and image preparation passed the tablet experiment; a physical print on this particular printer/firmware is **not yet verified**. [Protocol evidence](xiaomi-protocol.md) distinguishes the upstream tested models from this reported SKU.
 
 ## Install and prepare
 
@@ -33,6 +33,26 @@ Encrypted status and printing require an existing, legitimate **device-specific 
 If you already own the token, enter it only in the printer screen, then tap **Connect / Diagnose**. The input clears when used: enter it again for a later print or diagnose operation. Leaving the foreground also clears it. It is not persisted, backed up, logged or included in reports; the printer screen blocks screenshots. Never paste it into chat, GitHub or a test report.
 
 A successful encrypted diagnosis shows a known printer phase and, when available, battery level. `INVALID_KEY` or `KEY_OR_PROFILE_REJECTED` means the token/profile check failed; SPP success alone cannot distinguish a wrong token from incompatible firmware. Exact paper, cover and battery fault mappings for TEJ4007CN remain unverified; physically inspect the printer when a fault is reported.
+
+## Investigating the 0.2.0 protocol error with 0.2.1
+
+The user's 0.2.0 trace reached `PRINTER_SPP_CONNECTED`, then `PRINTER_PROTOCOL_ERROR` after entering a 24-character field named `TOKEN`. This proves SPP attachment; the generic error does not show which reply differed. The secret was not supplied to the project. There is no evidence yet that the key itself is wrong or that encrypted status/printing succeeds.
+
+1. Install 0.2.1, close other printer apps, open **Print test image** and select the paired printer. Keep the app visible.
+2. Enter the token locally again and tap **Connect / Diagnose** once. **Do not tap Print for this experiment.** Diagnosis sends only `mixed_status` and, if status parses, `get_prop ["device_info"]`; it sends no reset, job submission or JPEG upload.
+3. Use **Share safe printer diagnostics** and provide the full exported text. It includes token length only, query stages, RX byte counts, frame version/reserved/channel/interactive/encoding/encryption/package/body-length/attribute fields, and a fixed rejection reason. It excludes the token, sequence IDs, decrypted/encrypted payloads, raw JSON, Bluetooth identifiers and device information. Do not add the token or a screenshot of it.
+
+`PRINTER_QUERY_STATUS` locates the first request; `PRINTER_STATUS_PARSED` followed by `PRINTER_QUERY_DEVICE_INFO` locates the second. Relevant rejection reasons:
+
+| Reason | What it establishes |
+| --- | --- |
+| `STREAM_HEADER`, `FRAME_*` | Input differs from the supported frame layout/checksum; metadata helps identify the structural difference. |
+| `REPLY_PROFILE` | A frame is present but uses an unsupported reply cipher/encoding/multipart profile. |
+| `REPLY_JSON` | The decrypted body is not a JSON object; wrong key or incompatible profile remains possible. |
+| `RPC_RESULT_MISSING` | A correlated JSON reply lacks the expected result field. |
+| `STATUS_*`, `DEVICE_INFO_RESULT_TYPE` | The correlated reply's schema or status values differ from the supported profile. |
+
+Strict checks remain enabled. Unsupported values are not printed into diagnostics or guessed into known states. A token with another length/format is rejected without using a shortened prefix; do not trim or pad it to force acceptance. Once diagnosis succeeds, proceed to the separately confirmed physical experiment below.
 
 ## One-copy physical experiment
 

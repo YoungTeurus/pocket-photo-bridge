@@ -1,6 +1,6 @@
 # Pocket Photo Bridge
 
-Transfer a camera-selected photo from a **Sony RX100 VII** to Android, preview and save it, then prepare an experimental direct Bluetooth print on an original **Xiaomi Mi Portable Photo Printer**. Version **0.2.0** adds printer diagnostics and token-conditional printing; a real Xiaomi print test is still pending.
+Transfer a camera-selected photo from a **Sony RX100 VII** to Android, preview and save it, then prepare an experimental direct Bluetooth print on an original **Xiaomi Mi Portable Photo Printer**. Version **0.2.1** adds detailed redacted printer diagnostics to the token-conditional printing flow; a real Xiaomi print test is still pending.
 
 ## Roadmap
 
@@ -41,6 +41,8 @@ The generated test chart and local JPEG/PNG/WebP inputs produce a **1040×1560 b
 There is no automatic retry. A persisted unresolved-job marker blocks new submissions after an uncertain result, including process death. Check the physical printer and any output before using **I checked the printer · clear unknown job**. **Cancel / Disconnect**, leaving the foreground or rotating closes the transport; a job already accepted may still print. Completion requires an explicit matching job-finished response and should be checked against the physical sheet.
 
 Follow [the Android-only printer test guide](docs/printer-tablet-testing.md). The implementation follows MIT-licensed community evidence pinned at [85335b6](https://github.com/fliptheweb/mi-portable-photo-printer/tree/85335b639f3d818c3fe9a892e328864fc3d37250); its license notice is included in the APK. Software verification does not establish TEJ4007CN printing support.
+
+The first tablet experiment on Android API 36 confirmed image preparation and an actual SPP connection. With a user-obtained 24-character `TOKEN`, version 0.2.0 stopped at generic `PROTOCOL_ERROR`; that trace does not locate the failing reply or establish a wrong token. Version 0.2.1 logs fixed request stages, structural frame metadata and specific rejection reasons while excluding tokens, frame sequences, reply bodies and identities. Token input is validated whole rather than silently shortened. Use **Connect / Diagnose** and share safe diagnostics before attempting a physical print.
 
 ## Install and test from an Android tablet
 

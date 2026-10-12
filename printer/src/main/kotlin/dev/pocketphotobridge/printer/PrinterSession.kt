@@ -8,9 +8,13 @@ import com.google.gson.JsonPrimitive
 import java.io.IOException
 
 data class PrinterStatus(val phase: String, val battery: Int?)
-enum class PrinterStage { STATUS_READY, PREFLIGHT, JOB_RESERVED, UPLOAD, JOB_CONFIRMED, PRINTING, PRINT_FINISHED, OUTCOME_UNKNOWN }
-data class PrinterDiagnostic(val stage: PrinterStage, val count: Long? = null) {
-    fun safeText() = "PRINTER_${stage.name}" + (count?.let { " count=$it" } ?: "")
+enum class PrinterStage { STATUS_READY, PREFLIGHT, JOB_RESERVED, UPLOAD, JOB_CONFIRMED, PRINTING, PRINT_FINISHED, OUTCOME_UNKNOWN,
+    QUERY_STATUS, STATUS_PARSED, QUERY_DEVICE_INFO, RESET_DATA, SUBMIT_JOB, CONFIRM_JOB, QUERY_JOB,
+    RX_BYTES, RX_FRAME, REPLY_MATCHED, REJECTED }
+data class PrinterDiagnostic(val stage: PrinterStage, val count: Long? = null,
+    val frame: PrinterFrameMetadata? = null, val reason: PrinterFailureReason? = null) {
+    fun safeText() = "PRINTER_${stage.name}" + (count?.let { " count=$it" } ?: "") +
+        (frame?.let { " ${it.safeText()}" } ?: "") + (reason?.let { " reason=${it.name}" } ?: "")
 }
 
 class PrinterSession(private val transport: PrinterTransport, token: String,
@@ -18,7 +22,7 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
     private val now: () -> Long = { System.nanoTime() / 1_000_000 },
     private val pause: (Long) -> Unit = { Thread.sleep(it) }) : AutoCloseable {
     private val cipher = PrinterCipher(token)
-    private val reader = PrinterFrameReader()
+    private val reader = PrinterFrameReader { report(PrinterDiagnostic(PrinterStage.RX_FRAME, frame = it)) }
     private val incoming = ArrayDeque<PrinterFrame>()
     private var sequence = 0L
     private var deadline = Long.MAX_VALUE
@@ -28,7 +32,7 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
         // Verify another documented read-only operation, without exporting identity fields.
         val info = result(rpc("get_prop", JsonArray().apply { add("device_info") }))
         if (!info.isJsonArray || info.asJsonArray.size() != 1 || !info.asJsonArray[0].isJsonObject)
-            throw PrinterFailure(PrinterFailureCode.UNSUPPORTED_STATUS)
+            reject(PrinterFailureCode.UNSUPPORTED_STATUS, PrinterFailureReason.DEVICE_INFO_RESULT_TYPE)
         report(PrinterDiagnostic(PrinterStage.STATUS_READY))
         return status
     }
@@ -109,21 +113,39 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
 
     private fun status(allowProcessing: Boolean = false): PrinterStatus {
         val status = result(rpc("mixed_status", JsonArray()))
-        if (!status.isJsonObject) throw PrinterFailure(PrinterFailureCode.UNSUPPORTED_STATUS)
+        if (!status.isJsonObject) reject(PrinterFailureCode.UNSUPPORTED_STATUS, PrinterFailureReason.STATUS_RESULT_TYPE)
         val value = status.asJsonObject
         val error = value["error"]
         if (hasFault(error)) throw PrinterFailure(PrinterFailureCode.PRINTER_FAULT)
-        val category = text(value["category"])
+        val category = statusText(value["category"], PrinterFailureReason.STATUS_CATEGORY_MISSING, PrinterFailureReason.STATUS_CATEGORY_TYPE)
         if (category == "processing" && !allowProcessing) throw PrinterFailure(PrinterFailureCode.BUSY)
-        if (category !in setOf("idle", "processing")) throw PrinterFailure(PrinterFailureCode.UNSUPPORTED_STATUS)
-        val phase = text(value["sub_category"])
-        if (phase !in PHASES) throw PrinterFailure(PrinterFailureCode.UNSUPPORTED_STATUS)
+        if (category !in setOf("idle", "processing")) reject(PrinterFailureCode.UNSUPPORTED_STATUS, PrinterFailureReason.STATUS_CATEGORY_UNKNOWN)
+        val phase = statusText(value["sub_category"], PrinterFailureReason.STATUS_PHASE_MISSING, PrinterFailureReason.STATUS_PHASE_TYPE)
+        if (phase !in PHASES) reject(PrinterFailureCode.UNSUPPORTED_STATUS, PrinterFailureReason.STATUS_PHASE_UNKNOWN)
         val battery = value["battery"]?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
             ?.toString()?.toIntOrNull()?.takeIf { it in 0..100 }
+        report(PrinterDiagnostic(PrinterStage.STATUS_PARSED))
         return PrinterStatus(phase, battery)
     }
 
     private fun rpc(method: String, params: JsonElement, reply: Boolean = true): JsonObject {
+        report(PrinterDiagnostic(when (method) {
+            "mixed_status" -> PrinterStage.QUERY_STATUS
+            "get_prop" -> PrinterStage.QUERY_DEVICE_INFO
+            "clean_data" -> PrinterStage.RESET_DATA
+            "print_job" -> PrinterStage.SUBMIT_JOB
+            "confirm_job" -> PrinterStage.CONFIRM_JOB
+            "job_info" -> PrinterStage.QUERY_JOB
+            else -> throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR)
+        }))
+        try { return exchange(method, params, reply) }
+        catch (e: PrinterFailure) {
+            e.reason?.let { report(PrinterDiagnostic(PrinterStage.REJECTED, reason = it)) }
+            throw e
+        }
+    }
+
+    private fun exchange(method: String, params: JsonElement, reply: Boolean): JsonObject {
         checkActive()
         val id = nextSequence()
         val request = JsonObject().apply {
@@ -138,7 +160,9 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
             val remaining = end - now()
             if (remaining <= 0) throw PrinterFailure(PrinterFailureCode.TIMEOUT)
             if (incoming.isEmpty()) {
-                incoming.addAll(reader.accept(transport.read(remaining)))
+                val bytes = transport.read(remaining)
+                report(PrinterDiagnostic(PrinterStage.RX_BYTES, bytes.size.toLong()))
+                incoming.addAll(reader.accept(bytes))
                 if (incoming.size > 64) throw PrinterFailure(PrinterFailureCode.LIMIT_EXCEEDED)
                 continue
             }
@@ -146,18 +170,18 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
             if (++ignored > 128) throw PrinterFailure(PrinterFailureCode.LIMIT_EXCEEDED)
             if (frame.channel != 1 || frame.interactive != 7) continue
             if (frame.encoding != 3 || frame.encryption != 4 || frame.total != 1)
-                throw PrinterFailure(PrinterFailureCode.KEY_OR_PROFILE_REJECTED)
+                throw PrinterFailure(PrinterFailureCode.KEY_OR_PROFILE_REJECTED, PrinterFailureReason.REPLY_PROFILE)
             val json = try {
                 JsonParser.parseString(cipher.crypt(frame.body).toString(Charsets.UTF_8)).asJsonObject
-            } catch (_: Exception) { throw PrinterFailure(PrinterFailureCode.KEY_OR_PROFILE_REJECTED) }
+            } catch (_: Exception) { throw PrinterFailure(PrinterFailureCode.KEY_OR_PROFILE_REJECTED, PrinterFailureReason.REPLY_JSON) }
             val responseId = json["id"]?.toString()?.toLongOrNull() ?: continue
-            if (responseId == id) return json
+            if (responseId == id) { report(PrinterDiagnostic(PrinterStage.REPLY_MATCHED)); return json }
         }
     }
 
     private fun result(reply: JsonObject): JsonElement {
         if (hasError(reply)) throw PrinterFailure(if (errorCode(reply) == -8006L) PrinterFailureCode.BUSY else PrinterFailureCode.PRINTER_FAULT)
-        return reply["result"] ?: badResponse()
+        return reply["result"] ?: badResponse(PrinterFailureReason.RPC_RESULT_MISSING)
     }
     private fun errorCode(reply: JsonObject): Long? = reply["error"]?.takeIf { it.isJsonObject }
         ?.asJsonObject?.get("code")?.toString()?.toLongOrNull()
@@ -173,7 +197,17 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
     private fun text(value: JsonElement?): String = value?.takeIf {
         it.isJsonPrimitive && it.asJsonPrimitive.isString
     }?.asString ?: badResponse()
-    private fun badResponse(): Nothing = throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR)
+    private fun statusText(value: JsonElement?, missing: PrinterFailureReason, wrongType: PrinterFailureReason): String {
+        if (value == null || value.isJsonNull) badResponse(missing)
+        if (!value.isJsonPrimitive || !value.asJsonPrimitive.isString) badResponse(wrongType)
+        return value.asString
+    }
+    private fun reject(code: PrinterFailureCode, reason: PrinterFailureReason): Nothing {
+        report(PrinterDiagnostic(PrinterStage.REJECTED, reason = reason))
+        throw PrinterFailure(code, reason)
+    }
+    private fun badResponse(reason: PrinterFailureReason = PrinterFailureReason.RESPONSE_SHAPE): Nothing =
+        reject(PrinterFailureCode.PROTOCOL_ERROR, reason)
     private fun nextSequence(): Long { if (++sequence > 0xffffffffL) badResponse(); return sequence }
     private fun checkActive() {
         if (Thread.currentThread().isInterrupted) throw PrinterFailure(PrinterFailureCode.CANCELLED)
