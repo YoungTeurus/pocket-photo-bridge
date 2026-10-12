@@ -65,6 +65,10 @@ With the working 0.2.2 setup, the user confirmed: **"Full flow is complete! I do
 
 The user's Windows PC received the camera-selected JPEG successfully: `SONY_SELECTION count=1`, `SONY_JPEG_BYTES count=11215541`, `SONY_TRANSFER_END`, `LIVE_PHOTO_SAVED`, and `LIVE_CAMERA_RECEIVED`. The user also inspected the prepared preview. This confirms the Windows source-bound HTTP adapter and existing Sony session on that PC/RX100 VII setup. The large FIT bars in its landscape preview are addressed by desktop paper rotation in 0.4.2, independently of the received bytes. No SD-card hash comparison was supplied, and no personal image or network identity is included in repository fixtures. Linux/Orange Pi radio integration remains untested.
 
+## Windows receive-to-print result, 0.4.3
+
+The user's **0.4.3** retest also confirmed the complete **Sony → Windows → Xiaomi** flow: the same-size selected JPEG (11,215,541 bytes) was received and retained, TransferEnd completed, and the prepared printer copy reached `PRINTER_PRINT_FINISHED` / `BRIDGE_PRINTED`. See [the Windows full-flow result](windows-live.md#successful-043-full-flow-hardware-test). This extends the successful Windows receive evidence to the printing handoff; it adds no SD-card hash comparison or Linux radio validation.
+
 ## Remaining hardware questions
 
 - Does the successful service/selection flow repeat after camera/tablet restarts and on other firmware/tablets? Record firmware and tablet model when available.

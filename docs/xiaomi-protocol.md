@@ -62,6 +62,12 @@ Before `print_job` is sent, a random non-secret unresolved reservation is synchr
 
 Printer image copies survive Bluetooth Settings/picker round trips and screen rotation; the token and any active connection do not. Final screen destruction deletes the copies, and process startup removes abandoned caches. If a process-restored Sony stage has already disappeared, the screen reports `INVALID_IMAGE` and allows choosing another image. It never substitutes a test chart for an unavailable Sony image. The screen stays awake during foreground printing; leaving it still cancels the socket. Non-finished job states remain pending until explicit completion, a reported fault, cancellation or deadline, rather than inventing undocumented state meanings.
 
+## Windows full-flow hardware result, 0.4.3
+
+On 2026-10-12 the user confirmed **Sony → Windows → Xiaomi** success with the portable 0.4.3 bridge and supplied a full-print trace. A normal pending Classic SPP connection (10035) completed with SO_ERROR=0; preflight, reservation, a 412,813-byte prepared JPEG upload and job confirmation succeeded. The final markers were `PRINTER_PRINT_FINISHED` and `BRIDGE_PRINTED`. This validates the reused printer session and Windows transport on the tested PC/TEJ4007CN setup. The Sony source was 11,215,541 bytes; the smaller upload is the prepared printer copy. See [the compact safe trace](windows-live.md#successful-043-full-flow-hardware-test). No token, identity or personal photo is included in repository evidence.
+
+Linux radios remain unimplemented. Other firmware/drivers, detailed print quality, repeatability and hardware fault/cancellation recovery still need their own checks; the pending-validation build marker is not an error in this successful run.
+
 ## Hardware experiment and future portability
 
 The first direct print and Sony-received photo print have passed. Extend these results with [the Android-only printer checks](printer-tablet-testing.md): inspect orientation/color/cropping, repeat one manually confirmed job, exercise fault/cancellation recovery and check Gallery saving after printing. For a new unit, first select/pair and diagnose SPP, then read encrypted status and attempt one explicitly confirmed print only if a legitimate token is already available. Report safe stages together with physical results.

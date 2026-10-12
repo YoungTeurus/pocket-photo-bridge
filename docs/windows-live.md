@@ -1,8 +1,33 @@
 # Windows real camera and printer testing (0.4.3)
 
-This build adds real Windows x64 adapters to the existing headless coordinator. The user successfully received and saved an 11,215,541-byte camera-selected JPEG from an RX100 VII with Windows 0.4.1. Windows Bluetooth connection and physical printing remain **validation pending**: that status test stopped before encrypted commands. Version 0.4.2 adds provider-compatible socket readiness and native diagnostics for the retest. The portable simulation remains available through the EXE's default operation. Linux radio adapters remain unimplemented. No local compilation, JDK, WSL, Xiaomi Home or cloud connection is needed to run either workflow.
+This build adds real Windows x64 adapters to the existing headless coordinator. The user successfully received and saved an 11,215,541-byte camera-selected JPEG from an RX100 VII with Windows 0.4.1, then confirmed the full **Sony → Windows → Xiaomi** printing flow with **0.4.3**. This validates the tested PC/camera/TEJ4007CN setup. The portable simulation remains available through the EXE's default operation. Linux radio adapters remain unimplemented. No local compilation, JDK, WSL, Xiaomi Home or cloud connection is needed to run either workflow.
 
-Version **0.4.3** fixes JNA/Windows error capture after the 0.4.2 retest reported immediate `CONNECT_START reason=FAILED native_error=0`. A second DLL error lookup could lose the native value across the Java/native boundary. The adapter now reads JNA's saved per-thread error immediately after a failed call, including normal pending connect/read/write results. The old report does not reveal the actual printer-side connection error or establish token rejection; status must be retested.
+Version **0.4.3** fixes JNA/Windows error capture after the 0.4.2 retest reported immediate `CONNECT_START reason=FAILED native_error=0`. A second DLL error lookup could lose the native value across the Java/native boundary. The adapter now reads JNA's saved per-thread error immediately after a failed call, including normal pending connect/read/write results. The old report cannot recover its original error code; the successful new run captured pending code 10035 and continued through explicit print completion.
+
+## Successful 0.4.3 full-flow hardware test
+
+On 2026-10-12 the user reported **“It worked! It totally worked!”** and supplied a safe full-print trace. Its key stages were:
+
+```text
+SONY_SELECTION count=1
+SONY_JPEG_BYTES count=11215541
+SONY_TRANSFER_END
+LIVE_PHOTO_SAVED
+LIVE_PRINT_CONFIRMED
+WINDOWS_BLUETOOTH_CONNECT_PENDING reason=PENDING native_error=10035 count=0
+WINDOWS_BLUETOOTH_SO_ERROR reason=OK native_error=0 count=0
+WINDOWS_BLUETOOTH_CONNECTED reason=OK native_error=0 count=0
+PRINTER_PREFLIGHT
+PRINTER_JOB_RESERVED
+PRINTER_UPLOAD count=412813
+PRINTER_JOB_CONFIRMED
+PRINTER_PRINT_FINISHED
+BRIDGE_PRINTED
+```
+
+The full trace includes normal select waits before readiness, printing progress and successful socket closure. It confirms camera-selected receive/save, a completed Classic SPP connection, encrypted preflight and a completed photo print through the shared coordinator/session on this setup. The 412,813-byte count is the prepared printer JPEG; the retained Sony original is 11,215,541 bytes. No credentials, identifiers or personal photo content are included in this record.
+
+`WINDOWS_HARDWARE_VALIDATION_PENDING` is a static marker from the build produced before this test; it is not a failure or an incomplete job. This first full-flow result does not establish other-driver/firmware compatibility, restart repeatability, detailed orientation/color quality, fault/cancellation/power-loss recovery or physical Orange Pi integration. Those remain separate checks.
 
 ## Download and prepare
 

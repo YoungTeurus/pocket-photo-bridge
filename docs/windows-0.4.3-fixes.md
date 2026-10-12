@@ -14,7 +14,7 @@ The WinSock backend now reads the saved JNA error immediately after failed nativ
 
 The native self-test clears the saved error, deliberately calls ioctlsocket with INVALID_SOCKET and requires WSAENOTSOCK (10038), then exercises the existing loopback-listener select check. It uses no printer/radio, secret, device address or remote host. The extracted Windows package gate now requires the captured-error success marker as well as successful interface discovery. A zero or incorrect captured error fails the gate.
 
-Sony HTTP/protocol code, camera discovery, the 0.4.2 paper-rotation correction, Android and shared printer commands are unchanged. Physical Windows connection/printing remains pending a new device test.
+Sony HTTP/protocol code, camera discovery, the 0.4.2 paper-rotation correction, Android and shared printer commands are unchanged. The subsequent user hardware retest completed Windows connection and printing on the tested setup, as recorded below.
 
 ## Regression and retest
 
@@ -24,4 +24,10 @@ A further regression reproduced a stale saved error falsely passing the self-tes
 
 Download the successful **0.4.3** Windows artifact, extract both ZIP layers and launch WindowsLive.cmd. Confirm its header says 0.4.3. Run **2 Query printer status** first with the same token that worked on Android. Copy `%LOCALAPPDATA%\PocketPhotoBridge\windows-live\diagnostics.txt` before any camera or native-diagnostic operation replaces it. If status fails, send that safe report; it should now identify the real pending/terminal socket error. Only proceed to preview/PRINT after status succeeds. Do not delete physical job state or send the token, address, state snapshot, photo or local UI transcript.
 
-Cloud final verification passed **263 tests** (bridge 159, Sony 24, printer 43, Android 37), zero failures/errors/skips, plus Android lint/debug APK and JVM archives. Actionlint, PowerShell parsing, shell syntax and whitespace checks passed. Android app, shared Sony/printer modules and Android workflow have no diff from the merged baseline. The Windows package still requires real native error-capture verification in Actions before release.
+Cloud final verification passed **263 tests** (bridge 159, Sony 24, printer 43, Android 37), zero failures/errors/skips, plus Android lint/debug APK and JVM archives. Actionlint, PowerShell parsing, shell syntax and whitespace checks passed. Android app, shared Sony/printer modules and Android workflow have no diff from the merged baseline. The [successful Actions run](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38252430212) verified the real native error-capture gate and all 27 extracted Windows runtime checks; Linux x64 and ARM64 each passed 24 extracted-package checks. The following hardware result uses that tested artifact.
+
+## Successful hardware retest, 2026-10-12
+
+The user confirmed success and supplied a full camera-to-print trace from 0.4.3. It received the selected 11,215,541-byte Sony JPEG, confirmed PRINT, captured `CONNECT_PENDING native_error=10035`, then reached SO_ERROR=0 and CONNECTED. Preflight, job reservation, a 412,813-byte prepared JPEG upload and job confirmation completed; the final stages were `PRINTER_PRINT_FINISHED` and `BRIDGE_PRINTED`. This confirms that the corrected adapter handles normal pending connection and the full printing flow on the tested PC/printer setup. The original 0.4.2 error remains unrecoverable; the new successful run supports the error-capture diagnosis.
+
+See [the compact safe hardware record](windows-live.md#successful-043-full-flow-hardware-test). The pending-validation line is static build metadata. Linux radio integration, repeatability and negative hardware cases remain separate work; no runtime code is changed by recording this result. The tested [Windows artifact](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38252430212/artifacts/11748452339) remains the 0.4.3 build, whose Actions gates passed on Windows/Linux x64/ARM64 along with Android.
