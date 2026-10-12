@@ -62,7 +62,7 @@ object WindowsLive {
             try { report("WINDOWS_PAIRED_DEVICES count=${WindowsBluetooth.pairedDevices().size}") }
             catch(e:WindowsBluetoothFailure) { report("WINDOWS_BLUETOOTH_UNAVAILABLE category=${e.code.name}") }
             catch(_:LinkageError) { report("WINDOWS_BLUETOOTH_UNAVAILABLE category=NATIVE_UNAVAILABLE") }
-            try { report("WINDOWS_CAMERA_LINK_CANDIDATES count=${WindowsCameraNetworking.candidates().size}") }
+            try { report("WINDOWS_CAMERA_LINK_CANDIDATES count=${WindowsCameraNetworking.candidates(report).size}") }
             catch(_:Exception) { report("WINDOWS_CAMERA_DISCOVERY_UNAVAILABLE category=HTTP_ERROR") }
         }
         private fun <T> select(ui:LiveUi,choices:List<T>,prompt:String):T {

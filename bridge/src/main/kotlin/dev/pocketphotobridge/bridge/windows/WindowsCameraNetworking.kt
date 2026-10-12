@@ -55,15 +55,18 @@ object WindowsCameraNetworking {
         ConvertTo-Json -InputObject @(${ '$' }result) -Depth 3 -Compress
     """.trimIndent()
 
-    fun candidates(): List<WindowsCameraCandidate> {
+    fun candidates(): List<WindowsCameraCandidate> = candidates {}
+
+    fun candidates(report: (String) -> Unit): List<WindowsCameraCandidate> {
         if (!System.getProperty("os.name", "").startsWith("Windows", ignoreCase = true)) return emptyList()
         if (Thread.currentThread().isInterrupted) throw ProtocolFailure(Failure.CANCELLED)
         val executable = Path.of(System.getenv("SystemRoot") ?: "C:\\Windows", "System32",
             "WindowsPowerShell", "v1.0", "powershell.exe").toString()
+        report("WINDOWS_CAMERA_DISCOVERY_START")
         val process = try {
             ProcessBuilder(executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", discoveryScript)
                 .redirectError(ProcessBuilder.Redirect.DISCARD).start()
-        } catch (_: Exception) { throw ProtocolFailure(Failure.HTTP_ERROR) }
+        } catch (_: Exception) { report("WINDOWS_CAMERA_DISCOVERY_LAUNCH_FAILED"); throw ProtocolFailure(Failure.HTTP_ERROR) }
         val reader = Executors.newSingleThreadExecutor { task ->
             Thread(task, "windows-camera-discovery").apply { isDaemon = true }
         }
@@ -73,8 +76,12 @@ object WindowsCameraNetworking {
             }
         }
         try {
-            if (!process.waitFor(DISCOVERY_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) throw ProtocolFailure(Failure.HTTP_ERROR)
+            if (!process.waitFor(DISCOVERY_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                report("WINDOWS_CAMERA_DISCOVERY_TIMEOUT"); throw ProtocolFailure(Failure.HTTP_ERROR)
+            }
             val bytes = output.get(1, TimeUnit.SECONDS)
+            report("WINDOWS_CAMERA_DISCOVERY_EXIT count=${process.exitValue().coerceAtLeast(0)}")
+            report("WINDOWS_CAMERA_DISCOVERY_BYTES count=${bytes.size}")
             if (process.exitValue() != 0 || bytes.size > MAX_DISCOVERY_BYTES) throw ProtocolFailure(Failure.HTTP_ERROR)
             return parseCandidates(bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF"))
         } catch (_: InterruptedException) {

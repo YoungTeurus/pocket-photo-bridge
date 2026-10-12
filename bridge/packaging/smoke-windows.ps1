@@ -78,7 +78,10 @@ function Invoke-SmokeCase {
             }
         }
         foreach ($pattern in $ExpectedPatterns) {
-            if ($stdout -notmatch $pattern) { throw "Smoke case $Name did not produce its expected result." }
+            if ($stdout -notmatch $pattern) {
+                if ($Name -eq 'native-bindings') { Write-Output $stdout }
+                throw "Smoke case $Name did not produce its expected result."
+            }
         }
         $script:checks++
     } finally {
