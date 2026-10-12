@@ -1,6 +1,6 @@
 # Sony smartphone transfer: evidence and implementation
 
-Investigated 2026-10-11. This receiver is **experimental, with one successful end-to-end user test on the RX100 VII and an Android API 36 tablet using version 0.1.1**. The result applies to that tested setup; it does not establish compatibility with every firmware or tablet.
+Investigated 2026-10-11. The RX100 VII receiver passed the user's receive/preview/Gallery test on an Android API 36 tablet with version **0.1.1**, and the subsequent **camera → Android → Xiaomi printing** test with **0.2.2**. These results apply to the tested setup; they do not establish compatibility with every firmware or tablet.
 
 ## Relevant evidence
 
@@ -56,6 +56,10 @@ DISCONNECTED
 Every recorded HTTP response was 200. This establishes that the tested RX100 VII exposes the researched service/actions and PushRoot selection flow, and that the tablet received a JPEG, decoded it, displayed a preview and completed MediaStore save. Wi-Fi loss occurred after Gallery save, so it did not interrupt this transfer. Manual Wi-Fi association was sufficient in this run. No camera XML, photo, credentials or network identifiers were collected.
 
 The camera firmware/tablet model, an older-than-newest selected-image comparison and an SD-card original hash comparison were not supplied. The 13,805,942-byte transfer count alone does not establish full-original byte equivalence. The `HARDWARE_VALIDATION_PENDING` line in 0.1.1 is a static marker from the build produced before this test, rather than a transfer failure.
+
+## MVP 2 camera-to-print result, 2026-10-12
+
+With the working 0.2.2 setup, the user confirmed: **"Full flow is complete! I downloaded the photo from the camera and printed it just right from the app!"** This provides a successful Sony receive → direct in-app Xiaomi print regression on the tested setup. See [the printer hardware results](xiaomi-protocol.md#sony-photo-to-physical-print-2026-10-12). No additional byte count/hash or Gallery save after printing was reported; the original 0.1.1 Gallery result remains the recorded save evidence.
 
 ## Remaining hardware questions
 

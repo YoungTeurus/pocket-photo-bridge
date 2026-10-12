@@ -1,14 +1,20 @@
 # Xiaomi direct printing: evidence and limits
 
-Investigated 2026-10-11; first physical print confirmed 2026-10-12. The user reports **TEJ4007CN**, an original Mi Portable Photo Printer with Micro-USB and sliding paper compartment. Pocket Photo Bridge **0.2.2** successfully printed on this unit from an **Android API 36** tablet. The exact firmware code and compatibility with other units remain unknown.
+Investigated 2026-10-11; physical printing and the complete Sony photo handoff confirmed 2026-10-12. The user reports **TEJ4007CN**, an original Mi Portable Photo Printer with Micro-USB and sliding paper compartment. Pocket Photo Bridge **0.2.2** successfully printed on this unit from an **Android API 36** tablet, including a photo received from the Sony camera. The exact firmware code and compatibility with other units remain unknown.
 
 ## First physical print, 2026-10-12
 
 The user's 0.2.2/API 36 trace shows repeated `PRINTER_STATUS_PARSED`, correlated `PRINTER_QUERY_JOB` replies and a final `PRINTER_PRINT_FINISHED`. Incoming JSON replies use version **1**, interactive **6**, encoding **3**, encryption **4** and single-package framing. These replies passed checksum, decryption, request-ID correlation and status/job schema checks. A method-bearing message was ignored with `RPC_METHOD_MESSAGE` before the final matching reply, as intended.
 
-The user independently confirmed the physical result: **"It worked! I got the print."** This establishes the first successful direct print on the tested tablet/printer with the locally entered device-specific token. No token value, frame payload, Bluetooth identifier or personal photo was supplied to the project. The reported source image type is unknown, so this is not yet evidence of a generated-chart quality test or the complete Sony → tablet → printer → Gallery flow.
+The user independently confirmed the physical result: **"It worked! I got the print."** This establishes the first successful direct print on the tested tablet/printer with the locally entered device-specific token. No token value, frame payload, Bluetooth identifier or personal photo was supplied to the project. That first report did not identify the source image; the subsequent Sony photo result below establishes the camera handoff separately. A detailed generated-chart quality test has not been reported.
 
-The repeated `PRINTER_PRINTING` entries mean the session was polling until explicit completion; they do not identify each physical paper phase. Remaining checks are image orientation/color/cropping, repeatability, fault/cancellation handling and the Sony JPEG handoff. The working APK is [0.2.2 from Actions run #15](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38222694644/artifacts/11734967296), built from `d3670e5`. Recording this result changes documentation only; it requires no APK replacement.
+The repeated `PRINTER_PRINTING` entries mean the session was polling until explicit completion; they do not identify each physical paper phase. Remaining checks are image orientation/color/cropping, repeatability, fault/cancellation handling and Gallery saving after printing. The working APK is [0.2.2 from Actions run #15](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38222694644/artifacts/11734967296), built from `d3670e5`. Recording these results changes documentation only; it requires no APK replacement.
+
+## Sony photo to physical print, 2026-10-12
+
+The user subsequently reported: **"Full flow is complete! I downloaded the photo from the camera and printed it just right from the app!"** This confirms the **Sony RX100 VII → Android app → Xiaomi TEJ4007CN** printing flow on the same tested setup. Camera reception and direct in-app printing now have a combined physical-device result, in addition to the earlier standalone printer completion trace and 0.1.1 Sony receive/preview/Gallery result.
+
+No new transfer byte count, original-file hash, detailed print-quality measurements or Gallery save after printing was supplied with this follow-up; those observations are not inferred. It validates the core MVP 2 flow on this setup, not other firmware, every image-placement option or fault/cancellation behavior.
 
 ## Earlier tablet diagnosis and receive correction
 
@@ -58,6 +64,6 @@ Printer image copies survive Bluetooth Settings/picker round trips and screen ro
 
 ## Hardware experiment and future portability
 
-Extend the first successful print with [the Android-only printer checks](printer-tablet-testing.md): inspect orientation/color/cropping, repeat one manually confirmed job, and exercise fault/cancellation recovery. Test printing a Sony-received JPEG and rerun the established Sony receive/preview/Gallery flow. For a new unit, first select/pair and diagnose SPP, then read encrypted status and attempt one explicitly confirmed print only if a legitimate token is already available. Report safe stages together with physical results.
+The first direct print and Sony-received photo print have passed. Extend these results with [the Android-only printer checks](printer-tablet-testing.md): inspect orientation/color/cropping, repeat one manually confirmed job, exercise fault/cancellation recovery and check Gallery saving after printing. For a new unit, first select/pair and diagnose SPP, then read encrypted status and attempt one explicitly confirmed print only if a legitimate token is already available. Report safe stages together with physical results.
 
 The `printer` module uses JVM Kotlin, byte arrays and a small JSON library; Android Bluetooth/image/cache/UI code remains in `app/printing`. A future Linux transport can implement the same write/read/close interface. Prepared image memory is bounded to sampled decoding plus a 1040×1560 bitmap; no Linux driver, embedded purchase or battery implementation is part of this PR.

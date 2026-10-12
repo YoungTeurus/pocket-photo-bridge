@@ -1,14 +1,14 @@
 # Xiaomi printer test from an Android tablet
 
-Version **0.2.2** supports local image preparation and direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. The first physical print passed on the user's **Android API 36** tablet on **2026-10-12**. [Protocol evidence](xiaomi-protocol.md) records that result separately from the upstream tested models and remaining compatibility limits.
+Version **0.2.2** supports local image preparation and direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. Physical printing and the complete **Sony → Android → Xiaomi** flow passed on the user's **Android API 36** tablet on **2026-10-12**. [Protocol evidence](xiaomi-protocol.md) records those results separately from the upstream tested models and remaining compatibility limits.
 
 ## Recorded result and remaining checks
 
-The user shared parsed encrypted status and matching job replies ending in `PRINTER_PRINT_FINISHED`, then confirmed, **"It worked! I got the print."** The locally entered token worked on this unit; its value was never supplied to the project. The source image type and detailed sheet quality were not reported. The repeated `PRINTER_PRINTING` entries are polling while awaiting the matching finished job, not separate print submissions.
+The user shared parsed encrypted status and matching job replies ending in `PRINTER_PRINT_FINISHED`, then confirmed, **"It worked! I got the print."** The locally entered token worked on this unit; its value was never supplied to the project. The follow-up also confirmed receiving a photo from the camera and printing it directly from the app. Detailed sheet quality was not reported. The repeated `PRINTER_PRINTING` entries are polling while awaiting the matching finished job, not separate print submissions.
 
 Keep using the working [0.2.2 APK from run #15](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38222694644/artifacts/11734967296) for the next checks; recording the result does not change application code or require reinstalling. Its static `PRINTER_HARDWARE_VALIDATION_PENDING` startup label predates this confirmation and is not a printer error.
 
-- Test the complete [Sony preview Print → Gallery handoff](#sony-photo-handoff-and-regression).
+- The [Sony photo handoff to printing](#sony-photo-handoff-and-regression) passed. Gallery saving after printing has not been separately reported; the earlier 0.1.1 receive/preview/Gallery test passed.
 - Inspect orientation, color, borders and cropping; use the generated chart if these have not been checked.
 - Confirm repeatability with another separately approved job.
 - Exercise hardware errors and controlled cancellation/unknown-job recovery. These remain unverified, as does compatibility with other firmware or units.
@@ -88,6 +88,8 @@ An uncertain submitted job keeps a persisted guard and disables **Print one copy
 For a controlled cancellation check, start one explicitly approved chart print and cancel once; observe whether a sheet still appears and whether the app blocks another submission. Do not repeatedly submit to recover from silence or a missing reply. Keep the unknown marker until the physical printer has been checked.
 
 ## Sony photo handoff and regression
+
+**Passed on 2026-10-12:** the user confirmed downloading the Sony photo and printing it directly from the app with the working 0.2.2 setup. The procedure below reproduces that flow and adds the still-unreported Gallery-after-print check.
 
 1. Follow [the Sony tablet guide](tablet-testing.md) to receive one camera-selected JPEG. Verify it is the exact selected photo. Keep the preview open: **Save to Gallery** clears it after saving, so use the direct preview Print action first. You can also print a previously saved Gallery image through **Choose local image**.
 2. Tap **Print received JPEG**. The app stages a separate private copy, then prepares the printer preview. Verify it matches the received photo; choose FIT/CROP and select the paired printer. The Sony original and Gallery bytes are unchanged.
