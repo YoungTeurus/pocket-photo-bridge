@@ -1,18 +1,18 @@
-# Windows portable simulation (0.4.0)
+# Windows portable simulation (0.4.1)
 
 The Windows 10/11 **x64** package runs directly on Windows. It includes an EXE launcher and its Java 17 runtime; you do not need WSL, a JDK, Gradle or an IDE. Keep the entire `PocketPhotoBridge` folder together. Copying only the EXE will break it.
 
-This milestone is an offline simulation. Synthetic camera and printer devices exercise the real Sony transfer and printer protocol sessions, image preparation and durable duplicate guard. It opens no real Wi-Fi/Bluetooth connection, submits no physical print and needs no account, printer token or cloud service. Linux radio adapters are a future milestone.
+The EXE's default mode is an offline simulation. Synthetic camera and printer devices exercise the real Sony transfer and printer protocol sessions, image preparation and durable duplicate guard. Simulation opens no real Wi-Fi/Bluetooth connection, submits no physical print and needs no account, printer token or cloud service. Version 0.4.1 also includes a separate explicit [Windows live-device mode](windows-live.md), launched with WindowsLive.cmd. Linux radio adapters are a future milestone.
 
 ## Download and run
 
 1. Open the repository's **Actions → Headless bridge** workflow and select a successful run for the intended revision.
-2. Download the artifact named `pocket-photo-bridge-windows-x64-0.4.0`. GitHub's artifact download is an outer ZIP. Extract it to obtain `PocketPhotoBridge-0.4.0-windows-x64.zip` and its `.zip.sha256` file.
+2. Download the artifact named `pocket-photo-bridge-windows-x64-0.4.1`. GitHub's artifact download is an outer ZIP. Extract it to obtain `PocketPhotoBridge-0.4.1-windows-x64.zip` and its `.zip.sha256` file.
 3. Optionally verify the package in PowerShell from that folder:
 
    ```powershell
-   Get-FileHash .\PocketPhotoBridge-0.4.0-windows-x64.zip -Algorithm SHA256
-   Get-Content .\PocketPhotoBridge-0.4.0-windows-x64.zip.sha256
+   Get-FileHash .\PocketPhotoBridge-0.4.1-windows-x64.zip -Algorithm SHA256
+   Get-Content .\PocketPhotoBridge-0.4.1-windows-x64.zip.sha256
    ```
 
    The two SHA-256 hashes must match, ignoring letter case. The checksum detects a damaged or changed download; obtain both files from the same trusted run.
@@ -24,7 +24,7 @@ The folder includes `app/`, `runtime/`, documentation, inactive Linux templates,
 
 ## PowerShell commands
 
-Open PowerShell inside the extracted `PocketPhotoBridge` folder. Explicit commands finish without waiting for Enter.
+Open PowerShell inside the extracted `PocketPhotoBridge` folder. Explicit simulation commands finish without waiting for Enter.
 
 ```powershell
 .\PocketPhotoBridge.exe --help

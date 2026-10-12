@@ -49,11 +49,13 @@ The first tablet experiment on Android API 36 confirmed image preparation and an
 
 ## MVP 4: run on Windows without compiling
 
-The **headless bridge 0.4.0** is separate from the unchanged **Android 0.2.2** application. Synthetic Sony SOAP/HTTP selection and Xiaomi encrypted byte-stream devices exercise the real protocol sessions through the same `PrintCoordinator`. The suite covers normal printing, connection failures, missing/partial selections, busy/offline printer, lost completion, duplicates, restart and checked-printer recovery. A separate-process power-cut experiment proves the persisted unknown-outcome gate. Simulation consumes no physical paper and uses only project-generated photos and a public synthetic fixture key.
+The **headless bridge 0.4.1** is separate from the unchanged **Android 0.2.2** application. Synthetic Sony SOAP/HTTP selection and Xiaomi encrypted byte-stream devices exercise the real protocol sessions through the same `PrintCoordinator`. The suite covers normal printing, connection failures, missing/partial selections, busy/offline printer, lost completion, duplicates, restart and checked-printer recovery. A separate-process power-cut experiment proves the persisted unknown-outcome gate. Simulation consumes no physical paper and uses only project-generated photos and a public synthetic fixture key.
+
+For **real Windows camera/printer testing**, launch **WindowsLive.cmd** from the same portable folder. This adds manual Sony Wi-Fi association, paired Xiaomi Bluetooth Classic/SPP selection, hidden token input, receive-only/status-only probes and a one-copy print requiring the word PRINT. See [the real-device procedure](docs/windows-live.md). Windows physical compatibility is validation pending; Linux radios remain unimplemented.
 
 1. Open [Actions → Headless bridge](https://github.com/YoungTeurus/pocket-photo-bridge/actions/workflows/bridge.yml) and a successful run for this implementation.
-2. Download `pocket-photo-bridge-windows-x64-0.4.0` and extract GitHub's outer ZIP.
-3. Extract the inner `PocketPhotoBridge-0.4.0-windows-x64.zip`, keep its complete folder together, then double-click **PocketPhotoBridge.exe**.
+2. Download `pocket-photo-bridge-windows-x64-0.4.1` and extract GitHub's outer ZIP.
+3. Extract the inner `PocketPhotoBridge-0.4.1-windows-x64.zip`, keep its complete folder together, then double-click **PocketPhotoBridge.exe**.
 4. Expect `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=14`. Send back `%LOCALAPPDATA%\PocketPhotoBridge\simulation\diagnostics.txt` if a check fails; it contains fixed stages/counts and no identities, tokens, fingerprints or photo bytes.
 
 The package contains the EXE **and a bundled Java runtime**, including Java desktop imaging. Explicit `--simulate`, `--simulate-all`, `--simulate-failure=<scenario>` and `--help` commands also work in PowerShell. Repeating an ordinary simulation on the same state suppresses its already-consumed selection. Manual acknowledgement clears uncertainty only and never replays its photo. A known rejected submission is conservatively suppressed too; intentional reprinting is outside this milestone.

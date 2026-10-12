@@ -12,16 +12,20 @@ import kotlin.system.exitProcess
 fun main(arguments: Array<String>) { exitProcess(BridgeCli.run(arguments)) }
 
 object BridgeCli {
-    const val VERSION = "0.4.0"
+    const val VERSION = "0.4.1"
 
     fun run(arguments: Array<String>, output: PrintStream = System.out, defaultState: Path? = null): Int {
-        output.println("Pocket Photo Bridge $VERSION | headless simulation")
+        output.println("Pocket Photo Bridge $VERSION | headless bridge")
         val options = try { CliOptions.parse(arguments) } catch (_: Exception) {
             output.println("BRIDGE_ARGUMENT_ERROR")
             output.println("Use --help for supported options.")
             return 64
         }
         if (options.mode == CliMode.HELP) { output.println(HELP); return 0 }
+        if (options.mode == CliMode.WINDOWS_LIVE)
+            return dev.pocketphotobridge.bridge.windows.WindowsLive.run(options.crop, options.stateDir, output)
+        if (options.mode == CliMode.WINDOWS_NATIVE)
+            return dev.pocketphotobridge.bridge.windows.WindowsLive.nativeCheck(output)
         if (options.mode == CliMode.HARDWARE) {
             output.println("BRIDGE_HARDWARE_NOT_IMPLEMENTED")
             output.println("Linux radio adapters require the Orange Pi hardware milestone. Configuration was not read.")
@@ -101,6 +105,8 @@ object BridgeCli {
   --acknowledge-checked-printer --confirm
                               Clear uncertainty only; retain selection/photo suppression.
   --hardware [--config=<file>] Refused: Linux physical radio adapters are not implemented yet.
+  --windows-live              Interactive real Windows devices: receive, status, confirmed print.
+  --windows-native-check      Read-only Windows native bindings/paired-device diagnostics.
   --help                      Show these instructions.
 No arguments: run the suite and wait for Enter when an interactive console is attached.
 Scenarios: missing-ssid, camera-offline, camera-timeout, no-selected-jpeg, interrupted-transfer,
