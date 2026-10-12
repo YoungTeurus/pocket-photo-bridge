@@ -65,15 +65,15 @@
 **Interfaces:** Gradle `:bridge:installDist`, `:bridge:distZip`/`distTar`; Task 3 CLI options; Windows application name `PocketPhotoBridge`, app version `0.4.0`.
 
 - [x] Implement pinned Linux/Windows/ARM64 JVM test jobs. Leave existing Android workflow unchanged.
-- [ ] Build Windows app-image with bundled Java desktop runtime; ZIP the whole directory and checksum it. Execute extracted EXE with no system Java from a path containing spaces, check all scenarios, nonzero faults and cross-process crash/restart suppression.
-- [ ] Execute Linux JVM distribution on ARM64 hosted runner where available and upload an architecture-independent distribution plus reports.
+- [x] Build Windows app-image with bundled Java desktop runtime; ZIP the whole directory and checksum it. Execute extracted EXE with no system Java from a path containing spaces, check all scenarios, nonzero faults and cross-process crash/restart suppression.
+- [x] Execute Linux JVM distribution on ARM64 hosted runner where available and upload an architecture-independent distribution plus reports.
 - [x] Write download/extract/Explorer/PowerShell instructions, expected safe report contents and troubleshooting. Document known-SSID NetworkManager, Classic SPP/BlueZ, owner-only future secrets, conservative trigger semantics and an inactive systemd template; clearly state radios remain unimplemented/unvalidated.
 
 ### Task 5: Whole-branch verification and PR
 
 - [x] Run Sony/printer/bridge/app unit tests, Android lint/debug build, CLI suite and distribution smoke checks. Verify no Android/protocol source change and no secret/private fixture is included.
 - [x] Dispatch one independent whole-branch review; reproduce/fix important findings with RED/GREEN regressions and rerun required checks.
-- [ ] Publish feature branch, open PR targeting main, verify Windows and ARM64 Actions results and downloadable artifacts, and provide exact Windows ZIP instructions. Do not merge or claim physical Linux success.
+- [x] Publish feature branch, open PR targeting main, verify Windows and ARM64 Actions results and downloadable artifacts, and provide exact Windows ZIP instructions. Do not merge or claim physical Linux success.
 
 ## Progress and decisions
 
@@ -85,5 +85,6 @@
 - Image task: 14 tests, including 8 expected behavioral failures before implementation; all eight EXIF cases, exact independent DHT/DQT, FIT/CROP/source integrity and large sampled decode under a 64 MiB heap pass. Source JPEG headers are capped at 1 MiB, axes at 32768, pixels at 268,435,456 and decoded axes at 2048.
 - Device task: 24 real-session/negative-contract tests pass. Additional RED/GREEN checks verified accepted-but-unconfirmed reconnect status and malformed JPEG decode classification. No real radios or credentials are used.
 - Cloud verification: 176 tests (24 Sony, 43 printer, 72 bridge, 37 app), zero failures/errors/skips; Android lint/debug build passed. Extracted Linux distribution smoke passed all 24 process checks, including power-cut exit 71, restart exit 3, acknowledgement and suppression. Initial declaration-only APIs/missing new classes were recorded separately from behavioral RED/GREEN regressions.
-- Independent whole-branch review found no Critical or Important defects. Corrected the one Minor configuration comment: `--hardware --config` accepts a path but refuses hardware operation without reading it. Native Windows and ARM64 Actions verification remains the delivery gate.
+- Independent whole-branch review found no Critical or Important defects. Corrected the one Minor configuration comment: `--hardware --config` accepts a path but refuses hardware operation without reading it. Native Windows and ARM64 Actions verification was the delivery gate.
 - Resource review: an 8192×8192 progressive JPEG decoded under a 64 MiB Java heap but used approximately 292 MiB process RSS because native decoder allocations are outside the heap. Measure progressive JPEG process RSS on the board before fixing its production memory budget; the heap test does not establish an RSS cap.
+- Published [PR #7](https://github.com/YoungTeurus/pocket-photo-bridge/pull/7), left open for review. [Headless bridge run #2](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38236814491) passed on source revision `56d47c9`: Windows extracted/bundled-runtime smoke passed 25 checks; Linux x64 and ARM64 each passed 24 checks. The portable Windows ZIP/checksum, JVM archives and all three verification reports were uploaded successfully. [Android run #23](https://github.com/YoungTeurus/pocket-photo-bridge/actions/runs/38236814246) also passed. This records software verification only; physical Orange Pi integration remains pending.
