@@ -3,7 +3,7 @@ plugins {
     application
 }
 
-version = "0.4.3"
+version = "0.5.0"
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
@@ -28,6 +28,7 @@ distributions {
             from(rootProject.file("docs/windows-simulation.md"))
             from(rootProject.file("docs/linux-bridge.md"))
             from(rootProject.file("docs/windows-live.md"))
+            from(rootProject.file("docs/mvp5-deployment.md"))
             from(rootProject.file("deploy/linux")) { into("deploy/linux") }
         }
     }

@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'The portable EXE smoke test requires Windows.' }
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-if (-not $ZipPath) { $ZipPath = Join-Path $repository 'bridge/build/portable/windows-x64/PocketPhotoBridge-0.4.3-windows-x64.zip' }
+if (-not $ZipPath) { $ZipPath = Join-Path $repository 'bridge/build/portable/windows-x64/PocketPhotoBridge-0.5.0-windows-x64.zip' }
 $ZipPath = [IO.Path]::GetFullPath($ZipPath)
 $work = Join-Path $repository 'bridge/build/portable/Windows smoke extraction with spaces'
 $reports = Join-Path $repository 'bridge/build/reports/smoke/windows'
@@ -22,7 +22,7 @@ if ((Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash -ine $expectedHa
 Expand-Archive -LiteralPath $ZipPath -DestinationPath $work
 $image = Join-Path $work 'PocketPhotoBridge'
 $launcher = Join-Path $image 'PocketPhotoBridge.exe'
-foreach ($file in @('PocketPhotoBridge.exe', 'runtime/bin/java.exe', 'runtime/lib/modules', 'licenses/mizink-LICENSE.txt', 'licenses/PocketPhotoBridge-LICENSE.txt', 'licenses/jna/LICENSE.txt', 'WindowsLive.cmd', 'windows-live.md', 'windows-simulation.md', 'linux-bridge.md')) {
+foreach ($file in @('PocketPhotoBridge.exe', 'runtime/bin/java.exe', 'runtime/lib/modules', 'licenses/mizink-LICENSE.txt', 'licenses/PocketPhotoBridge-LICENSE.txt', 'licenses/jna/LICENSE.txt', 'WindowsLive.cmd', 'WindowsServiceSimulation.cmd', 'mvp5-deployment.md', 'windows-live.md', 'windows-simulation.md', 'linux-bridge.md')) {
     if (-not (Test-Path -LiteralPath (Join-Path $image $file) -PathType Leaf)) { throw 'The extracted app image is incomplete.' }
 }
 if (-not (Test-Path -LiteralPath (Join-Path $image 'runtime/legal') -PathType Container)) { throw 'Runtime legal notices are absent.' }
@@ -120,6 +120,14 @@ Invoke-SmokeCase -Name power-cut -ExpectedExit 71 -CommandArguments @('--simulat
 Invoke-SmokeCase -Name after-power-cut -ExpectedExit 3 -CommandArguments @('--simulate', "--state-dir=$crashState") -ExpectedPatterns @($zeroPrints)
 Invoke-SmokeCase -Name acknowledge -ExpectedExit 0 -CommandArguments @('--acknowledge-checked-printer', '--confirm', "--state-dir=$crashState") -ExpectedPatterns @($zeroPrints)
 Invoke-SmokeCase -Name after-acknowledge -ExpectedExit 0 -CommandArguments @('--simulate', "--state-dir=$crashState") -ExpectedPatterns @($zeroPrints)
+
+$serviceSummary = & python (Join-Path $repository 'bridge/packaging/smoke-service.py') $launcher (Get-StateDirectory service-http)
+if ($LASTEXITCODE -ne 0) { throw 'The extracted service HTTP smoke failed.' }
+if ($serviceSummary -notmatch '^PACKAGED_SERVICE_HTTP_SMOKE_PASS bundled_runtime=true authenticated=true credentials_redacted=true orchestration=true$') {
+    throw 'The extracted service HTTP smoke did not produce its expected result.'
+}
+[IO.File]::WriteAllText((Join-Path $reports 'service-http.txt'), "$serviceSummary`n", [Text.UTF8Encoding]::new($false))
+$script:checks++
 
 $summary = "SMOKE_WINDOWS_PASS checks=$script:checks bundled_runtime=true`n"
 [IO.File]::WriteAllText((Join-Path $reports 'summary.txt'), $summary, [Text.UTF8Encoding]::new($false))

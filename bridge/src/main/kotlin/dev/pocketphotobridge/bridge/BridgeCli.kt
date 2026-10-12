@@ -12,7 +12,7 @@ import kotlin.system.exitProcess
 fun main(arguments: Array<String>) { exitProcess(BridgeCli.run(arguments)) }
 
 object BridgeCli {
-    const val VERSION = "0.4.3"
+    const val VERSION = "0.5.0"
 
     fun run(arguments: Array<String>, output: PrintStream = System.out, defaultState: Path? = null): Int {
         output.println("Pocket Photo Bridge $VERSION | headless bridge")
@@ -22,13 +22,22 @@ object BridgeCli {
             return 64
         }
         if (options.mode == CliMode.HELP) { output.println(HELP); return 0 }
+        if (options.mode == CliMode.BOOTSTRAP)
+            return dev.pocketphotobridge.bridge.service.BridgeService.bootstrap(options.stateDir ?: defaultState ?: dev.pocketphotobridge.bridge.service.BridgeService.defaultState(true), output)
+        if (options.mode == CliMode.LINUX_NATIVE)
+            return dev.pocketphotobridge.bridge.service.BridgeService.nativeCheck(output)
+        if (options.mode in setOf(CliMode.SERVICE, CliMode.SERVICE_SIMULATION)) {
+            val simulated = options.mode == CliMode.SERVICE_SIMULATION
+            return dev.pocketphotobridge.bridge.service.BridgeService.run(simulated,
+                options.stateDir ?: defaultState ?: dev.pocketphotobridge.bridge.service.BridgeService.defaultState(simulated), output)
+        }
         if (options.mode == CliMode.WINDOWS_LIVE)
             return dev.pocketphotobridge.bridge.windows.WindowsLive.run(options.crop, options.stateDir, output)
         if (options.mode == CliMode.WINDOWS_NATIVE)
             return dev.pocketphotobridge.bridge.windows.WindowsLive.nativeCheck(output)
         if (options.mode == CliMode.HARDWARE) {
             output.println("BRIDGE_HARDWARE_NOT_IMPLEMENTED")
-            output.println("Linux radio adapters require the Orange Pi hardware milestone. Configuration was not read.")
+            output.println("Use --service for the configured Linux service. Legacy hardware configuration was not read.")
             return 64
         }
         val report = SimulationReport(output)
@@ -104,7 +113,11 @@ object BridgeCli {
   --crop                      Prepare centered CROP; default is FIT with white borders.
   --acknowledge-checked-printer --confirm
                               Clear uncertainty only; retain selection/photo suppression.
-  --hardware [--config=<file>] Refused: Linux physical radio adapters are not implemented yet.
+  --hardware [--config=<file>] Legacy mode refused; configuration is not read.
+  --simulate-service          Automatic service and local setup page with synthetic devices.
+  --service                   Linux automatic service; requires setup and auto-print opt-in.
+  --make-bootstrap            Show unique setup credentials in a private local terminal.
+  --linux-native-check        Read-only Linux native ABI/error check; no physical print.
   --windows-live              Interactive real Windows devices: receive, status, confirmed print.
   --windows-native-check      Read-only Windows native bindings/paired-device diagnostics.
   --help                      Show these instructions.
