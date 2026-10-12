@@ -1,25 +1,26 @@
 # Pocket Photo Bridge
 
-A pocket-sized workflow to transfer a camera-selected photo from a **Sony RX100 VII** to Android, then (later) print it on a **Xiaomi Mi Portable Photo Printer**.
+Transfer a camera-selected photo from a **Sony RX100 VII** to Android, preview and save it, then print directly over Bluetooth on an original **Xiaomi Mi Portable Photo Printer**. The user confirmed the complete **Sony → Android → Xiaomi** printing flow with version **0.2.2** on an Android API 36 tablet and the reported **TEJ4007CN** printer.
 
 ## Roadmap
 
-- **MVP 1 — Sony → Android:** select a JPEG on the camera via **Send to Smartphone → Select on This Device**, receive that exact photo in an Android app, preview it and save to Gallery. This is the *only* feature to implement now.
-- **MVP 2 — Android → Xiaomi:** investigate direct Bluetooth printing, device identity, encryption/pairing and paper formats.
+- **MVP 1 — Sony → Android:** receive the exact camera-selected JPEG, preview it and save unchanged bytes to Gallery. The first hardware test passed; remaining negative and repeatability checks are documented below.
+- **MVP 2 — Android → Xiaomi:** select an Android-paired printer, diagnose Classic SPP, prepare a test chart/local image/Sony JPEG, and confirm one copy. Physical printing and the Sony photo handoff passed; encrypted status and printing require an existing device-specific token. Other firmware and remaining hardware checks are unverified.
 - **MVP 3 — Battery-powered Linux bridge:** evaluate Raspberry Pi Zero 2 W and a small enclosure that can sit on the printer.
 
 ## Important constraints
 
 - Sony model: DSC-RX100M7. The camera advertises its own Wi-Fi access point and shows QR connection details. Credentials can be entered once and reused where Android permits.
 - The user develops from an **Android tablet** using **Codex Cloud + GitHub**. A GitHub Actions workflow must compile a downloadable **debug APK**; no local Android Studio required.
-- The precise Sony **camera-selected / camera-initiated** transfer handshake is not yet verified. A phone-initiated media browser (PTP/IP or Sony API) is *not* proof that this particular send mode works. Research first and instrument testable diagnostics.
+- Sony **camera-selected / camera-initiated** transfer passed the recorded RX100 VII/tablet test. Unsupported or ambiguous selections stop with diagnostics; the app does not fall back to a full-card media browser.
 - Manual foreground Connect/Receive with Android-approved Wi-Fi prompts is acceptable for the MVP. Background Wi-Fi polling and silent auto-connect are stretch goals.
 - Do not log or commit camera QR contents, Wi-Fi passwords, Bluetooth tokens, or personal photo content. Make diagnostics safe to share.
-- No printer functionality in MVP 1.
+- Printer: user-reported **TEJ4007CN**, original Micro-USB model with sliding paper cover. The community `basil` profile produced a physical print on this unit with 0.2.2; its exact firmware code and compatibility with other units are unknown. Bluetooth pairing alone does not supply its encryption token.
+- No Xiaomi Home, Xiaomi account or cloud connection is used. No verified tablet-only, pairing-only offline token acquisition method has been established; without an existing owned token, encrypted diagnosis and printing remain blocked.
 
 ## Work item
 
-See [Issue #1](https://github.com/YoungTeurus/pocket-photo-bridge/issues/1), [architecture](docs/architecture.md), and [Codex task prompt](docs/CODEX_PROMPT.md).
+See [MVP 1 Issue #1](https://github.com/YoungTeurus/pocket-photo-bridge/issues/1), [MVP 2 Issue #3](https://github.com/YoungTeurus/pocket-photo-bridge/issues/3), [architecture](docs/architecture.md), and [MVP 1 Codex task prompt](docs/CODEX_PROMPT.md).
 
 ## MVP 1 implementation status
 
@@ -27,7 +28,23 @@ An experimental Kotlin Android app is implemented for Android 10+ (API 29). It p
 
 **The first RX100 VII end-to-end hardware test passed.** The user confirmed that version 0.1.1 on an Android API 36 tablet received one camera-selected JPEG (13,805,942 bytes), displayed its preview, and saved it to Gallery. The camera acknowledged TransferEnd; Wi-Fi disconnected after the save. This validates the tested camera/tablet combination; an SD-card original hash comparison, repeatability and negative device tests are still outstanding. It stops on unsupported service/selection responses; it never substitutes an arbitrary/latest photo or a full-card browser. See [the recorded hardware result and remaining checks](docs/sony-protocol.md).
 
-Pair through Android Wi-Fi Settings, which retains the camera password. The app does not collect QR codes, credentials, SSIDs, MAC addresses or location. All camera HTTP uses that Wi-Fi Network, including when it has no internet. No sign-in, server, cloud upload, printer or background scanning is included.
+Pair through Android Wi-Fi Settings, which retains the camera password. The app does not collect QR codes, credentials, SSIDs, MAC addresses or location. All camera HTTP uses that Wi-Fi Network, including when it has no internet. No sign-in, server, cloud upload or background scanning is included.
+
+## MVP 2 implementation status
+
+**The direct Xiaomi print and Sony photo handoff passed on 2026-10-12.** The user's 0.2.2 / Android API 36 trace shows parsed encrypted status, correlated job replies and `PRINTER_PRINT_FINISHED`, with physical output confirmed. The follow-up confirmed receiving a photo from the camera and printing it directly from the app: **Sony → Android → Xiaomi** works on the tested setup using the locally entered token. Gallery saving passed in the earlier Sony test; a Gallery save after printing, detailed image quality, repeatability and fault/cancellation checks have not been separately reported. See [the recorded full-flow result](docs/xiaomi-protocol.md#sony-photo-to-physical-print-2026-10-12).
+
+Open **Print test image** to use the printer screen without a camera, or **Print received JPEG** after receiving a Sony photo. Pair in Android Bluetooth Settings and choose **Select paired printer**; Android 12+ may request Nearby devices permission. **Connect / Diagnose** with an empty token verifies an actual Classic SPP connection, then reports `KEY_REQUIRED` before encrypted commands. SPP connection success does not establish printer-profile compatibility.
+
+An existing user-owned 24-character hexadecimal token can be entered locally for one diagnose or print operation. The input clears when consumed and when the screen stops; re-enter it for each operation. Tokens are never persisted or shared, and the printer screen blocks screenshots. The app provides no token bootstrap or guessed/default key. See [the protocol evidence and authentication limit](docs/xiaomi-protocol.md).
+
+The generated test chart and local JPEG/PNG/WebP inputs produce a **1040×1560 baseline JPEG at quality 90 with standard Annex K Huffman tables**. FIT adds white borders; CROP fills the frame. Preview it, select a paired printer, then explicitly confirm **Print one copy**. Sony printing uses a private staged copy and does not change the received original or Gallery export. Printer image copies survive Settings return and rotation; they are deleted when the screen finishes, with abandoned cache cleared at process startup.
+
+There is no automatic retry. A persisted unresolved-job marker blocks new submissions after an uncertain result, including process death. Check the physical printer and any output before using **I checked the printer · clear unknown job**. **Cancel / Disconnect**, leaving the foreground or rotating closes the transport; a job already accepted may still print. Completion requires an explicit matching job-finished response and should be checked against the physical sheet.
+
+Follow [the Android-only printer test guide](docs/printer-tablet-testing.md). The implementation follows MIT-licensed community evidence pinned at [85335b6](https://github.com/fliptheweb/mi-portable-photo-printer/tree/85335b639f3d818c3fe9a892e328864fc3d37250); its license notice is included in the APK. The user's physical result establishes the first hardware success separately from software verification.
+
+The first tablet experiment on Android API 36 confirmed image preparation and an actual SPP connection. Version 0.2.1 located the first protocol mismatch: the printer sent a version-1, interactive-6 encrypted JSON frame, while the app required version 100. Version 0.2.2 accepts incoming versions 1/100 and correlates interactive-6/7 JSON replies by request ID; method-bearing requests/notifications cannot satisfy a reply. Outgoing frames remain version 100, and checksum, encryption and result/schema checks remain enabled. Token input is validated whole rather than silently shortened. Diagnostics exclude tokens, frame sequences, reply bodies and identities. The subsequent 0.2.2 trace and physical print confirm that this receive correction works on the tested unit.
 
 ## Install and test from an Android tablet
 
@@ -40,12 +57,14 @@ Follow [the complete tablet test and troubleshooting guide](docs/tablet-testing.
 
 ## Build and software verification
 
-GitHub Actions runs JVM protocol/transport tests, a Robolectric Android lifecycle regression, Android lint and `assembleDebug`, then uploads the APK/checksum and verification reports. CI pins action commits and the Gradle distribution checksum. Debug signing is for sideload testing; different runs may require uninstalling the prior APK due to changed debug keys.
+GitHub Actions runs Sony and printer JVM protocol/transport tests, Android lifecycle/image/transport regression tests, Android lint and `assembleDebug`, then uploads the APK/checksum and verification reports. CI pins action commits and the Gradle distribution checksum. Debug signing is for sideload testing; different runs may require uninstalling the prior APK due to changed debug keys.
 
 With Java 17 and an Android SDK installed:
 
 ```sh
-./gradlew :sony:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+./gradlew :sony:test :printer:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
 The pure Kotlin `sony` module can be reused with another HTTP transport. Fixture tests cover selected-list-only behavior, discovery, escaped DIDL, pagination, ambiguity, thumbnail/icon rejection, unsafe URLs/XML and interrupted downloads. Transport tests exercise cancellation interleavings; the Android API 29 lifecycle test ensures camera Wi-Fi loss does not discard a pending preview or stop a local save. Robolectric is a test-only dependency, not an emulator or a device validation. The user's tablet test confirms the basic Wi-Fi/receive/preview/Gallery path; repeatability and negative device tests follow the documented procedure. No camera/emulator is attached to the cloud implementation environment.
+
+The pure Kotlin `printer` module keeps framing, frame-local RC4, correlated status/job replies, bounded transfer and JPEG Huffman normalization separate from Android transport/UI. Printer tests use synthetic fixtures and transports. The user's 0.2.2 hardware results confirm working encrypted replies, physical completion and the Sony photo handoff on the tested setup; detailed rendering, repeatability and fault responses still need tablet checks.

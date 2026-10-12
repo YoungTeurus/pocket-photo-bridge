@@ -9,8 +9,8 @@ android {
         applicationId = "dev.pocketphotobridge"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 5
+        versionName = "0.2.2"
     }
     buildFeatures { buildConfig = true }
     compileOptions {
@@ -25,6 +25,7 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 dependencies {
     implementation(project(":sony"))
+    implementation(project(":printer"))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
 }
