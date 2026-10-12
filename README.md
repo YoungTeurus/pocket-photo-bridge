@@ -7,11 +7,12 @@ Transfer a camera-selected photo from a **Sony RX100 VII** to Android, preview a
 - **MVP 1 — Sony → Android:** receive the exact camera-selected JPEG, preview it and save unchanged bytes to Gallery. The first hardware test passed; remaining negative and repeatability checks are documented below.
 - **MVP 2 — Android → Xiaomi:** select an Android-paired printer, diagnose Classic SPP, prepare a test chart/local image/Sony JPEG, and confirm one copy. Physical printing and the Sony photo handoff passed; encrypted status and printing require an existing device-specific token. Other firmware and remaining hardware checks are unverified.
 - **MVP 3 — Battery-powered Linux bridge:** evaluate Raspberry Pi Zero 2 W and a small enclosure that can sit on the printer.
+- **MVP 4 — Headless bridge with Windows simulation:** run the Kotlin coordinator and real Sony/Xiaomi protocol logic against deterministic offline devices. GitHub Actions builds a Windows x64 EXE/runtime ZIP and a Linux JVM distribution; the future hardware target is the ordered Orange Pi Zero 2W, 4 GB RAM, on Linux ARM64. Physical Linux radio adapters remain unimplemented.
 
 ## Important constraints
 
 - Sony model: DSC-RX100M7. The camera advertises its own Wi-Fi access point and shows QR connection details. Credentials can be entered once and reused where Android permits.
-- The user develops from an **Android tablet** using **Codex Cloud + GitHub**. A GitHub Actions workflow must compile a downloadable **debug APK**; no local Android Studio required.
+- Development/builds use **Codex Cloud + GitHub Actions**. The Android tablet tests the working APK; a Windows x64 computer runs the portable simulation. No local Android Studio, JDK, WSL or compilation is needed for the Windows ZIP.
 - Sony **camera-selected / camera-initiated** transfer passed the recorded RX100 VII/tablet test. Unsupported or ambiguous selections stop with diagnostics; the app does not fall back to a full-card media browser.
 - Manual foreground Connect/Receive with Android-approved Wi-Fi prompts is acceptable for the MVP. Background Wi-Fi polling and silent auto-connect are stretch goals.
 - Do not log or commit camera QR contents, Wi-Fi passwords, Bluetooth tokens, or personal photo content. Make diagnostics safe to share.
@@ -20,7 +21,7 @@ Transfer a camera-selected photo from a **Sony RX100 VII** to Android, preview a
 
 ## Work item
 
-See [MVP 1 Issue #1](https://github.com/YoungTeurus/pocket-photo-bridge/issues/1), [MVP 2 Issue #3](https://github.com/YoungTeurus/pocket-photo-bridge/issues/3), [architecture](docs/architecture.md), and [MVP 1 Codex task prompt](docs/CODEX_PROMPT.md).
+See [MVP 1 Issue #1](https://github.com/YoungTeurus/pocket-photo-bridge/issues/1), [MVP 2 Issue #3](https://github.com/YoungTeurus/pocket-photo-bridge/issues/3), [MVP 4 Issue #6](https://github.com/YoungTeurus/pocket-photo-bridge/issues/6), [architecture](docs/architecture.md), and [MVP 1 Codex task prompt](docs/CODEX_PROMPT.md).
 
 ## MVP 1 implementation status
 
@@ -45,6 +46,21 @@ There is no automatic retry. A persisted unresolved-job marker blocks new submis
 Follow [the Android-only printer test guide](docs/printer-tablet-testing.md). The implementation follows MIT-licensed community evidence pinned at [85335b6](https://github.com/fliptheweb/mi-portable-photo-printer/tree/85335b639f3d818c3fe9a892e328864fc3d37250); its license notice is included in the APK. The user's physical result establishes the first hardware success separately from software verification.
 
 The first tablet experiment on Android API 36 confirmed image preparation and an actual SPP connection. Version 0.2.1 located the first protocol mismatch: the printer sent a version-1, interactive-6 encrypted JSON frame, while the app required version 100. Version 0.2.2 accepts incoming versions 1/100 and correlates interactive-6/7 JSON replies by request ID; method-bearing requests/notifications cannot satisfy a reply. Outgoing frames remain version 100, and checksum, encryption and result/schema checks remain enabled. Token input is validated whole rather than silently shortened. Diagnostics exclude tokens, frame sequences, reply bodies and identities. The subsequent 0.2.2 trace and physical print confirm that this receive correction works on the tested unit.
+
+## MVP 4: run on Windows without compiling
+
+The **headless bridge 0.4.0** is separate from the unchanged **Android 0.2.2** application. Synthetic Sony SOAP/HTTP selection and Xiaomi encrypted byte-stream devices exercise the real protocol sessions through the same `PrintCoordinator`. The suite covers normal printing, connection failures, missing/partial selections, busy/offline printer, lost completion, duplicates, restart and checked-printer recovery. A separate-process power-cut experiment proves the persisted unknown-outcome gate. Simulation consumes no physical paper and uses only project-generated photos and a public synthetic fixture key.
+
+1. Open [Actions → Headless bridge](https://github.com/YoungTeurus/pocket-photo-bridge/actions/workflows/bridge.yml) and a successful run for this implementation.
+2. Download `pocket-photo-bridge-windows-x64-0.4.0` and extract GitHub's outer ZIP.
+3. Extract the inner `PocketPhotoBridge-0.4.0-windows-x64.zip`, keep its complete folder together, then double-click **PocketPhotoBridge.exe**.
+4. Expect `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=14`. Send back `%LOCALAPPDATA%\PocketPhotoBridge\simulation\diagnostics.txt` if a check fails; it contains fixed stages/counts and no identities, tokens, fingerprints or photo bytes.
+
+The package contains the EXE **and a bundled Java runtime**, including Java desktop imaging. Explicit `--simulate`, `--simulate-all`, `--simulate-failure=<scenario>` and `--help` commands also work in PowerShell. Repeating an ordinary simulation on the same state suppresses its already-consumed selection. Manual acknowledgement clears uncertainty only and never replays its photo. A known rejected submission is conservatively suppressed too; intentional reprinting is outside this milestone.
+
+Follow [the Windows download/run/diagnostics guide](docs/windows-simulation.md). The [Linux/ARM64 guide](docs/linux-bridge.md) describes the JVM distribution, future NetworkManager/BlueZ integration, protected credentials and an inactive systemd template. `--hardware` currently refuses to run. Windows/Linux simulations and ARM64 CI do not validate Orange Pi Wi-Fi/Bluetooth, autonomous physical printing or power-loss behavior on its storage.
+
+The [architecture proposal](docs/superpowers/specs/2026-10-12-mvp4-headless-design.md) and [implementation plan](docs/superpowers/plans/2026-10-12-mvp4-headless.md) were documented before implementation. The existing Android Actions workflow and Android/protocol sources remain unchanged.
 
 ## Install and test from an Android tablet
 

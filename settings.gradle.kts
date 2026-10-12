@@ -6,4 +6,5 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "PocketPhotoBridge"
-include(":sony", ":printer", ":app")
+include(":sony", ":printer", ":bridge")
+if (!providers.gradleProperty("headlessOnly").map { it.toBoolean() }.getOrElse(false)) include(":app")

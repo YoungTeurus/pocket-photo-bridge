@@ -1,0 +1,28 @@
+# INACTIVE FUTURE TEMPLATE: do not install/enable for physical printing.
+# MVP 4 has no Linux Wi-Fi/Bluetooth adapters. --hardware exits 64.
+# No [Install] section is supplied; this example is not an enableable service.
+# Create/review the service account, radio broker permissions and persistent
+# storage policy only when actual hardware support is implemented and tested.
+[Unit]
+Description=Pocket Photo Bridge (unsupported future hardware template)
+After=NetworkManager.service bluetooth.service
+
+[Service]
+Type=simple
+User=pocketphotobridge
+Group=pocketphotobridge
+StateDirectory=pocket-photo-bridge
+StateDirectoryMode=0700
+UMask=0077
+Environment="JAVA_OPTS=-Djava.awt.headless=true -Xmx512m"
+ExecStart=/opt/pocket-photo-bridge/bin/bridge --hardware --state-dir=/var/lib/pocket-photo-bridge
+Restart=no
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+# FUTURE ONLY: the CLI does not yet read config or systemd credentials.
+# A future adapter can read printer-token under $CREDENTIALS_DIRECTORY.
+# LoadCredential=printer-token:/etc/pocket-photo-bridge/secrets/printer-token
+# Configuration must be owner/root-only; never pass a token on ExecStart.
