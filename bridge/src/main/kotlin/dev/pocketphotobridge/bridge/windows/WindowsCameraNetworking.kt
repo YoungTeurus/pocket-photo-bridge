@@ -20,7 +20,9 @@ data class WindowsCameraCandidate(val interfaceIndex: Int, val displayName: Stri
 
 object WindowsCameraNetworking {
     private const val MAX_DISCOVERY_BYTES = 65_536
-    private const val DISCOVERY_TIMEOUT_MILLIS = 8_000L
+    // Cold Windows PowerShell/CIM startup exceeded eight seconds on two hosted runners.
+    // This bounds local configuration discovery; camera HTTP deadlines are unchanged.
+    private const val DISCOVERY_TIMEOUT_MILLIS = 20_000L
 
     // Import only the required CIM cmdlets: NetTCPIP's umbrella module compiles a
     // configuration helper and loads unrelated DNS/profile/IPv6 discovery. These
@@ -77,6 +79,11 @@ object WindowsCameraNetworking {
             ProcessBuilder(executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", discoveryScript)
                 .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         } catch (_: Exception) { report("WINDOWS_CAMERA_DISCOVERY_LAUNCH_FAILED"); throw ProtocolFailure(Failure.HTTP_ERROR) }
+        return readDiscovery(process, report)
+    }
+
+    internal fun readDiscovery(process: Process, report: (String) -> Unit): List<WindowsCameraCandidate> {
+        val started = System.nanoTime()
         val reader = Executors.newSingleThreadExecutor { task ->
             Thread(task, "windows-camera-discovery").apply { isDaemon = true }
         }
@@ -103,6 +110,11 @@ object WindowsCameraNetworking {
             process.destroyForcibly()
             output.cancel(true)
             reader.shutdownNow()
+            // Timing contains no interface identity or command output and cannot mask cleanup/cancellation.
+            try {
+                val elapsed = TimeUnit.NANOSECONDS.toMillis((System.nanoTime() - started).coerceAtLeast(0))
+                report("WINDOWS_CAMERA_DISCOVERY_ELAPSED_MILLIS count=$elapsed")
+            } catch (_: Exception) { }
         }
     }
 

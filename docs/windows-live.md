@@ -54,6 +54,8 @@ Send the contents of `%LOCALAPPDATA%\PocketPhotoBridge\windows-live\diagnostics.
 
 Choose **4 Read-only native diagnostics** if pairing/status fails. Copy the status report first: this operation replaces it. `WINDOWS_WINSOCK_BINDINGS_READY` proves native calls loaded and a loopback TCP listener exercised the native select/readiness layout; it does not prove a Bluetooth radio or printer connection. `WINDOWS_PAIRED_DEVICES count=...` reports enumeration only. `WINDOWS_BLUETOOTH_UNAVAILABLE category=...` is an actionable native/provider limitation. A noninteractive read-only probe is also available as `.\PocketPhotoBridge.exe --windows-native-check`.
 
+Camera interface discovery allows up to 20 seconds for local Windows PowerShell/CIM configuration queries and reports elapsed milliseconds in native diagnostics. A timeout terminates the process and refuses the operation. Source assignment, private/on-link gateway checks and camera HTTP deadlines are unchanged.
+
 The simulator cannot establish real Sony gateway/firmware, Windows Bluetooth pairing/SPP availability, token acceptance, Wi-Fi/Bluetooth coexistence or print quality. Automated tests cover native ABI mappings, local HTTP framing/routing, bounded socket behavior and the same real orchestration/protocol logic; your three device tests provide the missing physical evidence.
 
 ## Implementation evidence
