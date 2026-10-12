@@ -1,4 +1,5 @@
-# PROPOSED SCHEMA ONLY. MVP 4 does not parse this file or accept --config.
+# PROPOSED SCHEMA ONLY. MVP 4 accepts --config only with --hardware.
+# It does not read configuration; hardware mode refuses operation with exit 64.
 # No real credentials, identities or working radio configuration are included.
 # The service template refuses hardware mode until future adapters exist.
 schema_version = 1
