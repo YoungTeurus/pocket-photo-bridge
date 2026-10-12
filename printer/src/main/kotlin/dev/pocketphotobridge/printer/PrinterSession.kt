@@ -10,7 +10,7 @@ import java.io.IOException
 data class PrinterStatus(val phase: String, val battery: Int?)
 enum class PrinterStage { STATUS_READY, PREFLIGHT, JOB_RESERVED, UPLOAD, JOB_CONFIRMED, PRINTING, PRINT_FINISHED, OUTCOME_UNKNOWN,
     QUERY_STATUS, STATUS_PARSED, QUERY_DEVICE_INFO, RESET_DATA, SUBMIT_JOB, CONFIRM_JOB, QUERY_JOB,
-    RX_BYTES, RX_FRAME, REPLY_MATCHED, REJECTED }
+    RX_BYTES, RX_FRAME, REPLY_MATCHED, REPLY_IGNORED, REJECTED }
 data class PrinterDiagnostic(val stage: PrinterStage, val count: Long? = null,
     val frame: PrinterFrameMetadata? = null, val reason: PrinterFailureReason? = null) {
     fun safeText() = "PRINTER_${stage.name}" + (count?.let { " count=$it" } ?: "") +
@@ -168,12 +168,18 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
             }
             val frame = incoming.removeFirst()
             if (++ignored > 128) throw PrinterFailure(PrinterFailureCode.LIMIT_EXCEEDED)
-            if (frame.channel != 1 || frame.interactive != 7) continue
+            if (frame.channel != 1) continue
             if (frame.encoding != 3 || frame.encryption != 4 || frame.total != 1)
                 throw PrinterFailure(PrinterFailureCode.KEY_OR_PROFILE_REJECTED, PrinterFailureReason.REPLY_PROFILE)
             val json = try {
                 JsonParser.parseString(cipher.crypt(frame.body).toString(Charsets.UTF_8)).asJsonObject
             } catch (_: Exception) { throw PrinterFailure(PrinterFailureCode.KEY_OR_PROFILE_REJECTED, PrinterFailureReason.REPLY_JSON) }
+            // The reference matches JSON ids rather than requiring interactive=7.
+            // Never treat an echoed request or notification as a reply, even if its id matches.
+            if (json.has("method")) {
+                report(PrinterDiagnostic(PrinterStage.REPLY_IGNORED, reason = PrinterFailureReason.RPC_METHOD_MESSAGE))
+                continue
+            }
             val responseId = json["id"]?.toString()?.toLongOrNull() ?: continue
             if (responseId == id) { report(PrinterDiagnostic(PrinterStage.REPLY_MATCHED)); return json }
         }

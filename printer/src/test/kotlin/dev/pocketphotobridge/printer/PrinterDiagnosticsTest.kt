@@ -17,11 +17,70 @@ class PrinterDiagnosticsTest {
             methods += method
             incoming += reply(method, request["id"].asLong)
         }
-        override fun read(timeoutMs: Long) = incoming.removeFirst()
+        override fun read(timeoutMs: Long) = incoming.removeFirstOrNull() ?: throw PrinterFailure(PrinterFailureCode.TIMEOUT)
         override fun close() { cipher.close() }
     }
     private fun packet(id: Long, result: String): ByteArray = PrinterCipher(token).use { cipher ->
         PrinterProtocol.encode(PrinterFrame(1, id, cipher.crypt("{\"id\":$id,\"result\":$result}".toByteArray()), interactive = 7))
+    }
+    private fun withHeader(packet: ByteArray, version: Int, interactive: Int): ByteArray = packet.copyOf().apply {
+        this[1] = version.toByte(); this[4] = interactive.toByte()
+        this[lastIndex - 1] = (((0 until size - 2).sumOf { this[it].toInt() and 255 } - 126) and 255).toByte()
+    }
+    private fun statusReply(id: Long) = packet(id, "{\"category\":\"idle\",\"sub_category\":\"init\",\"error\":0,\"battery\":80}")
+    @Test fun diagnosesVersionOneInteractiveSixRepliesWithoutChangingOutgoingVersion() {
+        val methods = mutableListOf<String>()
+        val events = mutableListOf<PrinterDiagnostic>()
+        val incoming = ArrayDeque<ByteArray>()
+        PrinterCipher(token).use { cipher ->
+            val transport = object : PrinterTransport {
+                override fun write(bytes: ByteArray) {
+                    assertEquals("Inbound version must not silently change request encoding", 100, bytes[1].toInt() and 255)
+                    val request = JsonParser.parseString(cipher.crypt(PrinterProtocol.decode(bytes).body).toString(Charsets.UTF_8)).asJsonObject
+                    val id = request["id"].asLong; val method = request["method"].asString
+                    methods += method
+                    incoming += withHeader(if (method == "mixed_status") statusReply(id) else packet(id, "[{}]"), 1, 6)
+                }
+                override fun read(timeoutMs: Long) = incoming.removeFirstOrNull() ?: throw PrinterFailure(PrinterFailureCode.TIMEOUT)
+                override fun close() { }
+            }
+            PrinterSession(transport, token, events::add).use {
+                assertEquals(PrinterStatus("init", 80), it.diagnose())
+            }
+        }
+        assertEquals(listOf("mixed_status", "get_prop"), methods)
+        assertTrue(events.any { it.stage == PrinterStage.STATUS_READY })
+    }
+    @Test fun interactiveSixReplyIsCorrelatedEvenWithLegacyVersion() {
+        val transport = Transport { method, id ->
+            withHeader(if (method == "mixed_status") statusReply(id) else packet(id, "[{}]"), 100, 6)
+        }
+        PrinterSession(transport, token).use { assertEquals(80, it.diagnose().battery) }
+    }
+    @Test fun requestEchoAndMethodMessagesCannotSatisfyAResponseEvenWithMatchingId() {
+        val methods = mutableListOf<String>()
+        val events = mutableListOf<PrinterDiagnostic>()
+        val incoming = ArrayDeque<ByteArray>()
+        PrinterCipher(token).use { cipher ->
+            val transport = object : PrinterTransport {
+                override fun write(bytes: ByteArray) {
+                    val request = JsonParser.parseString(cipher.crypt(PrinterProtocol.decode(bytes).body).toString(Charsets.UTF_8)).asJsonObject
+                    val id = request["id"].asLong; val method = request["method"].asString
+                    methods += method
+                    incoming += bytes.copyOf() // A request echo has a matching id but no result.
+                    val falseResponse = "{\"id\":$id,\"method\":\"private-event-name\",\"result\":{\"category\":\"processing\",\"sub_category\":\"printing\"}}"
+                    incoming += withHeader(PrinterProtocol.encode(PrinterFrame(1, id, cipher.crypt(falseResponse.toByteArray()))), 1, 6)
+                    incoming += withHeader(if (method == "mixed_status") statusReply(id) else packet(id, "[{}]"), 1, 6)
+                }
+                override fun read(timeoutMs: Long) = incoming.removeFirstOrNull() ?: throw PrinterFailure(PrinterFailureCode.TIMEOUT)
+                override fun close() { }
+            }
+            PrinterSession(transport, token, events::add).use { assertEquals("init", it.diagnose().phase) }
+        }
+        assertEquals(listOf("mixed_status", "get_prop"), methods)
+        val lines = events.map { it.safeText() }
+        assertTrue(lines.contains("PRINTER_REPLY_IGNORED reason=RPC_METHOD_MESSAGE"))
+        assertFalse(lines.joinToString().contains("private-event-name"))
     }
     private fun trace(transport: Transport, expected: PrinterFailureCode = PrinterFailureCode.PROTOCOL_ERROR): List<String> {
         val events = mutableListOf<PrinterDiagnostic>()

@@ -6,6 +6,35 @@ import org.junit.Test
 class PrinterProtocolTest {
     // Synthetic fixture token, unrelated to any printer.
     private val token = "000102030405060708090a0b"
+    @Test fun observedVersionOneHeaderCanBeDecodedAndFragmentedWithSyntheticBody() {
+        // Header matches the tablet trace. Body is synthetic, not a hardware capture.
+        val packet = versionOnePacket()
+        val headers = mutableListOf<PrinterFrameMetadata>()
+        val reader = PrinterFrameReader(headers::add)
+        assertTrue(reader.accept(packet.copyOfRange(0, 13)).isEmpty())
+        val decoded = reader.accept(packet.copyOfRange(13, packet.size)).single()
+        assertEquals(1, headers.single().version)
+        assertEquals(6, decoded.interactive)
+        assertEquals(4, decoded.encryption)
+        assertEquals(81, decoded.body.size)
+        assertEquals(4177, headers.single().attributes)
+        assertArrayEquals(ByteArray(81) { it.toByte() }, decoded.body)
+    }
+    @Test fun versionOneStillRequiresTheOriginalChecksum() {
+        val packet = versionOnePacket().apply { this[20] = (this[20].toInt() xor 1).toByte() }
+        val error = assertThrows(PrinterFailure::class.java) { PrinterProtocol.decode(packet) }
+        assertEquals(PrinterFailureReason.FRAME_CHECKSUM, error.reason)
+    }
+    private fun versionOnePacket(): ByteArray {
+        val packet = ByteArray(103)
+        byteArrayOf(0x7e, 1, 0, 1, 6, 3).copyInto(packet)
+        packet[10] = 1; packet[14] = 1; packet[16] = 1
+        packet[18] = 0x51; packet[19] = 0x10
+        ByteArray(81) { it.toByte() }.copyInto(packet, 20)
+        packet[101] = (((0 until 101).sumOf { packet[it].toInt() and 255 } - 126) and 255).toByte()
+        packet[102] = 0x7e
+        return packet
+    }
     @Test fun matchesIndependentFrameVector() {
         val packet = PrinterProtocol.encode(PrinterFrame(1, 1, byteArrayOf(0x7b, 0x7d), encryption = 0))
         assertEquals("7e640001060300000000010000000100010002007b7d6b7e", packet.hex())
@@ -27,7 +56,7 @@ class PrinterProtocolTest {
         val valid = PrinterProtocol.encode(PrinterFrame(1, 1, byteArrayOf(1, 2)))
         val corrupt = valid.clone().apply { this[20] = 5 }
         rejected(PrinterFailureCode.PROTOCOL_ERROR) { PrinterProtocol.decode(corrupt) }
-        val version = valid.clone().apply { this[1] = 1 }
+        val version = valid.clone().apply { this[1] = 2 }
         rejected(PrinterFailureCode.PROTOCOL_ERROR) { PrinterProtocol.decode(version) }
     }
     @Test fun boundsPreventOversizedBodiesAndInputBuffers() {

@@ -1,6 +1,6 @@
 # Pocket Photo Bridge
 
-Transfer a camera-selected photo from a **Sony RX100 VII** to Android, preview and save it, then prepare an experimental direct Bluetooth print on an original **Xiaomi Mi Portable Photo Printer**. Version **0.2.1** adds detailed redacted printer diagnostics to the token-conditional printing flow; a real Xiaomi print test is still pending.
+Transfer a camera-selected photo from a **Sony RX100 VII** to Android, preview and save it, then prepare an experimental direct Bluetooth print on an original **Xiaomi Mi Portable Photo Printer**. Version **0.2.2** accepts the inbound frame variant observed on the tablet and retains detailed redacted diagnostics; a real Xiaomi print test is still pending.
 
 ## Roadmap
 
@@ -42,7 +42,7 @@ There is no automatic retry. A persisted unresolved-job marker blocks new submis
 
 Follow [the Android-only printer test guide](docs/printer-tablet-testing.md). The implementation follows MIT-licensed community evidence pinned at [85335b6](https://github.com/fliptheweb/mi-portable-photo-printer/tree/85335b639f3d818c3fe9a892e328864fc3d37250); its license notice is included in the APK. Software verification does not establish TEJ4007CN printing support.
 
-The first tablet experiment on Android API 36 confirmed image preparation and an actual SPP connection. With a user-obtained 24-character `TOKEN`, version 0.2.0 stopped at generic `PROTOCOL_ERROR`; that trace does not locate the failing reply or establish a wrong token. Version 0.2.1 logs fixed request stages, structural frame metadata and specific rejection reasons while excluding tokens, frame sequences, reply bodies and identities. Token input is validated whole rather than silently shortened. Use **Connect / Diagnose** and share safe diagnostics before attempting a physical print.
+The first tablet experiment on Android API 36 confirmed image preparation and an actual SPP connection. Version 0.2.1 located the first protocol mismatch: the printer sent a version-1, interactive-6 encrypted JSON frame, while the app required version 100. Version 0.2.2 accepts incoming versions 1/100 and correlates interactive-6/7 JSON replies by request ID; method-bearing requests/notifications cannot satisfy a reply. Outgoing frames remain version 100, and checksum, encryption and result/schema checks remain enabled. Token input is validated whole rather than silently shortened. Diagnostics exclude tokens, frame sequences, reply bodies and identities. Use **Connect / Diagnose** and share safe diagnostics before attempting a physical print; key acceptance and printing remain unverified.
 
 ## Install and test from an Android tablet
 

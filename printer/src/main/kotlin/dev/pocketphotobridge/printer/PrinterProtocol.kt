@@ -9,7 +9,7 @@ enum class PrinterFailureReason {
     STREAM_HEADER, FRAME_SHORT, FRAME_DELIMITER, FRAME_VERSION, FRAME_RESERVED, FRAME_LENGTH,
     FRAME_ATTRIBUTES, FRAME_CHECKSUM, FRAME_CHANNEL, FRAME_INTERACTIVE, FRAME_ENCODING,
     FRAME_ENCRYPTION, FRAME_PACKAGE, FRAME_MULTIPART,
-    RPC_RESULT_MISSING, REPLY_PROFILE, REPLY_JSON,
+    RPC_RESULT_MISSING, REPLY_PROFILE, REPLY_JSON, RPC_METHOD_MESSAGE,
     STATUS_RESULT_TYPE, STATUS_CATEGORY_MISSING, STATUS_CATEGORY_TYPE, STATUS_CATEGORY_UNKNOWN,
     STATUS_PHASE_MISSING, STATUS_PHASE_TYPE, STATUS_PHASE_UNKNOWN, DEVICE_INFO_RESULT_TYPE, RESPONSE_SHAPE
 }
@@ -55,7 +55,7 @@ object PrinterProtocol {
         if (packet.size < 22) invalid(PrinterFailureReason.FRAME_SHORT)
         if (packet[0] != 0x7e.toByte()) invalid(PrinterFailureReason.FRAME_DELIMITER)
         observe(metadata(packet))
-        if (packet[1] != 0x64.toByte()) invalid(PrinterFailureReason.FRAME_VERSION)
+        if (!supportedIncomingVersion(packet[1])) invalid(PrinterFailureReason.FRAME_VERSION)
         if (packet[2] != 0.toByte()) invalid(PrinterFailureReason.FRAME_RESERVED)
         if (packet.last() != 0x7e.toByte()) invalid(PrinterFailureReason.FRAME_DELIMITER)
         val attr = get(packet, 18, 2).toInt()
@@ -88,6 +88,9 @@ object PrinterProtocol {
             attr and 0x3ff, attr)
     }
     private fun checksum(bytes: ByteArray, end: Int) = ((0 until end).sumOf { bytes[it].toInt() and 255 } - 126) and 255
+    // 0x64 is the reference's outbound version; this tablet observed inbound version 1.
+    // Requests still use 0x64. Unknown inbound versions remain unsupported.
+    internal fun supportedIncomingVersion(version: Byte) = version == 1.toByte() || version == 0x64.toByte()
     private fun invalid(reason: PrinterFailureReason): Nothing = throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR, reason)
     internal fun put(bytes: ByteArray, start: Int, value: Long, length: Int) {
         repeat(length) { bytes[start + it] = (value ushr (8 * it)).toByte() }
@@ -105,7 +108,7 @@ class PrinterFrameReader(private val observe: (PrinterFrameMetadata) -> Unit = {
         while (pending.size - offset >= 22) {
             if (pending[offset] != 0x7e.toByte())
                 throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR, PrinterFailureReason.STREAM_HEADER)
-            if (pending[offset + 1] != 0x64.toByte()) {
+            if (!PrinterProtocol.supportedIncomingVersion(pending[offset + 1])) {
                 observe(PrinterProtocol.metadata(pending, offset))
                 throw PrinterFailure(PrinterFailureCode.PROTOCOL_ERROR, PrinterFailureReason.FRAME_VERSION)
             }

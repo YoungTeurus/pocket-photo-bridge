@@ -1,6 +1,6 @@
 # Xiaomi printer test from an Android tablet
 
-Version **0.2.1** supports local image preparation and experimental direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. SPP connection and image preparation passed the tablet experiment; a physical print on this particular printer/firmware is **not yet verified**. [Protocol evidence](xiaomi-protocol.md) distinguishes the upstream tested models from this reported SKU.
+Version **0.2.2** supports local image preparation and experimental direct Bluetooth printing for the original Mi Portable `basil` profile. The user reports SKU **TEJ4007CN**, Micro-USB and sliding paper compartment. SPP connection and image preparation passed the tablet experiment; a physical print on this particular printer/firmware is **not yet verified**. [Protocol evidence](xiaomi-protocol.md) distinguishes the upstream tested models from this reported SKU.
 
 ## Install and prepare
 
@@ -34,11 +34,13 @@ If you already own the token, enter it only in the printer screen, then tap **Co
 
 A successful encrypted diagnosis shows a known printer phase and, when available, battery level. `INVALID_KEY` or `KEY_OR_PROFILE_REJECTED` means the token/profile check failed; SPP success alone cannot distinguish a wrong token from incompatible firmware. Exact paper, cover and battery fault mappings for TEJ4007CN remain unverified; physically inspect the printer when a fault is reported.
 
-## Investigating the 0.2.0 protocol error with 0.2.1
+## Diagnosing protocol differences
 
 The user's 0.2.0 trace reached `PRINTER_SPP_CONNECTED`, then `PRINTER_PROTOCOL_ERROR` after entering a 24-character field named `TOKEN`. This proves SPP attachment; the generic error does not show which reply differed. The secret was not supplied to the project. There is no evidence yet that the key itself is wrong or that encrypted status/printing succeeds.
 
-1. Install 0.2.1, close other printer apps, open **Print test image** and select the paired printer. Keep the app visible.
+The 0.2.1 retest located a version-1, interactive-6 frame that the old receiver rejected at `FRAME_VERSION`. Version 0.2.2 accepts that inbound header convention alongside the reference's version 100, and considers type-6/7 JSON replies while ignoring method-bearing notifications/requests. Checksum, encryption, reply correlation and schema checks remain enabled; transmitted version stays 100. The old rejection occurred before decryption, so no key acceptance or valid status is established yet.
+
+1. Install 0.2.2, close other printer apps, open **Print test image** and select the paired printer. Keep the app visible.
 2. Enter the token locally again and tap **Connect / Diagnose** once. **Do not tap Print for this experiment.** Diagnosis sends only `mixed_status` and, if status parses, `get_prop ["device_info"]`; it sends no reset, job submission or JPEG upload.
 3. Use **Share safe printer diagnostics** and provide the full exported text. It includes token length only, query stages, RX byte counts, frame version/reserved/channel/interactive/encoding/encryption/package/body-length/attribute fields, and a fixed rejection reason. It excludes the token, sequence IDs, decrypted/encrypted payloads, raw JSON, Bluetooth identifiers and device information. Do not add the token or a screenshot of it.
 
@@ -51,6 +53,8 @@ The user's 0.2.0 trace reached `PRINTER_SPP_CONNECTED`, then `PRINTER_PROTOCOL_E
 | `REPLY_JSON` | The decrypted body is not a JSON object; wrong key or incompatible profile remains possible. |
 | `RPC_RESULT_MISSING` | A correlated JSON reply lacks the expected result field. |
 | `STATUS_*`, `DEVICE_INFO_RESULT_TYPE` | The correlated reply's schema or status values differ from the supported profile. |
+
+`PRINTER_REPLY_IGNORED reason=RPC_METHOD_MESSAGE` means a validly framed/decrypted JSON request or notification was received; it does not count as the status/device-info reply even when its id matches. A following timeout means no acceptable correlated reply arrived within the deadline. Share the complete safe trace rather than changing the token or repeatedly submitting jobs.
 
 Strict checks remain enabled. Unsupported values are not printed into diagnostics or guessed into known states. A token with another length/format is rejected without using a shortened prefix; do not trim or pad it to force acceptance. Once diagnosis succeeds, proceed to the separately confirmed physical experiment below.
 
