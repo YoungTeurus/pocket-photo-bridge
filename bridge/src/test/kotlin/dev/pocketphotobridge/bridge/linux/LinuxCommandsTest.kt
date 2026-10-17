@@ -9,6 +9,15 @@ import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 
 class LinuxCommandsTest {
+    @Test fun `runner permits bounded driver and supplicant commands without a shell`() {
+        val calls = mutableListOf<List<String>>()
+        val runner = BoundedLinuxCommandRunner { command -> calls += command; FakeProcess("OK\n".toByteArray()) }
+        listOf(listOf("/usr/bin/readlink", "-f", "/sys/class/net/wlan0/device/driver"),
+            listOf("/usr/sbin/wpa_cli", "-i", "wlan0", "get_network", "7", "key_mgmt")).forEach { command ->
+            assertEquals(LinuxCommandResult(0, "OK\n"), runner.run(command, 500, null))
+        }
+        assertEquals(2, calls.size)
+    }
     @Test fun `runner rejects shell executables excess timeout and injected command controls before launch`() {
         var launches = 0
         val runner = BoundedLinuxCommandRunner { launches++; FakeProcess(byteArrayOf()) }

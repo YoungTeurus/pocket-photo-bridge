@@ -50,10 +50,13 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
             nm("connection", "load", profile.toString())
             nm("connection", "up", "uuid", setupUuid, "ifname", wifiInterface)
             setupActive = true
+            configureUweSetupSecurity()
             reportRadio(report, "LINUX_SETUP_STARTED")
             return InetAddress.getByAddress(byteArrayOf(192.toByte(), 168.toByte(), 50, 1))
         } catch (failure: Throwable) {
-            cleanupProfile(profile, setupUuid)
+            // NM already owns an active AP if security adjustment fails. Keep
+            // ownership until teardown succeeds; deleting a keyfile is insufficient.
+            try { stopSetup() } catch (cleanup: Throwable) { throw safeRadioFailure(cleanup) }
             throw safeRadioFailure(failure)
         }
     }
@@ -203,6 +206,31 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         if (!Regex("30(?: \\([^\\r\\n]*\\))?").matches(state)) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
     }
     private fun nm(vararg arguments: String): String = command(listOf("/usr/bin/nmcli", "--wait", "15") + arguments, 20_000)
+
+    /** UWE5622 firmware rejects AP association when NM advertises PSK-SHA256,
+     * even with PMF disabled. Only alter our current AP, before announcing it. */
+    private fun configureUweSetupSecurity() {
+        val driver = runner.run(listOf("/usr/bin/readlink", "-f", "/sys/class/net/$wifiInterface/device/driver"), 5_000)
+        if (driver.exitCode != 0 || driver.output.trim().substringAfterLast('/') !in setOf("unisoc_wifi", "sprdwl_ng")) return
+        if (nm("-g", "GENERAL.CON-UUID", "device", "show", wifiInterface).trim() != setupUuid)
+            radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+        fun wpa(vararg arguments: String) = command(listOf("/usr/sbin/wpa_cli", "-i", wifiInterface) + arguments, 5_000).trim()
+        val current = wpa("list_networks").lineSequence().map { it.split('\t') }
+            .filter { it.size == 4 && it[3] == "[CURRENT]" }.toList().singleOrNull()
+            ?: radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+        val network = current[0].takeIf { Regex("0|[1-9][0-9]{0,8}").matches(it) }
+            ?: radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+        if (wpa("get_network", network, "mode") != "2") radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+        val keyMgmt = wpa("get_network", network, "key_mgmt").split(Regex("\\s+")).toSet()
+        if (keyMgmt == setOf("WPA-PSK")) return
+        if (keyMgmt != setOf("WPA-PSK", "WPA-PSK-SHA256")) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+        for (arguments in listOf(listOf("set_network", network, "key_mgmt", "WPA-PSK"),
+            listOf("disable_network", network), listOf("enable_network", network))) {
+            if (wpa(*arguments.toTypedArray()) != "OK") radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+        }
+        if (wpa("get_network", network, "key_mgmt") != "WPA-PSK") radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+    }
+
     private fun command(arguments: List<String>, timeout: Long): String {
         checkRadioInterrupted()
         val result = try { runner.run(arguments, timeout) } catch (failure: Throwable) { throw safeRadioFailure(failure) }
@@ -253,7 +281,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         key-mgmt=wpa-psk
         psk=${escapeKeyfile(password)}
         psk-flags=0
-        ${if (hotspot) "pmf=1" else ""}
+        ${if (hotspot) "pmf=1\n        proto=rsn;\n        pairwise=ccmp;\n        group=ccmp;" else ""}
 
         [ipv4]
         method=${if (hotspot) "shared" else "auto"}

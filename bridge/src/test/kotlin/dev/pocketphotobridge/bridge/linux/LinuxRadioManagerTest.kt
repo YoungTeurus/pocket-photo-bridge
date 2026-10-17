@@ -259,10 +259,9 @@ class LinuxRadioManagerTest {
         val files = Files.createTempDirectory("linux-uwe5622")
         val commands = uweCommands()
         val events = mutableListOf<String>()
+        var callsAtReady = -1
         val manager = LinuxRadioManager(files, "wlan0", { event ->
-            if (event == "LINUX_SETUP_STARTED") {
-                assertTrue(commands.calls.any { it.takeLast(2) == listOf("enable_network", "7") })
-            }
+            if (event == "LINUX_SETUP_STARTED") callsAtReady = commands.calls.size
             events += event
         }, commands, files.resolve("profiles"))
         manager.startSetup("private-setup-ssid", "private-password")
@@ -271,6 +270,7 @@ class LinuxRadioManagerTest {
         val down = commands.calls.indexOfFirst { it.takeLast(2) == listOf("disable_network", "7") }
         val enable = commands.calls.indexOfFirst { it.takeLast(2) == listOf("enable_network", "7") }
         assertTrue(up in 0 until set && set < down && down < enable)
+        assertTrue("AP readiness follows the security adjustment", enable < callsAtReady)
         assertTrue(commands.calls.filter { it.first() == "/usr/sbin/wpa_cli" }.all { it.take(3) == listOf("/usr/sbin/wpa_cli", "-i", "wlan0") })
         assertTrue(commands.calls.none { it.any { value -> value.contains("private-password") || value.contains("private-setup-ssid") } })
         assertTrue(events.contains("LINUX_SETUP_STARTED"))
@@ -290,7 +290,7 @@ class LinuxRadioManagerTest {
     }
 
     @Test fun `uwe5622 refuses an ambiguous or station network and failed security changes`() {
-        listOf("missing-current", "multiple-current", "station", "set_network", "disable_network", "enable_network", "readback").forEach { fault ->
+        listOf("wrong-uuid", "missing-current", "multiple-current", "invalid-id", "station", "unknown-key", "set_network", "disable_network", "enable_network", "readback").forEach { fault ->
             val files = Files.createTempDirectory("linux-unsafe-ap")
             val commands = uweCommands(fault = fault)
             val events = mutableListOf<String>()
@@ -301,7 +301,8 @@ class LinuxRadioManagerTest {
             assertNull(failure.cause)
             assertFalse(events.contains("LINUX_SETUP_STARTED"))
             assertFalse(Files.exists(files.resolve("profiles").resolve(manager.setupProfileName)))
-            if (fault in listOf("missing-current", "multiple-current", "station")) assertTrue(commands.calls.none { it.contains("set_network") })
+            assertTrue("Activated AP must be explicitly stopped: $fault", commands.calls.any { it.contains("down") })
+            if (fault in listOf("wrong-uuid", "missing-current", "multiple-current", "invalid-id", "station", "unknown-key")) assertTrue(commands.calls.none { it.contains("set_network") })
             if (fault == "set_network") assertTrue(commands.calls.none { it.contains("disable_network") })
         }
     }
@@ -315,18 +316,51 @@ class LinuxRadioManagerTest {
         manager.close()
     }
 
+    @Test fun `failed WPA adjustment retains AP ownership until a refused teardown succeeds`() {
+        val files = Files.createTempDirectory("linux-uwe-teardown")
+        val base = uweCommands(fault = "set_network")
+        var refuseDown = true
+        var attempts = 0
+        val commands = object : LinuxCommandRunner {
+            override fun run(command: List<String>, timeoutMillis: Long, input: String?): LinuxCommandResult = when {
+                command.contains("down") && refuseDown -> { attempts++; LinuxCommandResult(1, "") }
+                command.contains("GENERAL.STATE") -> LinuxCommandResult(0, "100 (connected)\n")
+                else -> base.run(command, timeoutMillis, input)
+            }
+        }
+        val manager = LinuxRadioManager(files, "wlan0", {}, commands, files.resolve("profiles"))
+        assertThrows(LinuxRadioFailure::class.java) { manager.startSetup("setup", "private-password") }
+        val profile = files.resolve("profiles").resolve(manager.setupProfileName)
+        assertTrue(Files.exists(profile))
+        val activations = base.calls.count { it.contains("up") }
+        assertThrows(LinuxRadioFailure::class.java) { manager.connectCamera("camera", "camera-password") }
+        assertEquals(activations, base.calls.count { it.contains("up") })
+        assertTrue(attempts >= 2)
+        refuseDown = false
+        manager.stopSetup()
+        assertFalse(Files.exists(profile))
+        manager.close()
+    }
+
     private fun uweCommands(driver: String = "unisoc_wifi", initialKeyMgmt: String = "WPA-PSK WPA-PSK-SHA256", fault: String = ""): FakeCommands {
         var keyMgmt = initialKeyMgmt
+        var profileUuid = ""
         return FakeCommands { args -> LinuxCommandResult(0, when {
+            args.contains("load") -> {
+                profileUuid = Files.readString(Path.of(args.last())).lineSequence().single { it.startsWith("uuid=") }.substringAfter('=')
+                ""
+            }
+            args.contains("GENERAL.CON-UUID") -> if (fault == "wrong-uuid") "different-uuid\n" else "$profileUuid\n"
             args.first() == "/usr/bin/readlink" -> "/sys/bus/sdio/drivers/$driver\n"
             args.first() != "/usr/sbin/wpa_cli" -> ""
             args.last() == "list_networks" -> "network id / ssid / bssid / flags\n" + when (fault) {
                 "missing-current" -> "7\tprivate-setup-ssid\tany\t\n"
                 "multiple-current" -> "7\tprivate-setup-ssid\tany\t[CURRENT]\n8\tother\tany\t[CURRENT]\n"
+                "invalid-id" -> "7;bad\tprivate-setup-ssid\tany\t[CURRENT]\n"
                 else -> "7\tprivate-setup-ssid\tany\t[CURRENT]\n"
             }
             args.takeLast(3) == listOf("get_network", "7", "mode") -> if (fault == "station") "0\n" else "2\n"
-            args.takeLast(3) == listOf("get_network", "7", "key_mgmt") -> "$keyMgmt\n"
+            args.takeLast(3) == listOf("get_network", "7", "key_mgmt") -> if (fault == "unknown-key") "WPA-PSK SAE\n" else "$keyMgmt\n"
             args.contains("set_network") -> if (fault == "set_network") "FAIL\n" else {
                 if (fault != "readback") keyMgmt = "WPA-PSK"
                 "OK\n"

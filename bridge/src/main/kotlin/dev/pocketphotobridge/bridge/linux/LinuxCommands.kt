@@ -82,6 +82,7 @@ internal class BoundedLinuxCommandRunner(private val processStart: (List<String>
     }
     private companion object {
         const val MAX_OUTPUT_BYTES = 65_536
-        val EXECUTABLES = setOf("/usr/bin/nmcli", "/usr/bin/bluetoothctl", "/usr/bin/sdptool", "/usr/sbin/ip")
+        val EXECUTABLES = setOf("/usr/bin/nmcli", "/usr/bin/bluetoothctl", "/usr/bin/sdptool", "/usr/sbin/ip",
+            "/usr/bin/readlink", "/usr/sbin/wpa_cli")
     }
 }

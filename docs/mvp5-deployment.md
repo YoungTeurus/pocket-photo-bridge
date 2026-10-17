@@ -100,6 +100,14 @@ use the authenticated setup page described below.
    password protected; the camera's station profile is unchanged. DHCP and shared
    IPv4 require dnsmasq and a firewall backend even on minimal Armbian images.
 
+   On UWE5622 (`unisoc_wifi`/`sprdwl_ng`) the setup adapter also removes
+   NetworkManager's unsupported AP `WPA-PSK-SHA256` advertisement before declaring
+   setup ready. It verifies its active connection UUID and current AP network,
+   keeps ordinary WPA2-PSK/CCMP, and checks every supplicant change. Other drivers
+   and camera station connections do not receive this adjustment. The installer
+   explicitly includes `wpasupplicant`. The firmware limitation is independently
+   documented in the [OpenAstro hardware setup](https://github.com/open-astro/openastro-imate/blob/main/openastro/openastro-setup.sh).
+
 5. Save the displayed unique `PocketPhotoBridge-...` SSID, Wi-Fi password, and
    administrator password privately. Disconnecting Wi-Fi for setup can end the
    SSH session; Ethernet is useful during installation. Connect your phone or
