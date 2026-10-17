@@ -67,7 +67,7 @@ this installer. Configure through authenticated setup; no handwritten proposed
 TOML schema or token on the service command line is needed.
 
 The first unconfigured boot stays in a dedicated setup AP; configured reboots
-offer a 30-second setup window. An authenticated interaction holds setup open.
+offer a 60-second setup window. An authenticated interaction holds setup open.
 The unique SSID starts with `PocketPhotoBridge-`, and only the setup interface
 serves `http://192.168.50.1:8080/`. The hotspot and HTTP listener stop before
 joining the camera network. Reboot to enter setup again. The state root is

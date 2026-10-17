@@ -55,7 +55,7 @@ removed from the queue without deleting duplicate suppression history.
 
 `ServiceRuntime` composes this controller with `ServiceLoop`, `SetupServer` and
 platform device adapters. First boot waits in setup. Configured boots offer a
-30-second setup window; authenticated interaction holds it open. A one-time
+60-second setup window; authenticated interaction holds it open. A one-time
 auto-print opt-in enables operation. Linux closes the HTTP listener and hotspot
 before joining the camera; reboot makes setup reachable again. There is no
 per-photo prompt in normal operation. A single worker receives before printing,

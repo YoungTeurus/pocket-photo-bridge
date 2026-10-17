@@ -129,5 +129,5 @@ systemctl start "$unit"
 systemctl is-active --quiet "$unit"
 completed=true
 printf '%s\n' 'Pocket Photo Bridge 0.5.0 installed. Keep the displayed credentials private.'
-printf '%s\n' 'Unconfigured boots stay in setup. Configured boots offer setup for 30 seconds.'
+printf '%s\n' 'Unconfigured boots stay in setup. Configured boots offer setup for 60 seconds.'
 printf '%s\n' 'Connect only to the dedicated PocketPhotoBridge hotspot and open http://192.168.50.1:8080/.'

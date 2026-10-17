@@ -140,7 +140,7 @@ Pairing runs in the background because BlueZ discovery and pairing can take
 about 40 seconds. Refresh the page while status shows `PAIRING`; choose Run
 after it finishes. A failed pairing reports a fixed category in diagnostics.
 
-After configuration, every reboot opens setup for 30 seconds. Signing in and
+After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP
 server stop before the board joins the camera network. Reboot to enter setup
 again. A single radio alternates between these modes; the setup page is
