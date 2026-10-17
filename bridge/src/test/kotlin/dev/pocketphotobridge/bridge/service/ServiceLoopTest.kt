@@ -22,7 +22,7 @@ class ServiceLoopTest {
         assertEquals(1, actions.captures); assertEquals(2, actions.prints)
     }
     @Test fun cameraEpochRearmsOnlyAfterAbsenceAndInterruptedCaptureRetriesWithBackoff() {
-        val actions = Actions(); val loop = ServiceLoop(BootModePolicy(0), actions)
+        val actions = Actions(); val loop = ServiceLoop(BootModePolicy(0, windowMs = 30_000), actions)
         actions.captureSucceeds = false
         loop.tick(30_000, true, true); loop.tick(30_001, true, true)
         assertEquals(1, actions.captures)
