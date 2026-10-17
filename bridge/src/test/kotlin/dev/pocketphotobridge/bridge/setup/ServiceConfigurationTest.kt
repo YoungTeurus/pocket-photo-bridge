@@ -36,6 +36,15 @@ class ServiceConfigurationTest {
         assertFalse(Files.list(root).use { it.anyMatch { path -> path.fileName.toString().endsWith(".tmp") } })
     }
 
+    @Test fun legacyConfigurationDefaultsToDiscardingWaitingPhotosOnNewBoot() = directory { root ->
+        val payload = """{"cameraSsid":"DIRECT-camera","cameraPassword":"camera-password","printerAddress":"AA:BB:CC:DD:EE:FF","printerToken":"0123456789abcdef01234567","wifiInterface":"wlan0","autoPrintEnabled":true,"crop":false}"""
+        val checksum = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(payload.toByteArray()))
+        Files.writeString(root.resolve("configuration.state"), "PPB-CONFIG 1\nchecksum=$checksum\n$payload")
+        val loaded = ServiceConfigStore(root).load()!!
+        assertFalse(loaded.keepQueueAcrossBoots)
+        assertTrue(loaded.autoPrintEnabled)
+    }
+
     @Test fun generatedBootstrapIsUniquePrivateAndPersistent() = directory { root ->
         val first = BootstrapStore(root).loadOrCreate()
         val again = BootstrapStore(root).loadOrCreate()

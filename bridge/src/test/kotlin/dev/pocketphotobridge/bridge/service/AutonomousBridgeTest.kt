@@ -76,6 +76,85 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun sameBootServiceRestartRetainsWaitingPhoto() = root { state ->
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            it.capture(SelectionTrigger("first"))
+        }
+        bridge(state).use {
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000001", false).queued)
+        }
+    }
+
+    @Test fun retentionOptInSurvivesNewBootAndPreferenceChangesApplyOnNextBoot() = root { state ->
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", true)
+            it.capture(SelectionTrigger("first"))
+        }
+        bridge(state).use {
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000002", true).queued)
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+        }
+        bridge(state).use {
+            assertEquals(0, it.beginBoot("00000000-0000-4000-8000-000000000003", false).queued)
+        }
+    }
+
+    @Test fun newBootRetainsUncertainJobButDiscardsOtherWaitingPhoto() = root { state ->
+        var camera = SimulatedSony(photo())
+        val next = javaClass.getResourceAsStream("/simulation/sony-selected-next.jpg")!!.use { it.readBytes() }
+        bridge(state, CameraWifiConnector { camera.connect(it) }, SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT)).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            it.capture(SelectionTrigger("first"))
+            camera = SimulatedSony(next)
+            assertEquals(2, it.capture(SelectionTrigger("second")).queued)
+            assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
+        }
+        val ready = SimulatedPrinter()
+        bridge(state, printer = ready).use {
+            assertEquals(ServiceState.NEEDS_ATTENTION, it.beginBoot("00000000-0000-4000-8000-000000000002", false).state)
+            assertEquals(1, it.snapshot().queued)
+            assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
+            assertEquals(0, ready.submissions)
+            assertEquals(0, it.acknowledgeCheckedPrinter().queued)
+            assertEquals("DUPLICATE_SUPPRESSED", it.capture(SelectionTrigger("first")).category)
+        }
+        bridge(state, SimulatedSony(next)).use {
+            assertEquals(ServiceSnapshot(ServiceState.QUEUED, 1), it.capture(SelectionTrigger("second")))
+        }
+    }
+
+    @Test fun newBootDoesNotForgetSuccessfullyPrintedPhoto() = root { state ->
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            it.capture(SelectionTrigger("first"))
+            assertEquals(ServiceState.PRINTED, it.printNext().state)
+        }
+        val ready = SimulatedPrinter()
+        bridge(state, printer = ready).use {
+            assertEquals(0, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+            assertEquals("DUPLICATE_SUPPRESSED", it.capture(SelectionTrigger("again")).category)
+            it.printNext()
+            assertEquals(0, ready.submissions)
+        }
+    }
+
+    @Test fun corruptBootMarkerBlocksBeforeDiscardingWaitingPhoto() = root { state ->
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            it.capture(SelectionTrigger("first"))
+        }
+        Files.writeString(state.resolve("boot.state"), "corrupt")
+        val ready = SimulatedPrinter()
+        bridge(state, printer = ready).use {
+            assertEquals(ServiceState.STATE_ERROR, it.beginBoot("00000000-0000-4000-8000-000000000002", false).state)
+            assertEquals(1, it.snapshot().queued)
+            assertEquals(ServiceState.STATE_ERROR, it.printNext().state)
+            assertEquals(0, ready.submissions)
+        }
+        assertEquals(2, imageFiles(state).size)
+    }
+
     @Test fun failedCameraSelectionCanRetryTheSameTriggerAfterRestart() = root { state ->
         bridge(state, SimulatedSony(photo(), SonyFault.OFFLINE)).use {
             assertEquals(ServiceState.WAITING_CAMERA, it.capture(SelectionTrigger("same")).state)

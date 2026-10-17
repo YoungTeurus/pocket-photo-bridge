@@ -32,6 +32,7 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
     val root: Path = directory.toAbsolutePath().normalize()
     private val imageRoot = root.resolve("images")
     private val stateFile = root.resolve("queue.state")
+    private val bootFile = root.resolve("boot.state")
     private val lockFile = root.resolve("queue.lock")
     private val posix = root.fileSystem.supportedFileAttributeViews().contains("posix")
     private val owner = Any()
@@ -164,6 +165,35 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
         } catch (_: Exception) { /* No live record references these bytes anymore. */ }
     }
 
+    /** The queue owner records a boot only after its discard commit has reached disk. */
+    fun beginBoot(bootId: String, keepWaiting: Boolean, wasSubmitted: (String) -> Boolean): Int {
+        checkOpen()
+        if (!BOOT_ID.matches(bootId)) persistence()
+        if (Files.exists(bootFile, NOFOLLOW_LINKS)) {
+            if (!Files.isRegularFile(bootFile, NOFOLLOW_LINKS) || Files.size(bootFile) > 256) persistence()
+            secure(bootFile)
+            val text = Files.newInputStream(bootFile, NOFOLLOW_LINKS).use { it.readNBytes(257) }.toString(Charsets.UTF_8)
+            val lines = text.split('\n')
+            if (lines.size != 4 || lines[0] != "PPB-BOOT 1" || !BOOT_ID.matches(lines[1]) || lines[3] != "") persistence()
+            val payload = "${lines[0]}\n${lines[1]}\n"
+            if (lines[2] != "checksum=${hash(payload.toByteArray(Charsets.UTF_8))}") persistence()
+            if (lines[1] == bootId) return 0
+        }
+        val discarded = if (keepWaiting) emptyList() else records.filterNot { wasSubmitted(it.fingerprint) }
+        discarded.forEach(::remove)
+        val payload = "PPB-BOOT 1\n$bootId\n"
+        val bytes = (payload + "checksum=${hash(payload.toByteArray(Charsets.UTF_8))}\n").toByteArray(Charsets.UTF_8)
+        val temporary = Files.createTempFile(root, "boot-", ".tmp")
+        try {
+            secure(temporary)
+            FileChannel.open(temporary, WRITE, NOFOLLOW_LINKS).use { output -> write(output, bytes, bytes.size); output.force(true) }
+            if (Files.isSymbolicLink(bootFile)) persistence()
+            Files.move(temporary, bootFile, ATOMIC_MOVE, REPLACE_EXISTING)
+            forceDirectory(root)
+        } finally { Files.deleteIfExists(temporary) }
+        return discarded.size
+    }
+
     private fun update(next: List<Entry>) {
         try { persist(next); records = next }
         catch (_: Exception) { poisoned = true; persistence() }
@@ -289,6 +319,7 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
         private const val MAX_QUEUE_BYTES = 256L * 1024 * 1024
         private const val MAX_ORIGINAL_BYTES = 64L * 1024 * 1024
         private val DIGEST = Regex("[0-9a-f]{64}")
+        private val BOOT_ID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
         private val IMAGE_FILE = Regex("(?:[0-9a-f]{64}\\.(?:original|print)\\.jpg|capture-[A-Za-z0-9-]+\\.tmp)")
         private val DIRECTORY_PERMISSION = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"))
         private val OWNERS = ConcurrentHashMap<Path, Any>()

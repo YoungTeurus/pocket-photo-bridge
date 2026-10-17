@@ -55,7 +55,10 @@ object BridgeService {
             privateRoot(state)
             diagnostics.emit(if (simulation) "SIMULATION_ONLY" else "LINUX_HARDWARE_VALIDATION_PENDING")
             if (simulation) diagnostics.emit("NO_PHYSICAL_PRINT")
-            ServiceRuntime(state, devices, diagnostics, output).use { it.run() }
+            val bootId = if (simulation) null else Files.newInputStream(Path.of("/proc/sys/kernel/random/boot_id")).use {
+                it.readNBytes(38).toString(Charsets.UTF_8).trim()
+            }
+            ServiceRuntime(state, devices, diagnostics, output, bootId).use { it.run() }
             0
         } catch (failure: Exception) {
             diagnostics.emit("SERVICE_FAILED category=${category(failure)}"); 2
@@ -85,7 +88,8 @@ object BridgeService {
 
 /** Live setup and the operation worker compose the same protocols used by the simulation. */
 class ServiceRuntime(private val state: Path, private val devices: ServiceDevices,
-    private val diagnostics: ServiceDiagnostics, private val output: PrintStream) : AutoCloseable {
+    private val diagnostics: ServiceDiagnostics, private val output: PrintStream,
+    private val bootId: String? = null) : AutoCloseable {
     private val configStore = ServiceConfigStore(state.resolve("setup"))
     private val configuration = AtomicReference(configStore.load())
     private val credentials = BootstrapStore(state.resolve("setup")).loadOrCreate()
@@ -131,7 +135,9 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         CameraWifiConnector { devices.camera(requiredConfiguration(), it) },
         PrinterConnector { devices.printer(requiredConfiguration()) }, JvmPrintImagePreparer(),
         { if (devices.simulation) SIMULATION_TOKEN else requiredConfiguration().printerToken },
-        configuration.get()?.crop ?: false, diagnostics::emit, devices::now, devices::pause)
+        configuration.get()?.crop ?: false, diagnostics::emit, devices::now, devices::pause).also { bridge ->
+            bootId?.let { bridge.beginBoot(it, configuration.get()?.keepQueueAcrossBoots == true) }
+        }
 
     fun run() {
         val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
@@ -229,7 +235,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT",
             "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_PAIRING_STARTED",
             "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_CAMERA_CONNECTING",
-            "BRIDGE_IMAGE_PREPARING", "BRIDGE_PRINTER_CONNECTING", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
+            "BRIDGE_IMAGE_PREPARING", "BRIDGE_PRINTER_CONNECTING", "BRIDGE_BOOT_QUEUE_DISCARDED", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
             "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED", "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED") +
             ServiceState.entries.map { "BRIDGE_${it.name}" } +
             dev.pocketphotobridge.sony.Stage.entries.map { "SONY_${it.name}" } +

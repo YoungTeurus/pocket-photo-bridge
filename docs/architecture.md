@@ -53,6 +53,16 @@ retain the queue; after possible job acceptance the existing `FileBridgeJournal`
 blocks automatic replay until a physical check. Completed/tombstoned photos are
 removed from the queue without deleting duplicate suppression history.
 
+The native Linux service applies the saved `keepQueueAcrossBoots` choice once
+per kernel boot, before setup opens. It defaults to false, including older
+configurations: a new boot discards only unsubmitted waiting photos. The private,
+checksummed boot marker is committed after queue cleanup, so reopening the bridge
+or restarting its service within the same boot retains new captures. Opting in
+keeps waiting photos across boots. Submitted-photo tombstones and unresolved
+reservations are always preserved; a discarded, unsubmitted JPEG may be received
+again. Simulation and the separate Windows/Android workflows retain their prior
+restart behavior.
+
 `ServiceRuntime` composes this controller with `ServiceLoop`, `SetupServer` and
 platform device adapters. First boot waits in setup. Configured boots offer a
 60-second setup window; authenticated interaction holds it open. A one-time

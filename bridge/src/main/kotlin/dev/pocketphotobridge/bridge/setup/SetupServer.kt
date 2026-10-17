@@ -408,7 +408,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         private val EVENT_VALUES = Stage.entries.map { "SONY_${it.name}" }.toSet() +
             PrinterStage.entries.map { "PRINTER_${it.name}" } + SERVICE_STATES.map { "BRIDGE_$it" } +
             setOf("SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_FAILED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT",
-                "SERVICE_PAIRING_STARTED", "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED",
+                "SERVICE_PAIRING_STARTED", "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_BOOT_QUEUE_DISCARDED",
                 "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED", "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED",
                 "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED", "LINUX_BLUETOOTH_CONNECTED") +
             listOf("SOCKET", "CONNECT", "POLL", "SO_ERROR", "SEND", "RECEIVE", "SHUTDOWN", "CLOSE").map { "LINUX_BLUETOOTH_$it" }
