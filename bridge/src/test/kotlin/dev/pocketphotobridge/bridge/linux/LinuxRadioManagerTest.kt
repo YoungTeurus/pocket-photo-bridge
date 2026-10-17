@@ -277,6 +277,48 @@ class LinuxRadioManagerTest {
         manager.close()
     }
 
+    @Test fun `supplicant replies use a private state socket directory across service namespaces`() {
+        val files = Files.createTempDirectory("linux-wpa-namespace")
+        val state = files.resolve("radio state")
+        val base = uweCommands()
+        val events = mutableListOf<String>()
+        val commands = object : LinuxCommandRunner {
+            override fun run(command: List<String>, timeoutMillis: Long, input: String?): LinuxCommandResult {
+                if (command.first() == "/usr/sbin/wpa_cli") {
+                    val flag = command.indexOf("-s")
+                    // The host supplicant cannot reply to a socket in PrivateTmp.
+                    if (flag < 0 || flag + 1 >= command.size) radioFail(LinuxRadioFailureCode.COMMAND_TIMEOUT)
+                    val directory = Path.of(command[flag + 1])
+                    assertEquals(state.toAbsolutePath().normalize(), directory)
+                    assertTrue(Files.isDirectory(directory))
+                    assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(directory))
+                }
+                return base.run(command, timeoutMillis, input)
+            }
+        }
+        val manager = LinuxRadioManager(state, "wlan0", events::add, commands, files.resolve("profiles"))
+        manager.startSetup("setup", "private-password")
+        assertTrue(events.contains("LINUX_SETUP_STARTED"))
+        manager.close()
+    }
+
+    @Test fun `unsafe supplicant client directories fail before opening a socket`() {
+        listOf("symlink", "public").forEach { fault ->
+            val files = Files.createTempDirectory("linux-wpa-unsafe")
+            val state = files.resolve("radio")
+            if (fault == "symlink") Files.createSymbolicLink(state, Files.createDirectory(files.resolve("target")))
+            else { Files.createDirectory(state); Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("rwxrwxrwx")) }
+            val commands = uweCommands()
+            val events = mutableListOf<String>()
+            val manager = LinuxRadioManager(state, "wlan0", events::add, commands, files.resolve("profiles"))
+            val failure = assertThrows(LinuxRadioFailure::class.java) { manager.startSetup("setup", "private-password") }
+            assertEquals(LinuxRadioFailureCode.PROFILE_UNSAFE, failure.code)
+            assertFalse(commands.calls.any { it.first() == "/usr/sbin/wpa_cli" })
+            assertFalse(events.contains("LINUX_SETUP_STARTED"))
+            manager.close()
+        }
+    }
+
     @Test fun `plain PSK AP avoids reset and another driver never receives wpa mutations`() {
         listOf("unisoc_wifi" to "WPA-PSK", "another_wifi_driver" to "WPA-PSK WPA-PSK-SHA256").forEach { (driver, keyMgmt) ->
             val files = Files.createTempDirectory("linux-plain-psk")
