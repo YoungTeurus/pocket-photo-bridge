@@ -107,6 +107,11 @@ use the authenticated setup page described below.
    `http://192.168.50.1:8080/` and sign in. This HTTP address is available only on
    the setup AP. Ignore the client's warning that this hotspot has no Internet.
 
+   Setup responses use `Referrer-Policy: same-origin`: browser form submissions
+   retain the exact `Origin` required by the server, while cross-origin referrers
+   are suppressed. `Origin: null`, foreign origins, and missing POST origins
+   remain rejected together with the existing login/session CSRF checks.
+
 The enabled service runs as root on a dedicated pilot board to administer
 NetworkManager and BlueZ. Its systemd sandbox protects the installed application
 and permits private state, NetworkManager profile writes, local DBus, and radio

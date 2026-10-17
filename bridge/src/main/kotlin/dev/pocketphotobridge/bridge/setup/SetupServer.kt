@@ -359,7 +359,9 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         exchange.responseHeaders.set("Pragma", "no-cache")
         exchange.responseHeaders.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         exchange.responseHeaders.set("X-Content-Type-Options", "nosniff")
-        exchange.responseHeaders.set("Referrer-Policy", "no-referrer")
+        // Fetch gives form POSTs an opaque Origin under no-referrer, including our own login form.
+        // Retain same-origin form metadata while suppressing referrers to other origins.
+        exchange.responseHeaders.set("Referrer-Policy", "same-origin")
         exchange.responseHeaders.set("X-Frame-Options", "DENY")
         exchange.responseHeaders.set("Connection", "close")
     }
