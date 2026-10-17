@@ -78,6 +78,8 @@ class LinuxRadioManagerTest {
                 assertTrue(data.contains("psk=private-password"))
                 assertTrue(data.contains("ssid=80;80;66;59;32;84;101;115;116;"))
                 assertTrue(data.contains("mode=ap"))
+                // UWE5622 advertises AP support but cannot install a default management key.
+                assertTrue("Setup AP must disable unsupported optional PMF", data.lineSequence().any { it == "pmf=1" })
                 assertTrue(data.contains("method=shared"))
                 assertFalse(data.contains("autoconnect=true"))
             }
