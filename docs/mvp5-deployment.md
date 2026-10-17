@@ -91,9 +91,14 @@ use the authenticated setup page described below.
 
    The installer requires a terminal to display credentials privately. Do not
    pipe its output to a log or share a screenshot of its credential lines. It
-   installs `network-manager`, `bluez` (including `sdptool`), `libbluetooth3`,
+   installs `network-manager`, `dnsmasq-base`, `nftables`, `bluez` (including `sdptool`), `libbluetooth3`,
    `iproute2`, `libfreetype6`, and `fontconfig` with apt, uses the bundled runtime, and enables
    `pocket-photo-bridge.service`. No board-side compilation is involved.
+
+   The dedicated setup AP explicitly disables optional PMF (`pmf=1`) because
+   the tested Orange Pi UWE5622 driver cannot initialize that mode. It remains
+   password protected; the camera's station profile is unchanged. DHCP and shared
+   IPv4 require dnsmasq and a firewall backend even on minimal Armbian images.
 
 5. Save the displayed unique `PocketPhotoBridge-...` SSID, Wi-Fi password, and
    administrator password privately. Disconnecting Wi-Fi for setup can end the

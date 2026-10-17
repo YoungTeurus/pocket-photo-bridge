@@ -253,6 +253,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         key-mgmt=wpa-psk
         psk=${escapeKeyfile(password)}
         psk-flags=0
+        ${if (hotspot) "pmf=1" else ""}
 
         [ipv4]
         method=${if (hotspot) "shared" else "auto"}
