@@ -1,7 +1,7 @@
 package dev.pocketphotobridge.bridge.service
 
 /** Reboot opens setup again; only authenticated interaction holds the window. */
-class BootModePolicy(private var startedAt: Long, private val windowMs: Long = 30_000) {
+class BootModePolicy(private var startedAt: Long, private val windowMs: Long = 60_000) {
     private var held = false
     private var requested = false
     @Synchronized fun beginWindow(now: Long) { startedAt = now }

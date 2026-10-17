@@ -18,7 +18,7 @@ class ServiceConfigurationTest {
     @Test fun configurationSurvivesPrivateAtomicRestart() = directory { root ->
         val store = ServiceConfigStore(root)
         assertNull(store.load())
-        val expected = ServiceConfiguration("DIRECT-camera", "camera-password", "AA:BB:CC:DD:EE:FF", "0123456789abcdef01234567", "wlan0", true, true)
+        val expected = ServiceConfiguration("DIRECT-camera", "camera-password", "AA:BB:CC:DD:EE:FF", "0123456789abcdef01234567", "wlan0", true, true, true)
         store.save(expected)
         val actual = ServiceConfigStore(root).load()!!
         assertEquals(expected.cameraSsid, actual.cameraSsid)
@@ -28,11 +28,21 @@ class ServiceConfigurationTest {
         assertEquals(expected.wifiInterface, actual.wifiInterface)
         assertTrue(actual.autoPrintEnabled)
         assertTrue(actual.crop)
+        assertTrue(actual.keepQueueAcrossBoots)
         if (root.fileSystem.supportedFileAttributeViews().contains("posix")) {
             assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(root))
             assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(root.resolve("configuration.state")))
         }
         assertFalse(Files.list(root).use { it.anyMatch { path -> path.fileName.toString().endsWith(".tmp") } })
+    }
+
+    @Test fun legacyConfigurationDefaultsToDiscardingWaitingPhotosOnNewBoot() = directory { root ->
+        val payload = """{"cameraSsid":"DIRECT-camera","cameraPassword":"camera-password","printerAddress":"AA:BB:CC:DD:EE:FF","printerToken":"0123456789abcdef01234567","wifiInterface":"wlan0","autoPrintEnabled":true,"crop":false}"""
+        val checksum = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(payload.toByteArray()))
+        Files.writeString(root.resolve("configuration.state"), "PPB-CONFIG 1\nchecksum=$checksum\n$payload")
+        val loaded = ServiceConfigStore(root).load()!!
+        assertFalse(loaded.keepQueueAcrossBoots)
+        assertTrue(loaded.autoPrintEnabled)
     }
 
     @Test fun generatedBootstrapIsUniquePrivateAndPersistent() = directory { root ->
@@ -60,6 +70,7 @@ class ServiceConfigurationTest {
         val value = config()
         assertFalse(value.autoPrintEnabled)
         assertFalse(value.crop)
+        assertFalse(value.keepQueueAcrossBoots)
         assertFalse(value.toString().contains(value.cameraPassword))
         assertFalse(value.toString().contains(value.printerToken))
     }

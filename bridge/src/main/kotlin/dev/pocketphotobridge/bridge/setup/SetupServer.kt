@@ -257,7 +257,8 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         val password = form["cameraPassword"].orEmpty().ifEmpty { previous?.cameraPassword.orEmpty() }
         val token = form["printerToken"].orEmpty().ifEmpty { previous?.printerToken.orEmpty() }
         val config = ServiceConfiguration(form["cameraSsid"].orEmpty(), password, form["printerAddress"].orEmpty(), token,
-            form["wifiInterface"] ?: "wlan0", form["autoPrintEnabled"] == "on", form["crop"] == "on")
+            form["wifiInterface"] ?: "wlan0", form["autoPrintEnabled"] == "on", form["crop"] == "on",
+            form["keepQueueAcrossBoots"] == "on")
         backend.saveConfig(config)
     }
 
@@ -284,6 +285,8 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
             <details><summary>Advanced configuration</summary><label>Wi-Fi interface<input name="wifiInterface" value="${escape(config?.wifiInterface ?: "wlan0")}" required maxlength="15"></label></details>
             <label class="check"><input type="checkbox" name="autoPrintEnabled" ${if (config?.autoPrintEnabled == true) "checked" else ""}>Enable automatic printing of newly selected JPEG photos</label>
             <p>Enable this once to print each new photo automatically during normal operation. Uncertain jobs remain blocked until you check the printer.</p>
+            <label class="check"><input type="checkbox" name="keepQueueAcrossBoots" ${if (config?.keepQueueAcrossBoots == true) "checked" else ""}>Keep waiting photos across power cycles</label>
+            <p>Off by default: a new device boot discards photos that have not been submitted to the printer. Enable to keep them waiting after a power restart. Print history and uncertain jobs are always retained.</p>
             <label class="check"><input type="checkbox" name="crop" ${if (config?.crop == true) "checked" else ""}>Crop to fill the paper (otherwise fit the whole photo)</label>
             <button type="submit">Save configuration</button></form></section>
             <section><h2>Printer pairing</h2><ul>$devices</ul><form action="/pair" method="post">${csrfField(session)}
@@ -359,7 +362,9 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         exchange.responseHeaders.set("Pragma", "no-cache")
         exchange.responseHeaders.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
         exchange.responseHeaders.set("X-Content-Type-Options", "nosniff")
-        exchange.responseHeaders.set("Referrer-Policy", "no-referrer")
+        // Fetch gives form POSTs an opaque Origin under no-referrer, including our own login form.
+        // Retain same-origin form metadata while suppressing referrers to other origins.
+        exchange.responseHeaders.set("Referrer-Policy", "same-origin")
         exchange.responseHeaders.set("X-Frame-Options", "DENY")
         exchange.responseHeaders.set("Connection", "close")
     }
@@ -403,7 +408,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         private val EVENT_VALUES = Stage.entries.map { "SONY_${it.name}" }.toSet() +
             PrinterStage.entries.map { "PRINTER_${it.name}" } + SERVICE_STATES.map { "BRIDGE_$it" } +
             setOf("SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_FAILED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT",
-                "SERVICE_PAIRING_STARTED", "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED",
+                "SERVICE_PAIRING_STARTED", "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_BOOT_QUEUE_DISCARDED",
                 "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED", "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED",
                 "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED", "LINUX_BLUETOOTH_CONNECTED") +
             listOf("SOCKET", "CONNECT", "POLL", "SO_ERROR", "SEND", "RECEIVE", "SHUTDOWN", "CLOSE").map { "LINUX_BLUETOOTH_$it" }

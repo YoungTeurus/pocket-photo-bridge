@@ -91,16 +91,40 @@ use the authenticated setup page described below.
 
    The installer requires a terminal to display credentials privately. Do not
    pipe its output to a log or share a screenshot of its credential lines. It
-   installs `network-manager`, `bluez` (including `sdptool`), `libbluetooth3`,
+   installs `network-manager`, `dnsmasq-base`, `nftables`, `bluez` (including `sdptool`), `libbluetooth3`,
    `iproute2`, `libfreetype6`, and `fontconfig` with apt, uses the bundled runtime, and enables
    `pocket-photo-bridge.service`. No board-side compilation is involved.
 
-5. Save the displayed unique `PocketPhotoBridge-...` SSID, Wi-Fi password, and
+   The dedicated setup AP explicitly disables optional PMF (`pmf=1`) because
+   the tested Orange Pi UWE5622 driver cannot initialize that mode. It remains
+   password protected; the camera's station profile is unchanged. DHCP and shared
+   IPv4 require dnsmasq and a firewall backend even on minimal Armbian images.
+
+   On UWE5622 (`unisoc_wifi`/`sprdwl_ng`) the setup adapter also removes
+   NetworkManager's unsupported AP `WPA-PSK-SHA256` advertisement before declaring
+   setup ready. It verifies its active connection UUID and current AP network,
+   keeps ordinary WPA2-PSK/CCMP, and checks every supplicant change. Other drivers
+   and camera station connections do not receive this adjustment. The installer
+   explicitly includes `wpasupplicant`. The firmware limitation is independently
+   documented in the [OpenAstro hardware setup](https://github.com/open-astro/openastro-imate/blob/main/openastro/openastro-setup.sh).
+
+   The service retains `PrivateTmp=true`. Its supplicant client uses `wpa_cli -s`
+   with a private `radio` directory in the state root, so the host supplicant can
+   reach the client's reply socket. The default client socket in `/tmp` is hidden
+   across that service namespace and times out. Symlinked or non-private client
+   directories fail before any supplicant command.
+
+5. Save the displayed unique `PocketPhoto-...` SSID, Wi-Fi password, and
    administrator password privately. Disconnecting Wi-Fi for setup can end the
    SSH session; Ethernet is useful during installation. Connect your phone or
    Windows computer to that dedicated hotspot, then open
    `http://192.168.50.1:8080/` and sign in. This HTTP address is available only on
    the setup AP. Ignore the client's warning that this hotspot has no Internet.
+
+   Setup responses use `Referrer-Policy: same-origin`: browser form submissions
+   retain the exact `Origin` required by the server, while cross-origin referrers
+   are suppressed. `Origin: null`, foreign origins, and missing POST origins
+   remain rejected together with the existing login/session CSRF checks.
 
 The enabled service runs as root on a dedicated pilot board to administer
 NetworkManager and BlueZ. Its systemd sandbox protects the installed application
@@ -118,11 +142,20 @@ page, choose the Wi-Fi interface, enter the Sony camera SSID/password, pair or
 choose the printer, enter its real token, and select fit or crop. Explicitly
 enable automatic printing and save. Choose **Run** to leave setup.
 
+**Keep waiting photos across power cycles** is off by default, including for
+older configurations. With it off, a new Linux boot removes only photos not yet
+submitted to the printer; send a discarded JPEG again from the camera if needed.
+Enable it to keep waiting photos after power restarts. Changes apply at the next
+device boot, not when saving setup or restarting the service within the same
+boot. The first upgrade adopts an existing queue without a boot marker; it does
+not discard that queue during installation. Submitted-photo history and unknown
+print reservations are always retained.
+
 Pairing runs in the background because BlueZ discovery and pairing can take
 about 40 seconds. Refresh the page while status shows `PAIRING`; choose Run
 after it finishes. A failed pairing reports a fixed category in diagnostics.
 
-After configuration, every reboot opens setup for 30 seconds. Signing in and
+After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP
 server stop before the board joins the camera network. Reboot to enter setup
 again. A single radio alternates between these modes; the setup page is
@@ -162,6 +195,32 @@ change Wi-Fi profiles, or print:
 sudo /opt/pocket-photo-bridge/current/bin/bridge --linux-native-check
 sudo systemctl status pocket-photo-bridge.service --no-pager
 ```
+
+### Physical Linux probes without printing
+
+Hardware-validation builds also provide two explicit commands using the saved
+configuration. Stop the service first: both probes acquire its persistent queue
+and print-journal locks and fail if another owner is active. Preserve all state.
+
+```bash
+sudo systemctl stop pocket-photo-bridge.service
+sudo /opt/pocket-photo-bridge/current/bin/bridge --linux-status-only
+sudo /opt/pocket-photo-bridge/current/bin/bridge --linux-receive-only
+```
+
+`--linux-status-only` discovers the actual SPP channel with SDP, opens RFCOMM,
+and invokes the existing encrypted read-only diagnosis. It never opens camera
+Wi-Fi, resets printer data, or submits a job. `--linux-receive-only` joins the
+saved camera Wi-Fi and invokes the existing capture/validation path, retaining
+the original and prepared JPEG in the service queue. It never opens a printer
+transport. Both print `NO_PHYSICAL_PRINT`; an unresolved prior print blocks
+transport actions. The existing native ABI check remains a separate test.
+
+The receive probe disconnects the current Wi-Fi, including an SSH connection on
+that radio. Arrange independent access or a tested timed network recovery before
+starting it. Do not start the normal service with queued photos until automatic
+printing is intended. Queued photos remain available to the normal service after
+restart, and existing duplicate/uncertainty records are retained.
 
 To redisplay your existing bootstrap credentials locally, first stop the service
 so it no longer owns the state, run the command in a private terminal, then

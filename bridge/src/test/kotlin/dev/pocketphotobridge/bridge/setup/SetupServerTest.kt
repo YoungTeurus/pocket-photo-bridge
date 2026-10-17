@@ -40,7 +40,7 @@ class SetupServerTest {
         override fun simulationAction(action: String) { simulated = action }
     }
 
-    private data class Response(val code: Int, val body: String, val cookie: String? = null)
+    private data class Response(val code: Int, val body: String, val cookie: String? = null, val referrerPolicy: String? = null)
     private class Client(val base: String) {
         private val http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build()
         var cookie: String? = null
@@ -54,7 +54,8 @@ class SetupServerTest {
                 builder.POST(HttpRequest.BodyPublishers.ofString(body))
             }
             val response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString())
-            return Response(response.statusCode(), response.body(), response.headers().firstValue("Set-Cookie").orElse(null))
+            return Response(response.statusCode(), response.body(), response.headers().firstValue("Set-Cookie").orElse(null),
+                response.headers().firstValue("Referrer-Policy").orElse(null))
         }
         fun login(password: String = "generated-admin-password"): Response {
             val page = request("/")
@@ -98,6 +99,18 @@ class SetupServerTest {
         assertEquals(1, backend.held)
         assertEquals(200, client.request("/status").code)
         assertEquals(2, backend.held)
+    }
+
+    @Test fun browserFormsRetainSameOriginWhileOpaqueOriginsRemainRejected() = server { client, backend, _ ->
+        // Fetch turns non-CORS form POST Origin into null under no-referrer, even on the same site.
+        // same-origin retains the exact origin for our forms without sending referrers to other sites.
+        assertEquals("Browser form submissions must preserve the setup origin", "same-origin", client.request("/").referrerPolicy)
+        assertEquals(303, client.login().code)
+        val csrf = client.csrfPage()
+        assertEquals(403, client.request("/run", mapOf("csrf" to csrf), "null").code)
+        assertEquals(0, backend.run)
+        assertEquals(303, client.request("/run", mapOf("csrf" to csrf)).code)
+        assertEquals(1, backend.run)
     }
 
     @Test fun rejectsWrongLoginCsrfAndCrossOriginBeforeMutation() = server { client, backend, _ ->
@@ -163,6 +176,22 @@ class SetupServerTest {
         assertTrue(backend.saved!!.autoPrintEnabled)
         assertTrue(backend.saved!!.crop)
         assertFalse(client.request("/").body.contains("camera-password"))
+    }
+
+    @Test fun waitingQueueRetentionIsAnUncheckedSavedChoice() = server { client, _, _ ->
+        client.login()
+        fun checked(): Boolean {
+            val field = Regex("<input[^>]*name=\"keepQueueAcrossBoots\"([^>]*)>").find(client.request("/").body)
+            assertNotNull("Setup must offer an explicit waiting-queue retention choice", field)
+            return field!!.groupValues[1].contains("checked")
+        }
+        assertFalse(checked())
+        val form = mapOf("csrf" to client.csrfPage(), "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
+            "printerAddress" to "AA:BB:CC:DD:EE:FF", "printerToken" to "0123456789abcdef01234567", "wifiInterface" to "wlan0")
+        assertEquals(303, client.request("/config", form + ("keepQueueAcrossBoots" to "on")).code)
+        assertTrue(checked())
+        assertEquals(303, client.request("/config", form).code)
+        assertFalse(checked())
     }
 
     @Test fun invalidOversizeAndErrorResponsesNeverEchoSecrets() = server { client, backend, _ ->

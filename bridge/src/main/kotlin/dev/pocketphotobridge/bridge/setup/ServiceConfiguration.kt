@@ -9,6 +9,7 @@ class ServiceConfiguration(
     val wifiInterface: String = "wlan0",
     val autoPrintEnabled: Boolean = false,
     val crop: Boolean = false,
+    val keepQueueAcrossBoots: Boolean = false,
 ) {
     init {
         require(Charsets.UTF_8.newEncoder().canEncode(cameraSsid) && cameraSsid.toByteArray(Charsets.UTF_8).size in 1..32 &&

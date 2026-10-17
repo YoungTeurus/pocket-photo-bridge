@@ -65,6 +65,15 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         }
     }
 
+    @Synchronized fun beginBoot(bootId: String, keepQueueAcrossBoots: Boolean): ServiceSnapshot {
+        try {
+            checkState()
+            val count = queue.beginBoot(bootId, keepQueueAcrossBoots, journal::wasSubmitted)
+            if (count > 0) emit("BRIDGE_BOOT_QUEUE_DISCARDED count=$count")
+            return result(baseState())
+        } catch (_: Exception) { return stateError() }
+    }
+
     @Synchronized fun capture(trigger: SelectionTrigger): ServiceSnapshot {
         var receiving: Path? = null
         var retained = false

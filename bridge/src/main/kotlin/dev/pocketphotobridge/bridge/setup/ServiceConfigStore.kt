@@ -34,7 +34,8 @@ class ServiceConfigStore(root: Path) {
         file.read()?.let { json ->
             ServiceConfiguration(json.string("cameraSsid"), json.string("cameraPassword"),
                 json.string("printerAddress"), json.string("printerToken"), json.string("wifiInterface"),
-                json.boolean("autoPrintEnabled"), json.boolean("crop"))
+                json.boolean("autoPrintEnabled"), json.boolean("crop"),
+                if (json.has("keepQueueAcrossBoots")) json.boolean("keepQueueAcrossBoots") else false)
         }
     }
 
@@ -47,6 +48,7 @@ class ServiceConfigStore(root: Path) {
             addProperty("wifiInterface", config.wifiInterface)
             addProperty("autoPrintEnabled", config.autoPrintEnabled)
             addProperty("crop", config.crop)
+            addProperty("keepQueueAcrossBoots", config.keepQueueAcrossBoots)
         })
     }
 }

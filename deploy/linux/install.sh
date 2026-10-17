@@ -56,8 +56,8 @@ fi
 "$application/runtime/bin/java" -version
 command -v apt-get >/dev/null || { printf '%s\n' 'This pilot installer requires Debian/Ubuntu apt-get.' >&2; exit 1; }
 apt-get update
-apt-get install --no-install-recommends -y network-manager bluez libbluetooth3 iproute2 libfreetype6 fontconfig
-for executable in nmcli bluetoothctl sdptool ip; do
+apt-get install --no-install-recommends -y network-manager wpasupplicant dnsmasq-base nftables bluez libbluetooth3 iproute2 libfreetype6 fontconfig
+for executable in nmcli wpa_cli readlink bluetoothctl sdptool ip dnsmasq nft; do
     command -v "$executable" >/dev/null || { printf '%s\n' 'A required NetworkManager/BlueZ executable is missing.' >&2; exit 1; }
 done
 install -d -o root -g root -m 0755 "$base" "$base/releases"
@@ -129,5 +129,5 @@ systemctl start "$unit"
 systemctl is-active --quiet "$unit"
 completed=true
 printf '%s\n' 'Pocket Photo Bridge 0.5.0 installed. Keep the displayed credentials private.'
-printf '%s\n' 'Unconfigured boots stay in setup. Configured boots offer setup for 30 seconds.'
+printf '%s\n' 'Unconfigured boots stay in setup. Configured boots offer setup for 60 seconds.'
 printf '%s\n' 'Connect only to the dedicated PocketPhotoBridge hotspot and open http://192.168.50.1:8080/.'
