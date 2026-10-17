@@ -4,6 +4,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ServiceCliOptionsTest {
+    @Test fun linuxDiagnosticsAreExplicitNoPrintModes() {
+        assertEquals("LINUX_STATUS", CliOptions.parse(arrayOf("--linux-status-only", "--state-dir=state")).mode.name)
+        assertEquals("LINUX_RECEIVE", CliOptions.parse(arrayOf("--linux-receive-only", "--state-dir=state")).mode.name)
+    }
+
     @Test fun serviceModesAreExplicitAndDoNotChangeDefaultSimulation() {
         assertEquals("SERVICE", CliOptions.parse(arrayOf("--service", "--state-dir=state")).mode.name)
         assertEquals("SERVICE_SIMULATION", CliOptions.parse(arrayOf("--simulate-service")).mode.name)
