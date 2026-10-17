@@ -1,18 +1,18 @@
-# Windows portable simulation (0.4.3)
+# Windows portable simulation (0.5.0)
 
 The Windows 10/11 **x64** package runs directly on Windows. It includes an EXE launcher and its Java 17 runtime; you do not need WSL, a JDK, Gradle or an IDE. Keep the entire `PocketPhotoBridge` folder together. Copying only the EXE will break it.
 
-The EXE's default mode is an offline simulation. Synthetic camera and printer devices exercise the real Sony transfer and printer protocol sessions, image preparation and durable duplicate guard. Simulation opens no real Wi-Fi/Bluetooth connection, submits no physical print and needs no account, printer token or cloud service. Version 0.4.2 also includes a separate explicit [Windows live-device mode](windows-live.md), launched with WindowsLive.cmd. Linux radio adapters are a future milestone.
+The EXE's default mode is an offline simulation. Synthetic camera and printer devices exercise the real Sony transfer and printer protocol sessions, image preparation and durable duplicate guard. Simulation opens no real Wi-Fi/Bluetooth connection, submits no physical print and needs no account, printer token or cloud service. Version 0.4.2 also includes a separate explicit [Windows live-device mode](windows-live.md), launched with WindowsLive.cmd. Version 0.5.0 adds a separate authenticated service simulation and Linux pilot adapters; Linux radio and physical-print validation remains pending.
 
 ## Download and run
 
 1. Open the repository's **Actions → Headless bridge** workflow and select a successful run for the intended revision.
-2. Download the artifact named `pocket-photo-bridge-windows-x64-0.4.3`. GitHub's artifact download is an outer ZIP. Extract it to obtain `PocketPhotoBridge-0.4.3-windows-x64.zip` and its `.zip.sha256` file.
+2. Download the artifact named `pocket-photo-bridge-windows-x64-0.5.0`. GitHub's artifact download is an outer ZIP. Extract it to obtain `PocketPhotoBridge-0.5.0-windows-x64.zip` and its `.zip.sha256` file.
 3. Optionally verify the package in PowerShell from that folder:
 
    ```powershell
-   Get-FileHash .\PocketPhotoBridge-0.4.3-windows-x64.zip -Algorithm SHA256
-   Get-Content .\PocketPhotoBridge-0.4.3-windows-x64.zip.sha256
+   Get-FileHash .\PocketPhotoBridge-0.5.0-windows-x64.zip -Algorithm SHA256
+   Get-Content .\PocketPhotoBridge-0.5.0-windows-x64.zip.sha256
    ```
 
    The two SHA-256 hashes must match, ignoring letter case. The checksum detects a damaged or changed download; obtain both files from the same trusted run.
@@ -20,7 +20,13 @@ The EXE's default mode is an offline simulation. Synthetic camera and printer de
 
 The default run checks the complete deterministic scenario suite. With an interactive console it waits for Enter after reporting its result. A successful report contains `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=<number>`. Expected faults are part of the passing suite; they do not mean a physical device failed.
 
-The folder includes `app/`, `runtime/`, documentation, inactive Linux templates, the project and mizink MIT notices under `licenses/`, and Java module notices under `runtime/legal/`. There is no installer or registry setup. This is an app image with a bundled runtime, not a standalone EXE.
+The folder includes `app/`, `runtime/`, documentation, Linux pilot deployment files, the project and mizink MIT notices under `licenses/`, and Java module notices under `runtime/legal/`. There is no installer or registry setup. This is an app image with a bundled runtime, not a standalone EXE.
+
+## Autonomous service simulation
+
+Double-click `WindowsServiceSimulation.cmd` in the same extracted folder. It creates or reuses private bootstrap credentials, displays them only in your local console, and serves `http://127.0.0.1:8080/`. Sign in with the displayed administrator password and use the simulation controls. Camera capture persists while the synthetic printer is off or busy; possible print acceptance without completion blocks further submissions. Keep the console open and use Ctrl+C to stop. Restart the launcher to inspect retained state under `%LOCALAPPDATA%\PocketPhotoBridge\service-simulation`. This mode uses synthetic devices and cannot access radios or print paper.
+
+See [0.5.0 deployment and service instructions](mvp5-deployment.md) for full setup, private credentials, unknown-job acknowledgement, diagnostics, and Windows-to-board SSH installation. The normal EXE default and manual commands below still use the original simulation journal; keep those states separate from service state.
 
 ## PowerShell commands
 
@@ -69,7 +75,7 @@ $LASTEXITCODE # 0
 $LASTEXITCODE # 0; same event/photo remains suppressed, no new job
 ```
 
-Acknowledgement clears the global uncertainty gate only. It retains consumed events and attempted photo fingerprints, never retries the old job and never cancels printer-side work. In a future hardware deployment, checking the actual printer before acknowledgement will be essential. At most one automatic submission is the guarantee being tested; exactly-once physical output is not claimed.
+Acknowledgement clears the global uncertainty gate only. It retains consumed events and attempted photo fingerprints, never retries the old job and never cancels printer-side work. For the Linux pilot service, check the physical printer before using the authenticated setup page acknowledgement; this legacy CLI experiment uses separate synthetic state. At most one automatic submission is the guarantee being tested; exactly-once physical output is not claimed.
 
 ## What to send back
 
@@ -83,4 +89,4 @@ After the run, send the contents of `diagnostics.txt` from `%LOCALAPPDATA%\Pocke
 - An unresolved, corrupt or unsupported journal fails closed. Keep its state and inspect the safe report; do not clear it to bypass the guard. Acknowledgement resolves uncertainty, not damaged state.
 - This build is unsigned. Windows may display an unknown-publisher warning; check that the download came from the intended repository workflow before running it.
 
-The Windows CI job runs Sony, printer and bridge tests before packaging. It checks the ZIP checksum, extracts into a path with spaces, removes `JAVA_HOME` and `PATH` from each EXE child's environment, and verifies normal, fault, duplicate, suite and separate-process crash/recovery behavior with a 60-second process limit. Safe stdout/stderr and exit-code reports are available in `bridge-verification-windows-x64`. A successful Linux/ARM64 workflow checks software execution on that architecture; it does not validate a board's radios or physical printing.
+The Windows CI job runs Sony, printer and bridge tests before packaging. It checks the ZIP checksum, extracts into a path with spaces, removes `JAVA_HOME` and `PATH` from each EXE child's environment, and verifies normal, fault, duplicate, suite and separate-process crash/recovery behavior with a 60-second process limit. It also starts the extracted service EXE, performs real HTTP login with CSRF/cookies, and checks authenticated redacted status/diagnostics. HTTP controls prove capture retention while the printer is off or busy, completion when available, and duplicate suppression; bootstrap output is never included in uploaded reports. Safe stdout/stderr and exit-code reports are available in `bridge-verification-windows-x64`. A successful Linux/ARM64 workflow checks software execution on that architecture; it does not validate a board's radios or physical printing.

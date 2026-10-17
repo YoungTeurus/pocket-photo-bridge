@@ -31,7 +31,7 @@ The first physical printer test passed separately from software verification. Th
 
 ## MVP 4 headless coordinator and simulation
 
-The new `:bridge` JVM application depends on the existing `:sony` and `:printer` modules. `CameraWifiConnector`, `CameraLink`, `PrinterConnector` and `PrintImagePreparer` isolate platform work. `PrintCoordinator` receives and validates the selected JPEG, prepares it and submits one guarded print for a supplied selection generation. Default adapters simulate the devices; version 0.4.1 adds explicit Windows live adapters. No Linux radio/event-source adapter is implemented. Android does not depend on this module or its Java desktop classes.
+The new `:bridge` JVM application depends on the existing `:sony` and `:printer` modules. `CameraWifiConnector`, `CameraLink`, `PrinterConnector` and `PrintImagePreparer` isolate platform work. `PrintCoordinator` receives and validates the selected JPEG, prepares it and submits one guarded print for a supplied selection generation. Default adapters simulate the devices; version 0.4.1 adds explicit Windows live adapters. At MVP 4, Linux radio/event-source adapters were not implemented; the MVP 5 section below describes their addition. Android does not depend on this module or its Java desktop classes.
 
 `FileBridgeJournal` holds a lifetime cross-process lock and writes checksummed, forced, atomically replaced snapshots. It consumes event digests before reception and persists the photo digest plus a reservation before `print_job`. Both digests survive resolution and manual acknowledgement, covering a crash between the finished reply and coordinator return. Unknown outcomes block new device actions; damaged/missing prior state fails closed. This guarantees at most one automatic submission for consumed events/submitted byte-identical JPEGs, with no exactly-once physical-output claim. Conservative suppression includes known rejected submissions; a future intentional-reprint flow needs separate review.
 
@@ -41,7 +41,41 @@ The new `:bridge` JVM application depends on the existing `:sony` and `:printer`
 
 The CLI runs directly through a Windows EXE with a bundled runtime, or through the Linux JVM distribution on Java 17. GitHub Actions tests Linux x64, Windows x64 and ARM64, alongside the existing Android checks. See [Windows instructions](windows-simulation.md), [future Linux deployment and hardware checklist](linux-bridge.md), [the design](superpowers/specs/2026-10-12-mvp4-headless-design.md) and [the plan](superpowers/plans/2026-10-12-mvp4-headless.md). Physical Orange Pi routing, pairing, event detection, coexistence and printer output remain pending hardware arrival.
 
-`WindowsLive` is an explicit interactive mode with separate physical-job state. Its Windows adapters discover a selected camera link and bind bounded HTTP sockets to that link's IPv4 source; paired printers use JNA-mapped Classic RFCOMM/SPP with Windows SDP lookup and provider-select readiness. Per-connection fixed stages and native error numbers are exported without identifiers or raw exception text. The same coordinator and printer session run the full flow, while a prepared preview is retained locally and the user must type PRINT before opening the printer connection. Receive-only and status-only operations consume no paper. Token input is hidden and ephemeral. Local selection/path UI is separate from exported diagnostics. See [the Windows hardware procedure and result](windows-live.md): the user confirmed Sony receive/save with 0.4.1 and the complete Sony → Windows → Xiaomi print with 0.4.3 on the tested setup. Physical Linux/Orange Pi integration remains unimplemented and untested.
+`WindowsLive` is an explicit interactive mode with separate physical-job state. Its Windows adapters discover a selected camera link and bind bounded HTTP sockets to that link's IPv4 source; paired printers use JNA-mapped Classic RFCOMM/SPP with Windows SDP lookup and provider-select readiness. Per-connection fixed stages and native error numbers are exported without identifiers or raw exception text. The same coordinator and printer session run the full flow, while a prepared preview is retained locally and the user must type PRINT before opening the printer connection. Receive-only and status-only operations consume no paper. Token input is hidden and ephemeral. Local selection/path UI is separate from exported diagnostics. See [the Windows hardware procedure and result](windows-live.md): the user confirmed Sony receive/save with 0.4.1 and the complete Sony → Windows → Xiaomi print with 0.4.3 on the tested setup. Physical Linux/Orange Pi integration remains untested.
+
+## MVP 5 autonomous service
+
+`AutonomousBridge` separates capture from queued printing. A validated original
+and prepared image are committed to a private, bounded, checksummed queue inside
+Sony's validation callback, before TransferEnd. Camera acknowledgement failure
+does not discard a captured photo. Printer-off/busy errors before reservation
+retain the queue; after possible job acceptance the existing `FileBridgeJournal`
+blocks automatic replay until a physical check. Completed/tombstoned photos are
+removed from the queue without deleting duplicate suppression history.
+
+`ServiceRuntime` composes this controller with `ServiceLoop`, `SetupServer` and
+platform device adapters. First boot waits in setup. Configured boots offer a
+30-second setup window; authenticated interaction holds it open. A one-time
+auto-print opt-in enables operation. Linux closes the HTTP listener and hotspot
+before joining the camera; reboot makes setup reachable again. There is no
+per-photo prompt in normal operation. A single worker receives before printing,
+so a long print can delay the next camera transfer. An uncertain job requires
+checking the printer via setup; it is never automatically resubmitted.
+
+The local page uses generated credentials, sessions, CSRF and exact Host/Origin
+checks. Credentials are private persisted configuration, never diagnostic
+content or command arguments. Linux NetworkManager profiles are root-private
+temporary keyfiles. BlueZ pairing and bounded `sdptool` discovery precede native
+RFCOMM through libc/JNA; no channel is assumed and no GPL libbluetooth is linked.
+The pilot systemd service has administrative radio access and is intended for
+the dedicated bridge appliance. See [adapter provenance and limits](linux-protocol-adapters.md).
+
+`--simulate-service` uses the same controller/protocol sessions and a loopback
+setup page with synthetic camera/printer controls. Its page remains reachable
+during simulated operation because it does not switch a real radio. Android and
+the manual Windows workflow are unchanged. Windows EXE and Linux ARM64 packages
+bundle the runtime; see [deployment and testing](mvp5-deployment.md) and the
+[approved design](superpowers/specs/2026-10-12-mvp5-autonomous-linux-design.md).
 
 ## Data handling and future portability
 

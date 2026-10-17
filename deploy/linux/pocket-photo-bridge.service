@@ -1,0 +1,41 @@
+# Pilot: dedicated board only. Root permits NetworkManager/BlueZ administration.
+[Unit]
+Description=Pocket Photo Bridge autonomous Linux pilot
+Requires=NetworkManager.service bluetooth.service
+After=NetworkManager.service bluetooth.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Group=root
+StateDirectory=pocket-photo-bridge
+StateDirectoryMode=0700
+UMask=0077
+Environment="PATH=/usr/sbin:/usr/bin:/sbin:/bin"
+UnsetEnvironment=JAVA_HOME JDK_HOME JRE_HOME JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS
+ExecStart=/opt/pocket-photo-bridge/current/bin/bridge --service --state-dir=/var/lib/pocket-photo-bridge
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGTERM
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/pocket-photo-bridge /etc/NetworkManager/system-connections /run/NetworkManager
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_BLUETOOTH AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target
