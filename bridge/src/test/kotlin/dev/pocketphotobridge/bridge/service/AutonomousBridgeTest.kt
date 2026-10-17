@@ -76,6 +76,19 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun firstUpgradeAdoptsCurrentBootWithoutDiscardingLegacyQueue() = root { state ->
+        bridge(state).use { it.capture(SelectionTrigger("before-upgrade")) }
+        bridge(state).use {
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000001", false).queued)
+        }
+        bridge(state).use {
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000001", false).queued)
+        }
+        bridge(state).use {
+            assertEquals(0, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+        }
+    }
+
     @Test fun sameBootServiceRestartRetainsWaitingPhoto() = root { state ->
         bridge(state).use {
             it.beginBoot("00000000-0000-4000-8000-000000000001", false)
