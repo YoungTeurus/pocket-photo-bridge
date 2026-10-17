@@ -80,6 +80,9 @@ class LinuxRadioManagerTest {
                 assertTrue(data.contains("mode=ap"))
                 // UWE5622 advertises AP support but cannot install a default management key.
                 assertTrue("Setup AP must disable unsupported optional PMF", data.lineSequence().any { it == "pmf=1" })
+                assertTrue("Setup AP uses WPA2 only", data.lineSequence().any { it == "proto=rsn;" })
+                assertTrue("Setup AP pairwise cipher uses CCMP", data.lineSequence().any { it == "pairwise=ccmp;" })
+                assertTrue("Setup AP group cipher uses CCMP", data.lineSequence().any { it == "group=ccmp;" })
                 assertTrue(data.contains("method=shared"))
                 assertFalse(data.contains("autoconnect=true"))
             }
@@ -250,6 +253,88 @@ class LinuxRadioManagerTest {
             args.contains("route") -> "[{\"dst\":\"192.168.122.1\",\"from\":\"192.168.122.4\",\"dev\":\"$routeDevice\"}]"
             else -> ""
         })
+    }
+
+    @Test fun `uwe5622 setup removes unsupported SHA256 before reporting the AP ready`() {
+        val files = Files.createTempDirectory("linux-uwe5622")
+        val commands = uweCommands()
+        val events = mutableListOf<String>()
+        val manager = LinuxRadioManager(files, "wlan0", { event ->
+            if (event == "LINUX_SETUP_STARTED") {
+                assertTrue(commands.calls.any { it.takeLast(2) == listOf("enable_network", "7") })
+            }
+            events += event
+        }, commands, files.resolve("profiles"))
+        manager.startSetup("private-setup-ssid", "private-password")
+        val up = commands.calls.indexOfFirst { it.contains("up") }
+        val set = commands.calls.indexOfFirst { it.takeLast(4) == listOf("set_network", "7", "key_mgmt", "WPA-PSK") }
+        val down = commands.calls.indexOfFirst { it.takeLast(2) == listOf("disable_network", "7") }
+        val enable = commands.calls.indexOfFirst { it.takeLast(2) == listOf("enable_network", "7") }
+        assertTrue(up in 0 until set && set < down && down < enable)
+        assertTrue(commands.calls.filter { it.first() == "/usr/sbin/wpa_cli" }.all { it.take(3) == listOf("/usr/sbin/wpa_cli", "-i", "wlan0") })
+        assertTrue(commands.calls.none { it.any { value -> value.contains("private-password") || value.contains("private-setup-ssid") } })
+        assertTrue(events.contains("LINUX_SETUP_STARTED"))
+        manager.close()
+    }
+
+    @Test fun `plain PSK AP avoids reset and another driver never receives wpa mutations`() {
+        listOf("unisoc_wifi" to "WPA-PSK", "another_wifi_driver" to "WPA-PSK WPA-PSK-SHA256").forEach { (driver, keyMgmt) ->
+            val files = Files.createTempDirectory("linux-plain-psk")
+            val commands = uweCommands(driver = driver, initialKeyMgmt = keyMgmt)
+            val manager = LinuxRadioManager(files, "wlan0", {}, commands, files.resolve("profiles"))
+            manager.startSetup("setup", "private-password")
+            assertTrue(commands.calls.none { it.contains("set_network") || it.contains("disable_network") || it.contains("enable_network") })
+            if (driver == "another_wifi_driver") assertTrue(commands.calls.none { it.first() == "/usr/sbin/wpa_cli" })
+            manager.close()
+        }
+    }
+
+    @Test fun `uwe5622 refuses an ambiguous or station network and failed security changes`() {
+        listOf("missing-current", "multiple-current", "station", "set_network", "disable_network", "enable_network", "readback").forEach { fault ->
+            val files = Files.createTempDirectory("linux-unsafe-ap")
+            val commands = uweCommands(fault = fault)
+            val events = mutableListOf<String>()
+            val manager = LinuxRadioManager(files, "wlan0", events::add, commands, files.resolve("profiles"))
+            val failure = assertThrows("Fault must fail safely: $fault", LinuxRadioFailure::class.java) {
+                manager.startSetup("private-setup-ssid", "private-password")
+            }
+            assertNull(failure.cause)
+            assertFalse(events.contains("LINUX_SETUP_STARTED"))
+            assertFalse(Files.exists(files.resolve("profiles").resolve(manager.setupProfileName)))
+            if (fault in listOf("missing-current", "multiple-current", "station")) assertTrue(commands.calls.none { it.contains("set_network") })
+            if (fault == "set_network") assertTrue(commands.calls.none { it.contains("disable_network") })
+        }
+    }
+
+    @Test fun `camera connection never applies setup AP compatibility changes`() {
+        val files = Files.createTempDirectory("linux-camera-only")
+        val commands = cameraCommands()
+        val manager = LinuxRadioManager(files, "wlan0", {}, commands, files.resolve("profiles"))
+        manager.connectCamera("camera", "camera-password").close()
+        assertTrue(commands.calls.none { it.first() == "/usr/bin/readlink" || it.first() == "/usr/sbin/wpa_cli" })
+        manager.close()
+    }
+
+    private fun uweCommands(driver: String = "unisoc_wifi", initialKeyMgmt: String = "WPA-PSK WPA-PSK-SHA256", fault: String = ""): FakeCommands {
+        var keyMgmt = initialKeyMgmt
+        return FakeCommands { args -> LinuxCommandResult(0, when {
+            args.first() == "/usr/bin/readlink" -> "/sys/bus/sdio/drivers/$driver\n"
+            args.first() != "/usr/sbin/wpa_cli" -> ""
+            args.last() == "list_networks" -> "network id / ssid / bssid / flags\n" + when (fault) {
+                "missing-current" -> "7\tprivate-setup-ssid\tany\t\n"
+                "multiple-current" -> "7\tprivate-setup-ssid\tany\t[CURRENT]\n8\tother\tany\t[CURRENT]\n"
+                else -> "7\tprivate-setup-ssid\tany\t[CURRENT]\n"
+            }
+            args.takeLast(3) == listOf("get_network", "7", "mode") -> if (fault == "station") "0\n" else "2\n"
+            args.takeLast(3) == listOf("get_network", "7", "key_mgmt") -> "$keyMgmt\n"
+            args.contains("set_network") -> if (fault == "set_network") "FAIL\n" else {
+                if (fault != "readback") keyMgmt = "WPA-PSK"
+                "OK\n"
+            }
+            args.contains("disable_network") -> if (fault == "disable_network") "FAIL\n" else "OK\n"
+            args.contains("enable_network") -> if (fault == "enable_network") "FAIL\n" else "OK\n"
+            else -> "FAIL\n"
+        }) }
     }
 
     private class FakeCommands(private val answer: (List<String>) -> LinuxCommandResult) : LinuxCommandRunner {
