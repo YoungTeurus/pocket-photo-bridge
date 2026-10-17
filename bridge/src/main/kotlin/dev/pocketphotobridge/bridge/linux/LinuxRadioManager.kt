@@ -214,7 +214,9 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         if (driver.exitCode != 0 || driver.output.trim().substringAfterLast('/') !in setOf("unisoc_wifi", "sprdwl_ng")) return
         if (nm("-g", "GENERAL.CON-UUID", "device", "show", wifiInterface).trim() != setupUuid)
             radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
-        fun wpa(vararg arguments: String) = command(listOf("/usr/sbin/wpa_cli", "-i", wifiInterface) + arguments, 5_000).trim()
+        val clientDirectory = supplicantClientDirectory()
+        fun wpa(vararg arguments: String) = command(listOf("/usr/sbin/wpa_cli", "-i", wifiInterface,
+            "-s", clientDirectory.toString()) + arguments, 5_000).trim()
         val current = wpa("list_networks").lineSequence().map { it.split('\t') }
             .filter { it.size == 4 && it[3] == "[CURRENT]" }.toList().singleOrNull()
             ?: radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
@@ -229,6 +231,24 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
             if (wpa(*arguments.toTypedArray()) != "OK") radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
         }
         if (wpa("get_network", network, "key_mgmt") != "WPA-PSK") radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+    }
+
+    /** Host supplicant replies cannot reach wpa_cli's default socket in PrivateTmp. */
+    private fun supplicantClientDirectory(): Path {
+        val directory = stateDir.toAbsolutePath().normalize()
+        try {
+            var parent: Path? = directory
+            while (parent != null) {
+                if (Files.isSymbolicLink(parent)) radioFail(LinuxRadioFailureCode.PROFILE_UNSAFE)
+                parent = parent.parent
+            }
+            val permissions = PosixFilePermissions.fromString("rwx------")
+            Files.createDirectories(directory, PosixFilePermissions.asFileAttribute(permissions))
+            if (!Files.isDirectory(directory, NOFOLLOW_LINKS) || Files.getPosixFilePermissions(directory) != permissions)
+                radioFail(LinuxRadioFailureCode.PROFILE_UNSAFE)
+            return directory
+        } catch (failure: LinuxRadioFailure) { throw failure }
+        catch (_: Exception) { radioFail(LinuxRadioFailureCode.PROFILE_UNSAFE) }
     }
 
     private fun command(arguments: List<String>, timeout: Long): String {

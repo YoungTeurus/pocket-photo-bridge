@@ -108,6 +108,12 @@ use the authenticated setup page described below.
    explicitly includes `wpasupplicant`. The firmware limitation is independently
    documented in the [OpenAstro hardware setup](https://github.com/open-astro/openastro-imate/blob/main/openastro/openastro-setup.sh).
 
+   The service retains `PrivateTmp=true`. Its supplicant client uses `wpa_cli -s`
+   with a private `radio` directory in the state root, so the host supplicant can
+   reach the client's reply socket. The default client socket in `/tmp` is hidden
+   across that service namespace and times out. Symlinked or non-private client
+   directories fail before any supplicant command.
+
 5. Save the displayed unique `PocketPhotoBridge-...` SSID, Wi-Fi password, and
    administrator password privately. Disconnecting Wi-Fi for setup can end the
    SSH session; Ethernet is useful during installation. Connect your phone or
