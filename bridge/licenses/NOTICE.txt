@@ -1,0 +1,7 @@
+Java Native Access 5.17.0
+https://github.com/java-native-access/jna/tree/5.17.0
+Copyright (c) 2007-2025 JNA contributors.
+This project distributes JNA under its Apache License 2.0 option.
+The native dispatch library includes libffi under its bundled license.
+JNA source is not modified. Windows SDK declarations are cited for ABI
+research; no Microsoft implementation code or SDK headers are bundled.

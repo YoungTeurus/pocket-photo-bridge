@@ -1,0 +1,32 @@
+# PROPOSED SCHEMA ONLY. MVP 4 accepts --config only with --hardware.
+# It does not read configuration; hardware mode refuses operation with exit 64.
+# No real credentials, identities or working radio configuration are included.
+# The service template refuses hardware mode until future adapters exist.
+schema_version = 1
+mode = "hardware"
+state_directory = "/var/lib/pocket-photo-bridge"
+
+[camera]
+interface = "REPLACE_WITH_WIFI_INTERFACE"
+known_ssid = "REPLACE_WITH_KNOWN_SONY_SSID"
+networkmanager_profile = "REPLACE_WITH_PROTECTED_SAVED_PROFILE"
+endpoint_policy = "derive_from_selected_camera_link"
+internet_default_route = false
+use_system_proxy = false
+follow_redirects = false
+rearm_only_after_ap_disappears = true
+
+[printer]
+paired_device = "REPLACE_WITH_PAIRED_PRINTER_ADDRESS"
+transport = "bluez-classic-rfcomm-spp"
+channel_policy = "verify_using_sdp"
+token_credential = "printer-token" # credential reference, not a token value
+retry_after_possible_submission = false
+
+[image]
+placement = "fit" # proposed alternative: crop
+
+[diagnostics]
+include_personal_paths = false
+include_tokens = false
+include_photo_payloads = false
