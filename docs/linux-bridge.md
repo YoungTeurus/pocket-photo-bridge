@@ -68,7 +68,7 @@ TOML schema or token on the service command line is needed.
 
 The first unconfigured boot stays in a dedicated setup AP; configured reboots
 offer a 60-second setup window. An authenticated interaction holds setup open.
-The unique SSID starts with `PocketPhotoBridge-`, and only the setup interface
+The unique SSID starts with `PocketPhoto-`, and only the setup interface
 serves `http://192.168.50.1:8080/`. The hotspot and HTTP listener stop before
 joining the camera network. Reboot to enter setup again. The state root is
 `/var/lib/pocket-photo-bridge`, root-owned and private. Upgrades retain the queue,
@@ -78,7 +78,8 @@ off, also for older saved configurations. A new Linux boot then discards only
 photos not yet submitted to the printer; with the checkbox enabled they remain
 queued. Restarting the service in the same boot does not clear captures. Print
 history and unresolved jobs always survive; a discarded unsubmitted JPEG can be
-sent again from the camera.
+sent again from the camera. The first upgrade initializes a missing boot marker
+without discarding the legacy queue; the next device boot applies the policy.
 
 Software adapters use protected NetworkManager profiles and discover the
 printer's Classic RFCOMM SPP channel with SDP rather than assuming channel 1.

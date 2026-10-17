@@ -63,6 +63,11 @@ reservations are always preserved; a discarded, unsubmitted JPEG may be received
 again. Simulation and the separate Windows/Android workflows retain their prior
 restart behavior.
 
+The first service upgrade adopts a queue with no boot marker without deleting
+it; subsequent known boot changes apply the chosen policy. Boot identity comes
+from Linux's [stable per-boot boot_id](https://docs.kernel.org/admin-guide/sysctl/kernel.html#random),
+not a per-process random value.
+
 `ServiceRuntime` composes this controller with `ServiceLoop`, `SetupServer` and
 platform device adapters. First boot waits in setup. Configured boots offer a
 60-second setup window; authenticated interaction holds it open. A one-time

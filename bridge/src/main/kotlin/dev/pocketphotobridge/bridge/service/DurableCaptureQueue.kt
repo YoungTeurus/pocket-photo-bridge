@@ -169,7 +169,8 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
     fun beginBoot(bootId: String, keepWaiting: Boolean, wasSubmitted: (String) -> Boolean): Int {
         checkOpen()
         if (!BOOT_ID.matches(bootId)) persistence()
-        if (Files.exists(bootFile, NOFOLLOW_LINKS)) {
+        val previousBootKnown = Files.exists(bootFile, NOFOLLOW_LINKS)
+        if (previousBootKnown) {
             if (!Files.isRegularFile(bootFile, NOFOLLOW_LINKS) || Files.size(bootFile) > 256) persistence()
             secure(bootFile)
             val text = Files.newInputStream(bootFile, NOFOLLOW_LINKS).use { it.readNBytes(257) }.toString(Charsets.UTF_8)
@@ -179,7 +180,8 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
             if (lines[2] != "checksum=${hash(payload.toByteArray(Charsets.UTF_8))}") persistence()
             if (lines[1] == bootId) return 0
         }
-        val discarded = if (keepWaiting) emptyList() else records.filterNot { wasSubmitted(it.fingerprint) }
+        // A pre-feature queue has no boot marker. Adopt it without treating an upgrade as a power cycle.
+        val discarded = if (keepWaiting || !previousBootKnown) emptyList() else records.filterNot { wasSubmitted(it.fingerprint) }
         discarded.forEach(::remove)
         val payload = "PPB-BOOT 1\n$bootId\n"
         val bytes = (payload + "checksum=${hash(payload.toByteArray(Charsets.UTF_8))}\n").toByteArray(Charsets.UTF_8)

@@ -114,7 +114,7 @@ use the authenticated setup page described below.
    across that service namespace and times out. Symlinked or non-private client
    directories fail before any supplicant command.
 
-5. Save the displayed unique `PocketPhotoBridge-...` SSID, Wi-Fi password, and
+5. Save the displayed unique `PocketPhoto-...` SSID, Wi-Fi password, and
    administrator password privately. Disconnecting Wi-Fi for setup can end the
    SSH session; Ethernet is useful during installation. Connect your phone or
    Windows computer to that dedicated hotspot, then open
@@ -141,6 +141,15 @@ On the first unconfigured boot the board stays in setup. In the authenticated
 page, choose the Wi-Fi interface, enter the Sony camera SSID/password, pair or
 choose the printer, enter its real token, and select fit or crop. Explicitly
 enable automatic printing and save. Choose **Run** to leave setup.
+
+**Keep waiting photos across power cycles** is off by default, including for
+older configurations. With it off, a new Linux boot removes only photos not yet
+submitted to the printer; send a discarded JPEG again from the camera if needed.
+Enable it to keep waiting photos after power restarts. Changes apply at the next
+device boot, not when saving setup or restarting the service within the same
+boot. The first upgrade adopts an existing queue without a boot marker; it does
+not discard that queue during installation. Submitted-photo history and unknown
+print reservations are always retained.
 
 Pairing runs in the background because BlueZ discovery and pairing can take
 about 40 seconds. Refresh the page while status shows `PAIRING`; choose Run
