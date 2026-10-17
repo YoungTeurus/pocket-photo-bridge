@@ -163,6 +163,32 @@ sudo /opt/pocket-photo-bridge/current/bin/bridge --linux-native-check
 sudo systemctl status pocket-photo-bridge.service --no-pager
 ```
 
+### Physical Linux probes without printing
+
+Hardware-validation builds also provide two explicit commands using the saved
+configuration. Stop the service first: both probes acquire its persistent queue
+and print-journal locks and fail if another owner is active. Preserve all state.
+
+```bash
+sudo systemctl stop pocket-photo-bridge.service
+sudo /opt/pocket-photo-bridge/current/bin/bridge --linux-status-only
+sudo /opt/pocket-photo-bridge/current/bin/bridge --linux-receive-only
+```
+
+`--linux-status-only` discovers the actual SPP channel with SDP, opens RFCOMM,
+and invokes the existing encrypted read-only diagnosis. It never opens camera
+Wi-Fi, resets printer data, or submits a job. `--linux-receive-only` joins the
+saved camera Wi-Fi and invokes the existing capture/validation path, retaining
+the original and prepared JPEG in the service queue. It never opens a printer
+transport. Both print `NO_PHYSICAL_PRINT`; an unresolved prior print blocks
+transport actions. The existing native ABI check remains a separate test.
+
+The receive probe disconnects the current Wi-Fi, including an SSH connection on
+that radio. Arrange independent access or a tested timed network recovery before
+starting it. Do not start the normal service with queued photos until automatic
+printing is intended. Queued photos remain available to the normal service after
+restart, and existing duplicate/uncertainty records are retained.
+
 To redisplay your existing bootstrap credentials locally, first stop the service
 so it no longer owns the state, run the command in a private terminal, then
 restart:

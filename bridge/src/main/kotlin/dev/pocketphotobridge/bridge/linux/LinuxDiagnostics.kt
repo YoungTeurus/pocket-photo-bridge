@@ -49,9 +49,9 @@ object LinuxDiagnostics {
             System.getProperty("os.arch") !in setOf("amd64", "x86_64", "aarch64", "arm64")) {
             output.println("LINUX_REQUIRED"); return 64
         }
-        BridgeService.privateRoot(state)
         val diagnostics = ServiceDiagnostics(state, output)
         return try {
+            BridgeService.privateRoot(state)
             val config = ServiceConfigStore(state.resolve("setup")).load()
                 ?: throw BridgeFailure(BridgeFailureCode.ARGUMENT_ERROR)
             val devices = LinuxServiceDevices(state, diagnostics::emit)

@@ -1,6 +1,7 @@
 package dev.pocketphotobridge.bridge.linux
 
 import dev.pocketphotobridge.bridge.*
+import dev.pocketphotobridge.bridge.images.JvmPrintImagePreparer
 import dev.pocketphotobridge.bridge.service.*
 import dev.pocketphotobridge.bridge.setup.ServiceConfiguration
 import dev.pocketphotobridge.bridge.simulation.*
@@ -57,5 +58,19 @@ class NoPrintProbeTest {
         assertEquals(2, NoPrintProbe(state, config, sony,
             PrinterConnector { error("Printer must stay closed") }, {}).run(true))
         DurableCaptureQueue(state.resolve("service")).use { assertEquals(0, it.size) }
+    }
+
+    @Test fun unknownPrintBlocksDiagnosticTransportsAfterRestart() = root { state ->
+        val clock = SimulationClock()
+        val printer = SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT)
+        AutonomousBridge(state.resolve("service"), SimulatedSony(photo()), printer,
+            JvmPrintImagePreparer(), { SIMULATION_TOKEN }, now = clock::now, pause = clock::pause).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("synthetic")).state)
+            assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
+        }
+        assertEquals(3, NoPrintProbe(state, config,
+            CameraWifiConnector { error("Unknown print must block camera") },
+            PrinterConnector { error("Unknown print must block printer") }, {}).run(false))
+        assertEquals(1, printer.submissions)
     }
 }
