@@ -3,7 +3,7 @@ package dev.pocketphotobridge.bridge
 import java.nio.file.Path
 
 enum class CliMode { HELP, SIMULATION, SUITE, ACKNOWLEDGE, HARDWARE, WINDOWS_LIVE, WINDOWS_NATIVE,
-    SERVICE, SERVICE_SIMULATION, BOOTSTRAP, LINUX_NATIVE }
+    SERVICE, SERVICE_SIMULATION, BOOTSTRAP, LINUX_NATIVE, LINUX_STATUS, LINUX_RECEIVE }
 
 enum class SimulationScenario(val option: String) {
     NORMAL("normal"), MISSING_SSID("missing-ssid"), CAMERA_OFFLINE("camera-offline"),
@@ -58,6 +58,8 @@ data class CliOptions(val mode: CliMode, val scenario: SimulationScenario = Simu
                     argument == "--simulate-service" -> setMode(CliMode.SERVICE_SIMULATION)
                     argument == "--make-bootstrap" -> setMode(CliMode.BOOTSTRAP)
                     argument == "--linux-native-check" -> setMode(CliMode.LINUX_NATIVE)
+                    argument == "--linux-status-only" -> setMode(CliMode.LINUX_STATUS)
+                    argument == "--linux-receive-only" -> setMode(CliMode.LINUX_RECEIVE)
                     argument == "--windows-live" -> setMode(CliMode.WINDOWS_LIVE)
                     argument == "--windows-native-check" -> setMode(CliMode.WINDOWS_NATIVE)
                     argument == "--acknowledge-checked-printer" -> setMode(CliMode.ACKNOWLEDGE)

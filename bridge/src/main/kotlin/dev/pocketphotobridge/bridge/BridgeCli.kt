@@ -26,6 +26,9 @@ object BridgeCli {
             return dev.pocketphotobridge.bridge.service.BridgeService.bootstrap(options.stateDir ?: defaultState ?: dev.pocketphotobridge.bridge.service.BridgeService.defaultState(true), output)
         if (options.mode == CliMode.LINUX_NATIVE)
             return dev.pocketphotobridge.bridge.service.BridgeService.nativeCheck(output)
+        if (options.mode in setOf(CliMode.LINUX_STATUS, CliMode.LINUX_RECEIVE))
+            return dev.pocketphotobridge.bridge.linux.LinuxDiagnostics.run(options.mode == CliMode.LINUX_RECEIVE,
+                options.stateDir ?: defaultState ?: dev.pocketphotobridge.bridge.service.BridgeService.defaultState(false), output)
         if (options.mode in setOf(CliMode.SERVICE, CliMode.SERVICE_SIMULATION)) {
             val simulated = options.mode == CliMode.SERVICE_SIMULATION
             return dev.pocketphotobridge.bridge.service.BridgeService.run(simulated,
@@ -118,6 +121,8 @@ object BridgeCli {
   --service                   Linux automatic service; requires setup and auto-print opt-in.
   --make-bootstrap            Show unique setup credentials in a private local terminal.
   --linux-native-check        Read-only Linux native ABI/error check; no physical print.
+  --linux-status-only         Saved setup: SDP/SPP and encrypted status only; stop service first.
+  --linux-receive-only        Saved setup: queue one selected Sony JPEG, never print; stop service first.
   --windows-live              Interactive real Windows devices: receive, status, confirmed print.
   --windows-native-check      Read-only Windows native bindings/paired-device diagnostics.
   --help                      Show these instructions.
