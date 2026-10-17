@@ -61,6 +61,21 @@ class AutonomousBridgeTest {
         assertTrue(imageFiles(state).isEmpty())
     }
 
+    @Test fun powerRestartDiscardsWaitingPhotoAndAllowsCameraToSendItAgain() = root { state ->
+        bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE)).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            assertEquals(1, it.capture(SelectionTrigger("first")).queued)
+            assertEquals(ServiceState.WAITING_PRINTER, it.printNext().state)
+        }
+        val printer = SimulatedPrinter()
+        bridge(state, printer = printer).use {
+            assertEquals(0, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+            assertEquals(ServiceState.WAITING_CAMERA, it.printNext().state)
+            assertEquals(0, printer.submissions)
+            assertEquals(ServiceSnapshot(ServiceState.QUEUED, 1), it.capture(SelectionTrigger("first")))
+        }
+    }
+
     @Test fun failedCameraSelectionCanRetryTheSameTriggerAfterRestart() = root { state ->
         bridge(state, SimulatedSony(photo(), SonyFault.OFFLINE)).use {
             assertEquals(ServiceState.WAITING_CAMERA, it.capture(SelectionTrigger("same")).state)

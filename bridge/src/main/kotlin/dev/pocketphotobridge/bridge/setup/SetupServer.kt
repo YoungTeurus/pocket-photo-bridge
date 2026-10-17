@@ -257,7 +257,8 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         val password = form["cameraPassword"].orEmpty().ifEmpty { previous?.cameraPassword.orEmpty() }
         val token = form["printerToken"].orEmpty().ifEmpty { previous?.printerToken.orEmpty() }
         val config = ServiceConfiguration(form["cameraSsid"].orEmpty(), password, form["printerAddress"].orEmpty(), token,
-            form["wifiInterface"] ?: "wlan0", form["autoPrintEnabled"] == "on", form["crop"] == "on")
+            form["wifiInterface"] ?: "wlan0", form["autoPrintEnabled"] == "on", form["crop"] == "on",
+            form["keepQueueAcrossBoots"] == "on")
         backend.saveConfig(config)
     }
 
@@ -284,6 +285,8 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
             <details><summary>Advanced configuration</summary><label>Wi-Fi interface<input name="wifiInterface" value="${escape(config?.wifiInterface ?: "wlan0")}" required maxlength="15"></label></details>
             <label class="check"><input type="checkbox" name="autoPrintEnabled" ${if (config?.autoPrintEnabled == true) "checked" else ""}>Enable automatic printing of newly selected JPEG photos</label>
             <p>Enable this once to print each new photo automatically during normal operation. Uncertain jobs remain blocked until you check the printer.</p>
+            <label class="check"><input type="checkbox" name="keepQueueAcrossBoots" ${if (config?.keepQueueAcrossBoots == true) "checked" else ""}>Keep waiting photos across power cycles</label>
+            <p>Off by default: a new device boot discards photos that have not been submitted to the printer. Enable to keep them waiting after a power restart. Print history and uncertain jobs are always retained.</p>
             <label class="check"><input type="checkbox" name="crop" ${if (config?.crop == true) "checked" else ""}>Crop to fill the paper (otherwise fit the whole photo)</label>
             <button type="submit">Save configuration</button></form></section>
             <section><h2>Printer pairing</h2><ul>$devices</ul><form action="/pair" method="post">${csrfField(session)}

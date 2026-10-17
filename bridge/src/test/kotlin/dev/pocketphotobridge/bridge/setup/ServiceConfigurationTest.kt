@@ -18,7 +18,7 @@ class ServiceConfigurationTest {
     @Test fun configurationSurvivesPrivateAtomicRestart() = directory { root ->
         val store = ServiceConfigStore(root)
         assertNull(store.load())
-        val expected = ServiceConfiguration("DIRECT-camera", "camera-password", "AA:BB:CC:DD:EE:FF", "0123456789abcdef01234567", "wlan0", true, true)
+        val expected = ServiceConfiguration("DIRECT-camera", "camera-password", "AA:BB:CC:DD:EE:FF", "0123456789abcdef01234567", "wlan0", true, true, true)
         store.save(expected)
         val actual = ServiceConfigStore(root).load()!!
         assertEquals(expected.cameraSsid, actual.cameraSsid)
@@ -28,6 +28,7 @@ class ServiceConfigurationTest {
         assertEquals(expected.wifiInterface, actual.wifiInterface)
         assertTrue(actual.autoPrintEnabled)
         assertTrue(actual.crop)
+        assertTrue(actual.keepQueueAcrossBoots)
         if (root.fileSystem.supportedFileAttributeViews().contains("posix")) {
             assertEquals(PosixFilePermissions.fromString("rwx------"), Files.getPosixFilePermissions(root))
             assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(root.resolve("configuration.state")))
@@ -60,6 +61,7 @@ class ServiceConfigurationTest {
         val value = config()
         assertFalse(value.autoPrintEnabled)
         assertFalse(value.crop)
+        assertFalse(value.keepQueueAcrossBoots)
         assertFalse(value.toString().contains(value.cameraPassword))
         assertFalse(value.toString().contains(value.printerToken))
     }

@@ -65,6 +65,9 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         }
     }
 
+    @Suppress("UNUSED_PARAMETER")
+    @Synchronized fun beginBoot(bootId: String, keepQueueAcrossBoots: Boolean): ServiceSnapshot = snapshot()
+
     @Synchronized fun capture(trigger: SelectionTrigger): ServiceSnapshot {
         var receiving: Path? = null
         var retained = false
