@@ -178,6 +178,22 @@ class SetupServerTest {
         assertFalse(client.request("/").body.contains("camera-password"))
     }
 
+    @Test fun waitingQueueRetentionIsAnUncheckedSavedChoice() = server { client, _, _ ->
+        client.login()
+        fun checked(): Boolean {
+            val field = Regex("<input[^>]*name=\"keepQueueAcrossBoots\"([^>]*)>").find(client.request("/").body)
+            assertNotNull("Setup must offer an explicit waiting-queue retention choice", field)
+            return field!!.groupValues[1].contains("checked")
+        }
+        assertFalse(checked())
+        val form = mapOf("csrf" to client.csrfPage(), "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
+            "printerAddress" to "AA:BB:CC:DD:EE:FF", "printerToken" to "0123456789abcdef01234567", "wifiInterface" to "wlan0")
+        assertEquals(303, client.request("/config", form + ("keepQueueAcrossBoots" to "on")).code)
+        assertTrue(checked())
+        assertEquals(303, client.request("/config", form).code)
+        assertFalse(checked())
+    }
+
     @Test fun invalidOversizeAndErrorResponsesNeverEchoSecrets() = server { client, backend, _ ->
         client.login()
         val form = mapOf("csrf" to client.csrfPage(), "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
