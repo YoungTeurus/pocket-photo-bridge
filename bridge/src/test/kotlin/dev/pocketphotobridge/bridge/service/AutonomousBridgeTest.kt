@@ -233,6 +233,13 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun sonyStagesCarryTheSelectedCountAndReceivedBytes() = root { state ->
+        val logs = mutableListOf<String>()
+        bridge(state, report = logs::add).use { it.capture(SelectionTrigger("selected")) }
+        assertTrue("SONY_SELECTION count=1" in logs)
+        assertTrue("SONY_JPEG_BYTES count=${photo().size}" in logs)
+    }
+
     @Test fun interruptedAndInvalidPhotosAreNeverQueuedOrAcknowledged() = root { state ->
         val interrupted = SimulatedSony(photo(), SonyFault.INTERRUPTED)
         bridge(state, interrupted).use {
