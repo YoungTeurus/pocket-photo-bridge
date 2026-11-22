@@ -620,7 +620,7 @@ class AutonomousBridgeTest {
             assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
         }
         assertEquals(1, logs.count { it == "PRINTER_PRINTING" })
-        assertTrue(logs.all { Regex("[A-Z_]+(?: queued=[0-9]+)?(?: category=[A-Z_]+)?").matches(it) })
+        assertTrue(logs.all { Regex("[A-Z_]+(?: queued=[0-9]+)?(?: category=[A-Z_]+)?(?: count=[0-9]+)?").matches(it) })
         assertFalse(logs.joinToString("\n").contains("private"))
     }
 }

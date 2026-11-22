@@ -101,7 +101,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             camera.connect(trigger).use { link ->
                 SonyTransferSession(link.transport, link.endpoint, report = {
                     if (it.stage == Stage.END_UNCONFIRMED) endUnconfirmed = true
-                    emit("SONY_${it.stage.name}")
+                    emit("SONY_" + it.safeText())
                 }, validateJpeg = { source ->
                     checkActive()
                     images.validateSource(source)
