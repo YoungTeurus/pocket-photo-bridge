@@ -209,23 +209,31 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
 }
 
 /** Only fixed codes and counts enter disk/web reports. Bootstrap credentials have a separate output path. */
-class ServiceDiagnostics(private val state: Path, private val output: PrintStream) {
+class ServiceDiagnostics(private val state: Path, private val output: PrintStream,
+    private val now: () -> Long = { System.nanoTime() / 1_000_000 }, uptimeSeconds: Long? = kernelUptime()) {
+    private val start = now()
     private val lines = ArrayDeque<String>()
+    /** No wall clock: the board has neither a backed-up clock nor a time server. */
+    val header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=1" + (uptimeSeconds?.let { " uptime_s=$it" } ?: "")
     @Synchronized fun events(): List<String> = lines.toList()
     @Synchronized fun emit(message: String) {
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
         if (lines.size == 2048) lines.removeFirst()
-        lines.addLast(safe); output.println(safe)
+        lines.addLast("${(now() - start) / 1000} $safe"); output.println(safe)
         try {
             if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve("diagnostics.txt"))) return
             val temp = Files.createTempFile(state, "diagnostic-", ".tmp")
             try {
-                Files.writeString(temp, "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service\n" + lines.joinToString("\n") + "\n")
+                Files.writeString(temp, header + "\n" + lines.joinToString("\n") + "\n")
                 Files.move(temp, state.resolve("diagnostics.txt"), ATOMIC_MOVE, REPLACE_EXISTING)
             } finally { Files.deleteIfExists(temp) }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
     }
     companion object {
+        /** Absent off Linux (Windows simulation, test runners): the header then omits it. */
+        private fun kernelUptime(): Long? = try {
+            Files.readString(Path.of("/proc/uptime")).substringBefore('.').toLongOrNull()
+        } catch (_: Exception) { null }
         private val CATEGORIES = BridgeFailureCode.entries.map { it.name }.toSet() +
             LinuxRadioFailureCode.entries.map { it.name } +
             dev.pocketphotobridge.printer.PrinterFailureCode.entries.map { it.name } +
