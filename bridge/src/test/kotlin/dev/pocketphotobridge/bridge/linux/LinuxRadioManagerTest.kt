@@ -125,6 +125,21 @@ class LinuxRadioManagerTest {
         assertEquals(1, events.count { it == "LINUX_SETUP_STOPPED" })
     }
 
+    @Test fun `a joined camera network without a usable route is told apart from a failed join`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val joined = LinuxRadioManager(files, "wlan0", events::add, cameraCommands(), files.resolve("profiles"))
+        joined.connectCamera("DIRECT-camera", "camera-password").close()
+        joined.close()
+        assertEquals(listOf("LINUX_CAMERA_ACTIVATED", "LINUX_CAMERA_CONNECTED"), events)
+        events.clear()
+        val noRoute = LinuxRadioManager(files, "wlan0", events::add, cameraCommands(gateway = "8.8.8.8"), files.resolve("profiles"))
+        val failure = assertThrows(LinuxRadioFailure::class.java) { noRoute.connectCamera("DIRECT-camera", "camera-password") }
+        noRoute.close()
+        assertEquals(LinuxRadioFailureCode.CAMERA_ROUTE_UNSAFE, failure.code)
+        assertEquals(listOf("LINUX_CAMERA_ACTIVATED"), events)
+    }
+
     @Test fun `gateway from another interface or public or missing is rejected`() {
         listOf("8.8.8.8", "", "192.168.2.1").forEach { gateway ->
             val files = Files.createTempDirectory("linux-radio-test")
