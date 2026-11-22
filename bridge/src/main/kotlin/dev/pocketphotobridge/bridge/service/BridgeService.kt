@@ -254,6 +254,9 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             val temp = Files.createTempFile(state, "diagnostic-", ".tmp")
             try {
                 Files.writeString(temp, header + "\n" + lines.joinToString("\n") + "\n")
+                // The board usually stops by a power pull; force only failures to spare the SD card.
+                if (" category=" in safe)
+                    java.nio.channels.FileChannel.open(temp, java.nio.file.StandardOpenOption.WRITE).use { it.force(true) }
                 Files.move(temp, state.resolve(FILE), ATOMIC_MOVE, REPLACE_EXISTING)
             } finally { Files.deleteIfExists(temp) }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
