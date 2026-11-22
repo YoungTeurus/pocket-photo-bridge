@@ -113,6 +113,18 @@ class LinuxRadioManagerTest {
         manager.close()
     }
 
+    @Test fun `setup stopped is reported only when a hotspot was active`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val manager = LinuxRadioManager(files, "wlan0", events::add, cameraCommands(), files.resolve("profiles"))
+        manager.connectCamera("DIRECT-camera", "camera-password").close()
+        assertFalse(events.contains("LINUX_SETUP_STOPPED"))
+        manager.startSetup("setup", "hotspot-password")
+        manager.connectCamera("DIRECT-camera", "camera-password").close()
+        manager.close()
+        assertEquals(1, events.count { it == "LINUX_SETUP_STOPPED" })
+    }
+
     @Test fun `gateway from another interface or public or missing is rejected`() {
         listOf("8.8.8.8", "", "192.168.2.1").forEach { gateway ->
             val files = Files.createTempDirectory("linux-radio-test")
