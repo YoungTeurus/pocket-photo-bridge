@@ -5,10 +5,9 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import dev.pocketphotobridge.bridge.BridgeFailureCode
 import dev.pocketphotobridge.bridge.linux.LinuxRadioFailureCode
+import dev.pocketphotobridge.bridge.service.ServiceDiagnostics
 import dev.pocketphotobridge.printer.PrinterFailureCode
-import dev.pocketphotobridge.printer.PrinterStage
 import dev.pocketphotobridge.sony.Failure
-import dev.pocketphotobridge.sony.Stage
 import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -325,28 +324,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
     private fun safeDiagnostics(raw: Map<String, Any>): Map<String, Any> = linkedMapOf<String, Any>().apply {
         putAll(safeStatus(raw))
         val events = raw["events"] as? List<*>
-        if (events != null) put("events", events.asSequence().take(256).mapNotNull { safeEvent(it as? String) }.toList())
-    }
-
-    /** Exact known stages and typed attributes only: arbitrary message text can never pass this filter. */
-    private fun safeEvent(text: String?): String? {
-        if (text == null || text.length > 256) return null
-        val parts = text.split(' ')
-        if (parts.size !in 1..5 || parts[0] !in EVENT_VALUES) return null
-        val seen = mutableSetOf<String>()
-        for (attribute in parts.drop(1)) {
-            val pair = attribute.split('=', limit = 2)
-            if (pair.size != 2 || !seen.add(pair[0])) return null
-            val valid = when (pair[0]) {
-                "category" -> pair[1] in STATUS_VALUES
-                "reason" -> pair[1] in setOf("OK", "FAILED", "PENDING")
-                "queued", "count" -> pair[1].matches(Regex("[0-9]{1,6}"))
-                "native_error" -> pair[1].matches(Regex("[0-9]{1,4}"))
-                else -> false
-            }
-            if (!valid) return null
-        }
-        return text
+        if (events != null) put("events", events.asSequence().take(256).mapNotNull { (it as? String)?.takeIf(ServiceDiagnostics::safeLine) }.toList())
     }
 
     private fun pruneSessions() {
@@ -405,13 +383,6 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         private val STATUS_VALUES = setOf("SETUP", "OPERATION", "STARTING", "STOPPED", "READY", "IDLE", "CAPTURING", "BLOCKED", "UNKNOWN_JOB", "ERROR", "NONE", "OK", "OFFLINE", "PENDING", "CONFIGURATION_REQUIRED", "CAMERA_UNAVAILABLE", "PRINTER_UNAVAILABLE", "NETWORK_UNAVAILABLE", "RADIO_UNAVAILABLE", "SETUP_STATE_UNAVAILABLE", "CAPACITY_REACHED", "INVALID_JPEG", "RECEIVE_INTERRUPTED", "PRINT_UNCERTAIN", "QUEUE_FULL", "CAMERA_ACK_PENDING", "DUPLICATE_SUPPRESSED") + SERVICE_STATES +
             BridgeFailureCode.entries.map { it.name } + PrinterFailureCode.entries.map { it.name } +
             Failure.entries.map { it.name } + LinuxRadioFailureCode.entries.map { it.name }
-        private val EVENT_VALUES = Stage.entries.map { "SONY_${it.name}" }.toSet() +
-            PrinterStage.entries.map { "PRINTER_${it.name}" } + SERVICE_STATES.map { "BRIDGE_$it" } +
-            setOf("SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_FAILED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT",
-                "SERVICE_PAIRING_STARTED", "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_BOOT_QUEUE_DISCARDED",
-                "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED", "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED",
-                "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED", "LINUX_BLUETOOTH_CONNECTED") +
-            listOf("SOCKET", "CONNECT", "POLL", "SO_ERROR", "SEND", "RECEIVE", "SHUTDOWN", "CLOSE").map { "LINUX_BLUETOOTH_$it" }
         private fun reject(code: Int, category: String): Nothing = throw RequestFailure(code, category)
         private fun now(): Long = System.currentTimeMillis()
         private fun hash(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))

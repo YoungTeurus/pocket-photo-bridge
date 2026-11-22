@@ -73,6 +73,15 @@ class ServiceDiagnosticsTest {
         listOf("MYSECRET", "sensitive-camera-name", "AA:BB:CC", "0123456789abcdef").forEach { assertFalse(exported.contains(it)) }
     }
 
+    @Test fun theFileAcceptsTheEventsTheTroubleshootingTableReliesOn() {
+        val directory = Files.createTempDirectory("accepted-service-")
+        val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        val accepted = listOf("SERVICE_CAMERA_WAIT category=COMMAND_FAILED", "BRIDGE_CAMERA_CONNECTING",
+            "BRIDGE_PRINTER_CONNECTING", "SERVICE_CONFIG_SAVED", "SONY_JPEG_BYTES count=13805942")
+        accepted.forEach(report::emit)
+        assertEquals(accepted.map { "0 $it" }, Files.readAllLines(directory.resolve("diagnostics.txt")).drop(1))
+    }
+
     @Test fun headerOmitsUptimeWhereTheKernelDoesNotReportIt() {
         val directory = Files.createTempDirectory("header-service-")
         ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null).emit("SERVICE_SETUP")

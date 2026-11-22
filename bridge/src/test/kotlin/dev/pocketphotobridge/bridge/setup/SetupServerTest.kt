@@ -26,11 +26,12 @@ class SetupServerTest {
             "unresolved" to true, "simulation" to true, "adminPassword" to "never-disclose", "log" to "private-token",
             "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name")
         override fun configuration() = saved
-        override fun diagnostics(): Map<String, Any> = status() + mapOf("events" to listOf(
-            "BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
-            "LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111",
-            "SONY_TRANSFER_START", "PRIVATE_TOKEN private-token", "SONY_TRANSFER_START password=private-token",
-            "SONY_TRANSFER_START category=private-token", "LINUX_BLUETOOTH_CONNECT reason=private-token native_error=111"))
+        var events = listOf(
+            "0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
+            "1 LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111",
+            "2 SONY_TRANSFER_START", "PRIVATE_TOKEN private-token", "3 PRIVATE_TOKEN", "4 SONY_TRANSFER_START password=private-token",
+            "5 SONY_TRANSFER_START category=private-token", "6 LINUX_BLUETOOTH_CONNECT reason=private-token native_error=111")
+        override fun diagnostics(): Map<String, Any> = status() + mapOf("events" to events)
         override fun saveConfig(config: ServiceConfiguration) { if (throwSecret) error("private-token"); saved = config }
         override fun acknowledgeCheckedPrinter() { acknowledged++ }
         override fun startOperation() { run++ }
@@ -147,11 +148,21 @@ class SetupServerTest {
         client.login()
         val diagnostics = client.request("/diagnostics").body
         val events = JsonParser.parseString(diagnostics).asJsonObject.getAsJsonArray("events").map { it.asString }
-        assertTrue(events.contains("BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB"))
-        assertTrue(events.contains("LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111"))
-        assertTrue(events.contains("SONY_TRANSFER_START"))
+        assertTrue(events.contains("0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB"))
+        assertTrue(events.contains("1 LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111"))
+        assertTrue(events.contains("2 SONY_TRANSFER_START"))
         assertFalse(diagnostics.contains("PRIVATE_TOKEN"))
         assertFalse(diagnostics.contains("private-token"))
+    }
+
+    @Test fun diagnosticsExportAcceptsTheSameEventsAsTheDiagnosticsFile() = server { client, backend, _ ->
+        val accepted = listOf("1 SERVICE_CAMERA_WAIT category=COMMAND_FAILED", "2 BRIDGE_CAMERA_CONNECTING",
+            "3 BRIDGE_PRINTER_CONNECTING", "4 SERVICE_CONFIG_SAVED", "5 SONY_JPEG_BYTES count=13805942")
+        backend.events = accepted + backend.events
+        client.login()
+        val events = JsonParser.parseString(client.request("/diagnostics").body).asJsonObject.getAsJsonArray("events").map { it.asString }
+        assertEquals(accepted + listOf("0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
+            "1 LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111", "2 SONY_TRANSFER_START"), events)
     }
 
     @Test fun exposesFixedControllerStagesAndSubmissionCounts() = server { client, backend, _ ->
