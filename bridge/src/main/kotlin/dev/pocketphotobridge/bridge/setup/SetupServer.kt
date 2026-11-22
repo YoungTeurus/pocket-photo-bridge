@@ -323,8 +323,15 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
 
     private fun safeDiagnostics(raw: Map<String, Any>): Map<String, Any> = linkedMapOf<String, Any>().apply {
         putAll(safeStatus(raw))
-        val events = raw["events"] as? List<*>
-        if (events != null) put("events", events.asSequence().take(256).mapNotNull { (it as? String)?.takeIf(ServiceDiagnostics::safeLine) }.toList())
+        (raw["header"] as? String)?.takeIf(ServiceDiagnostics::safeHeader)?.let { put("header", it) }
+        (raw["events"] as? List<*>)?.let { put("events", ServiceDiagnostics.recent(it)) }
+        (raw["previousRuns"] as? List<*>)?.let { runs ->
+            put("previousRuns", runs.takeLast(ServiceDiagnostics.GENERATIONS).mapNotNull { run ->
+                val fields = run as? Map<*, *>
+                val header = (fields?.get("header") as? String)?.takeIf(ServiceDiagnostics::safeHeader) ?: return@mapNotNull null
+                mapOf("header" to header, "events" to ServiceDiagnostics.recent(fields["events"] as? List<*> ?: emptyList<Any>()))
+            })
+        }
     }
 
     private fun pruneSessions() {

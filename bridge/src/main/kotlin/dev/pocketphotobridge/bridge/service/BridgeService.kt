@@ -213,7 +213,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
 class ServiceDiagnostics(private val state: Path, private val output: PrintStream,
     private val now: () -> Long = { System.nanoTime() / 1_000_000 }, uptimeSeconds: Long? = kernelUptime()) {
     private val start = now()
-    private val lines = ArrayDeque<String>()
+    private var lines = emptyList<String>()
     /** No wall clock: the board has neither a backed-up clock nor a time server. */
     val header: String
 
@@ -231,7 +231,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=$run" + (uptimeSeconds?.let { " uptime_s=$it" } ?: "")
     }
 
-    @Synchronized fun events(): List<String> = lines.toList()
+    @Synchronized fun events(): List<String> = lines
     /** Oldest first; every line passes the same validator as the current run. */
     fun previousRuns(): List<Map<String, Any>> = (GENERATIONS downTo 1).mapNotNull { n ->
         try {
@@ -239,14 +239,13 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return@mapNotNull null
             val text = Files.readAllLines(file)
             val header = text.firstOrNull()?.takeIf(::safeHeader) ?: return@mapNotNull null
-            mapOf("header" to header, "events" to text.drop(1).filter(::safeLine))
+            mapOf("header" to header, "events" to recent(text.drop(1)))
         } catch (_: Exception) { null }
     }
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
     @Synchronized fun emit(message: String) {
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
-        if (lines.size == 2048) lines.removeFirst()
-        lines.addLast("${(now() - start) / 1000} $safe"); output.println(safe)
+        lines = recent(lines + "${(now() - start) / 1000} $safe"); output.println(safe)
         try {
             if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve(FILE))) return
             val temp = Files.createTempFile(state, "diagnostic-", ".tmp")
@@ -260,6 +259,14 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         private const val FILE = "diagnostics.txt"
         /** Previous runs kept besides the current one. */
         const val GENERATIONS = 5
+        /** Per-run cap in file bytes: six capped runs stay within the 64 KiB export even with Gson's escaped '='. */
+        private const val RUN_BYTES = 7168
+        /** Validated lines, most recent last, within the per-run cap. */
+        fun recent(lines: List<*>): List<String> {
+            var bytes = 0
+            return lines.asReversed().asSequence().mapNotNull { (it as? String)?.takeIf(::safeLine) }
+                .takeWhile { bytes += it.length + 1; bytes <= RUN_BYTES }.toList().asReversed()
+        }
         private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+ \\| headless service run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?")
         fun safeHeader(text: String) = HEADER.matches(text)
         /** The one validator for file and HTTP: whole seconds since start, then a fixed-vocabulary event. */
