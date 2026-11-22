@@ -246,6 +246,8 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
     @Synchronized fun emit(message: String) {
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
+        // An unchanged state is not re-emitted, so idle hours cannot evict the run; redactions stay counted.
+        if (safe != "DIAGNOSTIC_REDACTED" && lines.lastOrNull()?.substringAfter(' ') == safe) return
         lines = recent(lines + "${(now() - start) / 1000} $safe"); output.println(safe)
         try {
             if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve(FILE))) return

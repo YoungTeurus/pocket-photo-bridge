@@ -45,6 +45,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var closed = false
     private var failed = false
     private var current = ServiceSnapshot(ServiceState.WAITING_CAMERA, queue.size)
+    private var retries = 0
 
     init {
         var opened: FileBridgeJournal? = null
@@ -124,6 +125,8 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     }
 
     @Synchronized fun printNext(): ServiceSnapshot {
+        val previous = current
+        val retrying = previous.state == ServiceState.WAITING_PRINTER && previous.category != null
         try {
             checkState()
             if (journal.unresolved) return result(ServiceState.NEEDS_ATTENTION, "UNRESOLVED_JOB")
@@ -131,8 +134,9 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             val entry = queue.entries.firstOrNull() ?: return result(ServiceState.WAITING_CAMERA)
             val prepared = queue.prepared(entry)
             journal.selectPhoto(entry.fingerprint)
-            result(ServiceState.WAITING_PRINTER)
-            emit("BRIDGE_PRINTER_CONNECTING")
+            // A repeat of the same failed attempt is summarised below instead of logged step by step.
+            if (retrying) current = ServiceSnapshot(ServiceState.WAITING_PRINTER, queue.size)
+            else { result(ServiceState.WAITING_PRINTER); emit("BRIDGE_PRINTER_CONNECTING") }
             var printingReported = false
             printer.connect().use { transport ->
                 val progress: (PrinterDiagnostic) -> Unit = { diagnostic ->
@@ -150,7 +154,12 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             return result(ServiceState.PRINTED)
         } catch (failure: Exception) {
             if (failure is InterruptedException) Thread.currentThread().interrupt()
-            return recover(failure, ServiceState.WAITING_PRINTER)
+            val outcome = recover(failure, ServiceState.WAITING_PRINTER)
+            retries = if (retrying && outcome == previous) retries + 1 else 0
+            // Doubling intervals keep a day of retries to a few dozen lines.
+            if (retries > 0 && retries and (retries - 1) == 0)
+                emit("BRIDGE_WAITING_PRINTER queued=${outcome.queued} category=${outcome.category} count=$retries")
+            return outcome
         }
     }
 

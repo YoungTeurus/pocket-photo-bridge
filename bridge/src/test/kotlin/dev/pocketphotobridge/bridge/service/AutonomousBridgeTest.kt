@@ -536,6 +536,7 @@ class AutonomousBridgeTest {
         }
         assertRunKeepsHeaderAndCapture(diagnostics, state)
         assertTrue(diagnostics.events().last().endsWith(" BRIDGE_WAITING_PRINTER queued=1 category=PRINTER_OFFLINE"))
+        assertTrue(diagnostics.events().any { it.endsWith(" BRIDGE_WAITING_PRINTER queued=1 category=PRINTER_OFFLINE count=1024") })
     }
 
     @Test fun anHourOfFailedCameraScansKeepsTheRunHeaderAndCapture() = root { state ->
