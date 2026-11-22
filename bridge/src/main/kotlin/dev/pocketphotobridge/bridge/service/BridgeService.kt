@@ -178,7 +178,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 .apply { (snapshot.category ?: pairing.failure)?.let { put("category", it) }; putAll(devices.safeCounts()) }
         }
         override fun configuration() = this@ServiceRuntime.configuration.get()
-        override fun diagnostics() = status() + mapOf("events" to diagnostics.events().takeLast(256))
+        override fun diagnostics() = status() + mapOf("header" to diagnostics.header, "events" to diagnostics.events(),
+            "previousRuns" to diagnostics.previousRuns())
         override fun staySetup() { if (!loop.operating) policy.holdSetup() }
         override fun saveConfig(config: ServiceConfiguration) {
             check(!loop.operating) { "SETUP_REQUIRED" }
