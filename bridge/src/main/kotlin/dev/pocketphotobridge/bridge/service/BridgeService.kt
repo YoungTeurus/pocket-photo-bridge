@@ -136,7 +136,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         CameraWifiConnector { devices.camera(requiredConfiguration(), it) },
         PrinterConnector { devices.printer(requiredConfiguration()) }, JvmPrintImagePreparer(),
         { if (devices.simulation) SIMULATION_TOKEN else requiredConfiguration().printerToken },
-        configuration.get()?.crop ?: false, diagnostics::emit, devices::now, devices::pause).also { bridge ->
+        configuration.get()?.crop ?: false, diagnostics::emit, devices::now, devices::pause, diagnostics).also { bridge ->
             bootId?.let { bridge.beginBoot(it, configuration.get()?.keepQueueAcrossBoots == true) }
         }
 
@@ -212,7 +212,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
 
 /** Only fixed codes and counts enter disk/web reports. Bootstrap credentials have a separate output path. */
 class ServiceDiagnostics(private val state: Path, private val output: PrintStream,
-    private val now: () -> Long = { System.nanoTime() / 1_000_000 }, uptimeSeconds: Long? = kernelUptime()) {
+    private val now: () -> Long = { System.nanoTime() / 1_000_000 }, uptimeSeconds: Long? = kernelUptime()) : AttemptLog {
     private val start = now()
     private var lines = emptyList<String>()
     /** No wall clock: the board has neither a backed-up clock nor a time server. */
@@ -233,6 +233,16 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
     }
 
     @Synchronized fun events(): List<String> = lines
+    private var holder: Thread? = null
+    private val held = ArrayList<String>()
+    /** Holds only the calling thread's lines, so setup and pairing threads keep reporting. */
+    @Synchronized override fun hold() { holder = Thread.currentThread(); held.clear() }
+    @Synchronized override fun release(keep: Boolean) {
+        if (holder !== Thread.currentThread()) return
+        holder = null
+        val pending = held.toList(); held.clear()
+        if (keep) pending.forEach(::emit)
+    }
     /** Oldest first; every line passes the same validator as the current run. */
     fun previousRuns(): List<Map<String, Any>> = (GENERATIONS downTo 1).mapNotNull { n ->
         try {
@@ -245,6 +255,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
     }
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
     @Synchronized fun emit(message: String) {
+        if (holder === Thread.currentThread()) { if (held.size < 256) { held += message; return }; release(true) }
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
         // An unchanged state is not re-emitted, so idle hours cannot evict the run; redactions stay counted.
         if (safe != "DIAGNOSTIC_REDACTED" && lines.lastOrNull()?.substringAfter(' ') == safe) return

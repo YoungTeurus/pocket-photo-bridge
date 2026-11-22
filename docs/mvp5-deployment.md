@@ -192,10 +192,12 @@ Each run of the service or of a probe (`--linux-status-only`,
 a run counter, and the kernel uptime in whole seconds when the process started
 (omitted where the kernel does not report it). Each event line starts with the
 whole seconds since that start; there is no wall-clock time, because the board
-has no backed-up clock. An unchanged state is written once, and a print attempt
-that keeps failing the same way is summarised by a line ending in `count=N`
-after 1, 2, 4, 8 ... retries, so hours of idling or of a switched-off printer
-do not push earlier events out.
+has no backed-up clock. An unchanged state or camera-scan failure is written
+once. A print attempt that fails the same way as the one before leaves none of
+its steps (radio steps included); instead a line ending in `count=N` is written
+after 1, 2, 4, 8 ... such retries, so hours of idling or of a switched-off
+printer do not push earlier events out. The run that was in place before the
+upgrade to run headers is kept as a previous run without a run counter.
 
 At start the previous run moves to `diagnostics.1.txt` and older runs shift up
 to `diagnostics.5.txt`; anything older is dropped. A probe, reboot, crash restart

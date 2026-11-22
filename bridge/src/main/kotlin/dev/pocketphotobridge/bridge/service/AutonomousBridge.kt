@@ -18,10 +18,17 @@ enum class ServiceState { WAITING_CAMERA, RECEIVING, QUEUED, WAITING_PRINTER, PR
 data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null)
 
 /** Camera acknowledgement and printer availability are independent durable boundaries. */
+/** Holds the report lines of a repeated print attempt until its outcome shows whether they say anything new. */
+interface AttemptLog {
+    fun hold()
+    fun release(keep: Boolean)
+    companion object { val NONE = object : AttemptLog { override fun hold() {}; override fun release(keep: Boolean) {} } }
+}
+
 class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, private val printer: PrinterConnector,
     private val images: PrintImagePreparer, private val token: () -> String, private val crop: Boolean = false,
     private val report: (String) -> Unit = {}, private val now: () -> Long = { System.nanoTime() / 1_000_000 },
-    private val pause: (Long) -> Unit = { Thread.sleep(it) }) : AutoCloseable {
+    private val pause: (Long) -> Unit = { Thread.sleep(it) }, private val attempts: AttemptLog = AttemptLog.NONE) : AutoCloseable {
     private val queue = DurableCaptureQueue(stateDir)
     private val journal: FileBridgeJournal
     private var journalHash: String? = null
@@ -134,15 +141,17 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             val entry = queue.entries.firstOrNull() ?: return result(ServiceState.WAITING_CAMERA)
             val prepared = queue.prepared(entry)
             journal.selectPhoto(entry.fingerprint)
-            // A repeat of the same failed attempt is summarised below instead of logged step by step.
-            if (retrying) current = ServiceSnapshot(ServiceState.WAITING_PRINTER, queue.size)
-            else { result(ServiceState.WAITING_PRINTER); emit("BRIDGE_PRINTER_CONNECTING") }
+            // Every line of a retry, radio steps included, is held until its outcome shows whether it repeats the last one.
+            if (retrying) attempts.hold()
+            result(ServiceState.WAITING_PRINTER); emit("BRIDGE_PRINTER_CONNECTING")
             var printingReported = false
             printer.connect().use { transport ->
                 val progress: (PrinterDiagnostic) -> Unit = { diagnostic ->
                     if (diagnostic.stage in PROGRESS) emit("PRINTER_${diagnostic.stage.name}")
-                    if (diagnostic.stage == PrinterStage.JOB_RESERVED)
+                    if (diagnostic.stage == PrinterStage.JOB_RESERVED) {
+                        attempts.release(keep = true)
                         result(ServiceState.PRINTING)
+                    }
                     if (diagnostic.stage == PrinterStage.PRINTING && !printingReported) {
                         printingReported = true
                         emit("PRINTER_PRINTING")
@@ -155,12 +164,14 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         } catch (failure: Exception) {
             if (failure is InterruptedException) Thread.currentThread().interrupt()
             val outcome = recover(failure, ServiceState.WAITING_PRINTER)
-            retries = if (retrying && outcome == previous) retries + 1 else 0
+            val repeated = retrying && outcome == previous
+            attempts.release(keep = !repeated)
+            retries = if (repeated) retries + 1 else 0
             // Doubling intervals keep a day of retries to a few dozen lines.
-            if (retries > 0 && retries and (retries - 1) == 0)
+            if (Integer.bitCount(retries) == 1)
                 emit("BRIDGE_WAITING_PRINTER queued=${outcome.queued} category=${outcome.category} count=$retries")
             return outcome
-        }
+        } finally { attempts.release(keep = true) }
     }
 
     @Synchronized fun snapshot(): ServiceSnapshot {
@@ -217,7 +228,10 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         else -> ServiceState.WAITING_CAMERA
     }
     private fun result(state: ServiceState, category: String? = null): ServiceSnapshot {
-        current = ServiceSnapshot(state, queue.size, category)
+        val next = ServiceSnapshot(state, queue.size, category)
+        // An unchanged state is not re-emitted, so idle hours cannot evict the run.
+        if (next == current) return current
+        current = next
         emit("BRIDGE_${state.name} queued=${queue.size}" + (category?.let { " category=$it" } ?: ""))
         return current
     }

@@ -23,10 +23,10 @@ class AutonomousBridgeTest {
     }
     private fun bridge(state: Path, camera: CameraWifiConnector = SimulatedSony(photo()),
         printer: PrinterConnector = SimulatedPrinter(), images: PrintImagePreparer = JvmPrintImagePreparer(),
-        report: (String) -> Unit = {}): AutonomousBridge {
+        report: (String) -> Unit = {}, attempts: AttemptLog = AttemptLog.NONE): AutonomousBridge {
         val clock = SimulationClock()
         return AutonomousBridge(state, camera, printer, images, { SIMULATION_TOKEN },
-            report = report, now = clock::now, pause = clock::pause)
+            report = report, now = clock::now, pause = clock::pause, attempts = attempts)
     }
     private class PowerCut : Error()
     private fun diagnostics(state: Path) = ServiceDiagnostics(state.parent, PrintStream(ByteArrayOutputStream()))
@@ -518,6 +518,12 @@ class AutonomousBridgeTest {
         }
     }
 
+    /** The service loop's cadence: a failed camera scan every second, a print step every two. */
+    private fun anHourOfServiceLoop(diagnostics: ServiceDiagnostics, bridge: AutonomousBridge) = repeat(3_600) { second ->
+        diagnostics.emit("SERVICE_CAMERA_WAIT category=COMMAND_FAILED")
+        if (second % 2 == 0) bridge.printNext()
+    }
+
     @Test fun anHourOfIdlePrintStepsKeepsTheRunHeaderAndCapture() = root { state ->
         val diagnostics = diagnostics(state)
         bridge(state, report = diagnostics::emit).use {
@@ -530,20 +536,54 @@ class AutonomousBridgeTest {
 
     @Test fun anHourOfRetryingAnOfflinePrinterKeepsTheRunHeaderAndCapture() = root { state ->
         val diagnostics = diagnostics(state)
-        bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE), report = diagnostics::emit).use {
+        bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE), report = diagnostics::emit, attempts = diagnostics).use {
             assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
             repeat(1_800) { _ -> assertEquals(ServiceState.WAITING_PRINTER, it.printNext().state) }
         }
         assertRunKeepsHeaderAndCapture(diagnostics, state)
-        assertTrue(diagnostics.events().last().endsWith(" BRIDGE_WAITING_PRINTER queued=1 category=PRINTER_OFFLINE"))
-        assertTrue(diagnostics.events().any { it.endsWith(" BRIDGE_WAITING_PRINTER queued=1 category=PRINTER_OFFLINE count=1024") })
+        val waiting = diagnostics.events().filter { " BRIDGE_WAITING_PRINTER " in it }
+        assertTrue(waiting.size in 2..30)
+        val count = waiting.last().substringAfter(" count=", "").toInt()
+        assertTrue(count in 900..1_799)
+    }
+
+    @Test fun anHourOfRadioStepsToAnOfflinePrinterInTheServiceLoopKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        val offline = SimulatedPrinter(PrinterFault.OFFLINE)
+        // The board's connector reports its radio steps through the same diagnostics before it fails.
+        val radio = PrinterConnector {
+            diagnostics.emit("LINUX_SPP_DISCOVERY_START")
+            diagnostics.emit("LINUX_BLUETOOTH_CONNECT reason=PENDING native_error=115")
+            diagnostics.emit("LINUX_BLUETOOTH_SO_ERROR reason=FAILED native_error=112")
+            offline.connect()
+        }
+        bridge(state, printer = radio, report = diagnostics::emit, attempts = diagnostics).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            anHourOfServiceLoop(diagnostics, it)
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertTrue(diagnostics.events().size < 100)
+    }
+
+    @Test fun anHourOfABusyPrinterInTheServiceLoopKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, printer = SimulatedPrinter(PrinterFault.BUSY), report = diagnostics::emit, attempts = diagnostics).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            anHourOfServiceLoop(diagnostics, it)
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertTrue(diagnostics.events().size < 100)
     }
 
     @Test fun anHourOfFailedCameraScansKeepsTheRunHeaderAndCapture() = root { state ->
         val diagnostics = diagnostics(state)
-        bridge(state, report = diagnostics::emit).use { assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state) }
-        repeat(3_600) { diagnostics.emit("SERVICE_CAMERA_WAIT category=COMMAND_FAILED") }
+        bridge(state, report = diagnostics::emit, attempts = diagnostics).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            assertEquals(ServiceState.PRINTED, it.printNext().state)
+            anHourOfServiceLoop(diagnostics, it)
+        }
         assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertTrue(diagnostics.events().size < 100)
     }
 
     @Test fun diagnosticsUseOnlyFixedCategoriesAndCollapsePrintingPolls() = root { state ->
