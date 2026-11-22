@@ -7,6 +7,7 @@ import dev.pocketphotobridge.bridge.setup.*
 import dev.pocketphotobridge.bridge.simulation.SIMULATION_TOKEN
 import java.io.PrintStream
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -214,22 +215,56 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
     private val start = now()
     private val lines = ArrayDeque<String>()
     /** No wall clock: the board has neither a backed-up clock nor a time server. */
-    val header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=1" + (uptimeSeconds?.let { " uptime_s=$it" } ?: "")
+    val header: String
+
+    init {
+        // Rotate instead of parsing old runs back into memory; a probe or restart is one more run.
+        try {
+            if (Files.isDirectory(state, NOFOLLOW_LINKS)) {
+                Files.deleteIfExists(generation(GENERATIONS))
+                for (n in GENERATIONS - 1 downTo 1)
+                    if (Files.exists(generation(n), NOFOLLOW_LINKS)) Files.move(generation(n), generation(n + 1), ATOMIC_MOVE)
+                if (Files.exists(state.resolve(FILE), NOFOLLOW_LINKS)) Files.move(state.resolve(FILE), generation(1), ATOMIC_MOVE)
+            }
+        } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
+        val run = (previousRuns().maxOfOrNull { HEADER.matchEntire(it["header"] as String)!!.groupValues[1].toInt() } ?: 0) + 1
+        header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=$run" + (uptimeSeconds?.let { " uptime_s=$it" } ?: "")
+    }
+
     @Synchronized fun events(): List<String> = lines.toList()
+    /** Oldest first; every line passes the same validator as the current run. */
+    fun previousRuns(): List<Map<String, Any>> = (GENERATIONS downTo 1).mapNotNull { n ->
+        try {
+            val file = generation(n)
+            if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return@mapNotNull null
+            val text = Files.readAllLines(file)
+            val header = text.firstOrNull()?.takeIf(::safeHeader) ?: return@mapNotNull null
+            mapOf("header" to header, "events" to text.drop(1).filter(::safeLine))
+        } catch (_: Exception) { null }
+    }
+    private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
     @Synchronized fun emit(message: String) {
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
         if (lines.size == 2048) lines.removeFirst()
         lines.addLast("${(now() - start) / 1000} $safe"); output.println(safe)
         try {
-            if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve("diagnostics.txt"))) return
+            if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve(FILE))) return
             val temp = Files.createTempFile(state, "diagnostic-", ".tmp")
             try {
                 Files.writeString(temp, header + "\n" + lines.joinToString("\n") + "\n")
-                Files.move(temp, state.resolve("diagnostics.txt"), ATOMIC_MOVE, REPLACE_EXISTING)
+                Files.move(temp, state.resolve(FILE), ATOMIC_MOVE, REPLACE_EXISTING)
             } finally { Files.deleteIfExists(temp) }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
     }
     companion object {
+        private const val FILE = "diagnostics.txt"
+        /** Previous runs kept besides the current one. */
+        const val GENERATIONS = 5
+        private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+ \\| headless service run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?")
+        fun safeHeader(text: String) = HEADER.matches(text)
+        /** The one validator for file and HTTP: whole seconds since start, then a fixed-vocabulary event. */
+        fun safeLine(text: String) = OFFSET.matches(text.substringBefore(' ', "")) && safeEvent(text.substringAfter(' '))
+        private val OFFSET = Regex("[0-9]{1,9}")
         /** Absent off Linux (Windows simulation, test runners): the header then omits it. */
         private fun kernelUptime(): Long? = try {
             Files.readString(Path.of("/proc/uptime")).substringBefore('.').toLongOrNull()

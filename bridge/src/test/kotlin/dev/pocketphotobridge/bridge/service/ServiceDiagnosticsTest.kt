@@ -39,6 +39,25 @@ class ServiceDiagnosticsTest {
         assertEquals(listOf("0 SERVICE_SETUP", "65 SERVICE_OPERATION"), report.events())
     }
 
+    @Test fun aRestartKeepsTheFiveMostRecentRunsAsPreviousRunsOldestFirst() {
+        val directory = Files.createTempDirectory("restart-service-")
+        fun start() = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        fun header(run: Int) = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=$run"
+        val crashed = start()
+        crashed.emit("SERVICE_OPERATION")
+        crashed.emit("BRIDGE_WAITING_CAMERA queued=0 category=IO_ERROR")
+        val restarted = start()
+        restarted.emit("SERVICE_SETUP")
+        assertEquals(header(2), restarted.header)
+        assertEquals(listOf(mapOf("header" to header(1),
+            "events" to listOf("0 SERVICE_OPERATION", "0 BRIDGE_WAITING_CAMERA queued=0 category=IO_ERROR"))), restarted.previousRuns())
+        assertEquals(listOf("0 SERVICE_SETUP"), restarted.events())
+        repeat(5) { start().emit("SERVICE_SETUP") }
+        val latest = start()
+        assertEquals(header(8), latest.header)
+        assertEquals((3..7).map(::header), latest.previousRuns().map { it["header"] })
+    }
+
     @Test fun headerOmitsUptimeWhereTheKernelDoesNotReportIt() {
         val directory = Files.createTempDirectory("header-service-")
         ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null).emit("SERVICE_SETUP")
