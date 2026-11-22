@@ -62,13 +62,14 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
     }
 
     @Synchronized fun stopSetup() {
+        val wasActive = setupActive
         if (setupActive) {
             // Do not permit a transition to camera if NetworkManager could not stop the AP.
             deactivate("connection", "down", "uuid", setupUuid)
             setupActive = false
         }
         cleanupProfile(profileDir.resolve(setupProfileName), setupUuid)
-        reportRadio(report, "LINUX_SETUP_STOPPED")
+        if (wasActive) reportRadio(report, "LINUX_SETUP_STOPPED")
     }
 
     @Synchronized fun isCameraPresent(ssid: String): Boolean {
