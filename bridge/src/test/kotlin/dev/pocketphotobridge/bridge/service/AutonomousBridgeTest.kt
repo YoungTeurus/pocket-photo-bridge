@@ -7,8 +7,10 @@ import dev.pocketphotobridge.printer.*
 import dev.pocketphotobridge.sony.*
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -27,6 +29,14 @@ class AutonomousBridgeTest {
             report = report, now = clock::now, pause = clock::pause)
     }
     private class PowerCut : Error()
+    private fun diagnostics(state: Path) = ServiceDiagnostics(state.parent, PrintStream(ByteArrayOutputStream()))
+    private fun assertRunKeepsHeaderAndCapture(diagnostics: ServiceDiagnostics, state: Path) {
+        val file = Files.readAllLines(state.parent.resolve("diagnostics.txt"))
+        assertTrue(file.first().matches(Regex("Pocket Photo Bridge \\S+ \\| headless service run=1( uptime_s=[0-9]+)?")))
+        assertEquals(file.first(), diagnostics.header)
+        assertTrue(file.any { it.endsWith(" BRIDGE_QUEUED queued=1") })
+        assertTrue(diagnostics.events().any { it.endsWith(" BRIDGE_QUEUED queued=1") })
+    }
     private fun imageFiles(root: Path): List<Path> = Files.list(root.resolve("images")).use { it.toList() }
 
     @Test fun captureIsDurableBeforeCameraAcknowledgementAndPrintsAfterRestart() = root { state ->
@@ -506,6 +516,33 @@ class AutonomousBridgeTest {
                 }
             }
         }
+    }
+
+    @Test fun anHourOfIdlePrintStepsKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, report = diagnostics::emit).use {
+            it.capture(SelectionTrigger("selected"))
+            assertEquals(ServiceState.PRINTED, it.printNext().state)
+            repeat(1_800) { _ -> it.printNext() }
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+    }
+
+    @Test fun anHourOfRetryingAnOfflinePrinterKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE), report = diagnostics::emit).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            repeat(1_800) { _ -> assertEquals(ServiceState.WAITING_PRINTER, it.printNext().state) }
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertTrue(diagnostics.events().last().endsWith(" BRIDGE_WAITING_PRINTER queued=1 category=PRINTER_OFFLINE"))
+    }
+
+    @Test fun anHourOfFailedCameraScansKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, report = diagnostics::emit).use { assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state) }
+        repeat(3_600) { diagnostics.emit("SERVICE_CAMERA_WAIT category=COMMAND_FAILED") }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
     }
 
     @Test fun diagnosticsUseOnlyFixedCategoriesAndCollapsePrintingPolls() = root { state ->
