@@ -2,6 +2,8 @@ package dev.pocketphotobridge.bridge.service
 
 import dev.pocketphotobridge.bridge.*
 import dev.pocketphotobridge.bridge.images.JvmPrintImagePreparer
+import dev.pocketphotobridge.bridge.linux.LinuxRadioFailure
+import dev.pocketphotobridge.bridge.linux.LinuxRadioFailureCode
 import dev.pocketphotobridge.bridge.simulation.*
 import dev.pocketphotobridge.printer.*
 import dev.pocketphotobridge.sony.*
@@ -214,6 +216,20 @@ class AutonomousBridgeTest {
         bridge(state, printer = ready).use {
             assertEquals(ServiceState.PRINTED, it.printNext().state)
             assertEquals(1, ready.submissions)
+        }
+    }
+
+    @Test fun radioFailuresKeepTheirOwnCategoryInsteadOfIoError() = root { state ->
+        val logs = mutableListOf<String>()
+        val camera = CameraWifiConnector { throw LinuxRadioFailure(LinuxRadioFailureCode.CAMERA_ROUTE_UNSAFE) }
+        bridge(state, camera, report = logs::add).use {
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0, "CAMERA_ROUTE_UNSAFE"), it.capture(SelectionTrigger("selected")))
+        }
+        assertTrue("BRIDGE_WAITING_CAMERA queued=0 category=CAMERA_ROUTE_UNSAFE" in logs)
+        bridge(state).use { it.capture(SelectionTrigger("selected")) }
+        // The Linux printer-off state: no serial-port channel found.
+        bridge(state, printer = PrinterConnector { throw LinuxRadioFailure(LinuxRadioFailureCode.SPP_UNAVAILABLE) }).use {
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "SPP_UNAVAILABLE"), it.printNext())
         }
     }
 
