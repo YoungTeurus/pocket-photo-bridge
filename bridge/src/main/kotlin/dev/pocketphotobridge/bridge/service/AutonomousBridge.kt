@@ -1,6 +1,7 @@
 package dev.pocketphotobridge.bridge.service
 
 import dev.pocketphotobridge.bridge.*
+import dev.pocketphotobridge.bridge.linux.LinuxRadioFailure
 import dev.pocketphotobridge.printer.PrintJobGuard
 import dev.pocketphotobridge.printer.PrinterDiagnostic
 import dev.pocketphotobridge.printer.PrinterFailure
@@ -276,6 +277,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         is BridgeFailure -> failure.code.name
         is PrinterFailure -> failure.code.name
         is ProtocolFailure -> failure.failure.name
+        is LinuxRadioFailure -> failure.code.name
         is QueueCapacityExceeded -> "QUEUE_FULL"
         is InterruptedException -> "CANCELLED"
         else -> "IO_ERROR"
