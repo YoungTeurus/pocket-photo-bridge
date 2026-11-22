@@ -21,6 +21,8 @@ class PrinterSessionTest {
         override fun resolve(reservation: String) { unresolved = false }
         override fun acknowledgeCheckedPrinter() { unresolved = false }
     }
+    /** How the final job_info reply arrives when the printer hangs up right after it. */
+    private enum class FinalReplyThenEof { COMPLETE, TRUNCATED, OTHER_REQUEST }
     private inner class CameraIndependentPrinter(
         val guard: Guard = Guard(),
         val processing: Boolean = false,
@@ -33,13 +35,15 @@ class PrinterSessionTest {
         val processingAfterStart: Boolean = false,
         val finishAfter: Int = 1,
         val malformedError: Boolean = false,
-        val nullError: Boolean = false
+        val nullError: Boolean = false,
+        val finalReplyThenEof: FinalReplyThenEof? = null
     ) : PrinterTransport {
         val methods = mutableListOf<String>()
         val fileFrames = mutableListOf<PrinterFrame>()
         private val incoming = ArrayDeque<ByteArray>()
         private val cipher = PrinterCipher(token)
         private var jobChecks = 0
+        private var endOfStream = false
         override fun write(bytes: ByteArray) {
             val frame = PrinterProtocol.decode(bytes)
             if (frame.channel == 2) {
@@ -72,10 +76,19 @@ class PrinterSessionTest {
             fun response(json: String) = PrinterProtocol.encode(PrinterFrame(1, id.toLong(),
                 if (wrongKey) ByteArray(json.length) { 23 } else cipher.crypt(json.toByteArray()), interactive = 7))
             if (unrelatedReply) incoming += response("{\"id\":0,\"result\":{}}")
+            if (method == "job_info" && finalReplyThenEof != null) {
+                endOfStream = true
+                incoming += when (finalReplyThenEof) {
+                    FinalReplyThenEof.COMPLETE -> response(reply)
+                    FinalReplyThenEof.TRUNCATED -> response(reply).let { it.copyOf(it.size / 2) }
+                    FinalReplyThenEof.OTHER_REQUEST -> response(reply.replaceFirst("\"id\":$id", "\"id\":${id + 100}"))
+                }
+                return
+            }
             incoming += response(reply)
         }
         override fun read(timeoutMs: Long): ByteArray = incoming.removeFirstOrNull()
-            ?: throw PrinterFailure(PrinterFailureCode.TIMEOUT)
+            ?: throw PrinterFailure(if (endOfStream) PrinterFailureCode.DISCONNECTED else PrinterFailureCode.TIMEOUT)
         override fun close() { cipher.close() }
     }
     private fun session(printer: CameraIndependentPrinter, events: MutableList<PrinterDiagnostic> = mutableListOf()): PrinterSession {
@@ -149,6 +162,29 @@ class PrinterSessionTest {
         val printer = CameraIndependentPrinter(wrongJob = true)
         fails(PrinterFailureCode.PROTOCOL_ERROR) { session(printer).print(jpeg(), printer.guard) }
         assertTrue(printer.guard.unresolved)
+    }
+    @Test fun finishedReplyDeliveredWithHangupResolvesJob() {
+        val printer = CameraIndependentPrinter(finalReplyThenEof = FinalReplyThenEof.COMPLETE)
+        val events = mutableListOf<PrinterDiagnostic>()
+        session(printer, events).print(jpeg(), printer.guard)
+        assertFalse(printer.guard.unresolved)
+        assertTrue(events.any { it.stage == PrinterStage.PRINT_FINISHED })
+        assertFalse(events.any { it.stage == PrinterStage.OUTCOME_UNKNOWN })
+    }
+    @Test fun truncatedFinishedReplyAtEndOfStreamKeepsReservation() {
+        val printer = CameraIndependentPrinter(finalReplyThenEof = FinalReplyThenEof.TRUNCATED)
+        val events = mutableListOf<PrinterDiagnostic>()
+        fails(PrinterFailureCode.DISCONNECTED) { session(printer, events).print(jpeg(), printer.guard) }
+        assertTrue(printer.guard.unresolved)
+        assertTrue(events.any { it.stage == PrinterStage.OUTCOME_UNKNOWN })
+    }
+    @Test fun finishedReplyForAnotherRequestOrJobAtEndOfStreamKeepsReservation() {
+        val otherRequest = CameraIndependentPrinter(finalReplyThenEof = FinalReplyThenEof.OTHER_REQUEST)
+        fails(PrinterFailureCode.DISCONNECTED) { session(otherRequest).print(jpeg(), otherRequest.guard) }
+        assertTrue(otherRequest.guard.unresolved)
+        val otherJob = CameraIndependentPrinter(wrongJob = true, finalReplyThenEof = FinalReplyThenEof.COMPLETE)
+        fails(PrinterFailureCode.PROTOCOL_ERROR) { session(otherJob).print(jpeg(), otherJob.guard) }
+        assertTrue(otherJob.guard.unresolved)
     }
     @Test fun unresolvedReservationBlocksAllNewPrintTraffic() {
         val printer = CameraIndependentPrinter().apply { guard.unresolved = true }
