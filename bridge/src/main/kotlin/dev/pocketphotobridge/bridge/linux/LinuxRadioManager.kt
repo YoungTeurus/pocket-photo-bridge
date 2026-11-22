@@ -86,7 +86,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         try {
             writeProfile(profile, profileText(cameraUuid, ssid, password, hotspot = false))
             nm("connection", "load", profile.toString())
-            nm("connection", "up", "uuid", cameraUuid, "ifname", wifiInterface)
+            activateCamera()
             cameraActive = true
             // Joined; address and route are verified next, so a later failure means "joined but unusable".
             reportRadio(report, "LINUX_CAMERA_ACTIVATED")
@@ -207,6 +207,22 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         if (result.exitCode == 0) return
         val state = nm("-g", "GENERAL.STATE", "device", "show", wifiInterface).trim()
         if (!Regex("30(?: \\([^\\r\\n]*\\))?").matches(state)) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+    }
+    /** Association and DHCP both happen inside one `connection up`; only its exit status and the
+     * device's numeric state and reason tell them apart. Never forward the tool's text. */
+    private fun activateCamera() {
+        checkRadioInterrupted()
+        val result = try {
+            runner.run(listOf("/usr/bin/nmcli", "--wait", "15", "connection", "up", "uuid", cameraUuid, "ifname", wifiInterface), 20_000)
+        } catch (failure: Throwable) { throw safeRadioFailure(failure) }
+        if (result.exitCode == 0) return
+        val device = try { nm("-g", "GENERAL.STATE,GENERAL.REASON", "device", "show", wifiInterface).lines() }
+            catch (_: LinuxRadioFailure) { emptyList() }
+        fun field(name: String, value: Int?, max: Int) = value?.takeIf { it in 0..max }?.let { " $name=$it" } ?: ""
+        fun leading(line: Int) = device.getOrNull(line)?.let { Regex("([0-9]{1,4})(?: .*)?").matchEntire(it.trim()) }?.groupValues?.get(1)?.toInt()
+        reportRadio(report, "LINUX_CAMERA_ACTIVATION_FAILED" + field("nm_exit", result.exitCode, 255) +
+            field("nm_state", leading(0), 1000) + field("nm_reason", leading(1), 1000))
+        radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
     }
     private fun nm(vararg arguments: String): String = command(listOf("/usr/bin/nmcli", "--wait", "15") + arguments, 20_000)
 
