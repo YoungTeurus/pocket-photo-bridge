@@ -58,6 +58,21 @@ class ServiceDiagnosticsTest {
         assertEquals((3..7).map(::header), latest.previousRuns().map { it["header"] })
     }
 
+    @Test fun handWrittenSecretsInAnOldRunNeverReachTheNextRun() {
+        val directory = Files.createTempDirectory("tampered-service-")
+        val header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=4"
+        Files.writeString(directory.resolve("diagnostics.1.txt"), "$header token=MYSECRET\n3 SERVICE_OPERATION\n")
+        Files.writeString(directory.resolve("diagnostics.txt"), listOf(header, "3 SERVICE_OPERATION", "sensitive-camera-name",
+            "5 LINUX_PRINTER_PAIRED AA:BB:CC:DD:EE:FF", "7 SERVICE_FAILED category=0123456789abcdef01234567",
+            "9 MYSECRET", "9 SERVICE_SETUP MYSECRET", "11 DIAGNOSTIC_REDACTED").joinToString("\n"))
+        val next = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        next.emit("SERVICE_SETUP")
+        assertEquals(listOf(mapOf("header" to header, "events" to listOf("3 SERVICE_OPERATION", "11 DIAGNOSTIC_REDACTED"))),
+            next.previousRuns())
+        val exported = next.previousRuns().toString() + next.events() + Files.readString(directory.resolve("diagnostics.txt"))
+        listOf("MYSECRET", "sensitive-camera-name", "AA:BB:CC", "0123456789abcdef").forEach { assertFalse(exported.contains(it)) }
+    }
+
     @Test fun headerOmitsUptimeWhereTheKernelDoesNotReportIt() {
         val directory = Files.createTempDirectory("header-service-")
         ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null).emit("SERVICE_SETUP")

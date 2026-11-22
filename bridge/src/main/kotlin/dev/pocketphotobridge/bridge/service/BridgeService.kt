@@ -274,7 +274,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             dev.pocketphotobridge.printer.PrinterFailureCode.entries.map { it.name } +
             dev.pocketphotobridge.sony.Failure.entries.map { it.name } +
             setOf("CAMERA_ACK_PENDING", "QUEUE_FULL", "DUPLICATE_SUPPRESSED", "NATIVE_UNAVAILABLE")
-        private val STAGES = setOf("SIMULATION_ONLY", "NO_PHYSICAL_PRINT", "LINUX_HARDWARE_VALIDATION_PENDING",
+        private val STAGES = setOf("DIAGNOSTIC_REDACTED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT", "LINUX_HARDWARE_VALIDATION_PENDING",
             "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT",
             "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_PAIRING_STARTED",
             "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_CAMERA_CONNECTING",
