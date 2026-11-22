@@ -145,7 +145,9 @@ class LinuxRadioManagerTest {
         val events = mutableListOf<String>()
         val commands = FakeCommands { args -> when {
             args.contains("up") -> LinuxCommandResult(4, "Error: secret camera-password DIRECT-camera")
-            args.contains("show") -> LinuxCommandResult(0, "30 (disconnected)\n53 (The Wi-Fi network DIRECT-camera could not be found)\n")
+            args.takeLast(5) == listOf("-g", "GENERAL.STATE,GENERAL.REASON", "device", "show", "wlan0") ->
+                LinuxCommandResult(0, "30 (disconnected)\n53 (The Wi-Fi network DIRECT-camera could not be found)\n")
+            args.contains("show") -> LinuxCommandResult(2, "Error: unknown field")
             else -> LinuxCommandResult(0, "")
         } }
         val manager = LinuxRadioManager(files, "wlan0", events::add, commands, files.resolve("profiles"))
@@ -153,6 +155,35 @@ class LinuxRadioManagerTest {
         manager.close()
         assertEquals(LinuxRadioFailureCode.COMMAND_FAILED, failure.code)
         assertEquals(listOf("LINUX_CAMERA_ACTIVATION_FAILED nm_exit=4 nm_state=30 nm_reason=53"), events)
+    }
+
+    @Test fun `a failed camera activation whose device query fails reports only the nmcli exit`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val commands = FakeCommands { args -> when {
+            args.contains("up") -> LinuxCommandResult(4, "")
+            args.contains("show") -> LinuxCommandResult(10, "")
+            else -> LinuxCommandResult(0, "")
+        } }
+        val manager = LinuxRadioManager(files, "wlan0", events::add, commands, files.resolve("profiles"))
+        val failure = assertThrows(LinuxRadioFailure::class.java) { manager.connectCamera("DIRECT-camera", "camera-password") }
+        manager.close()
+        assertEquals(LinuxRadioFailureCode.COMMAND_FAILED, failure.code)
+        assertEquals(listOf("LINUX_CAMERA_ACTIVATION_FAILED nm_exit=4"), events)
+    }
+
+    @Test fun `a camera activation cancelled during the device query reports cancellation`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val commands = FakeCommands { args -> when {
+            args.contains("up") -> LinuxCommandResult(4, "")
+            args.contains("GENERAL.STATE,GENERAL.REASON") -> throw LinuxRadioFailure(LinuxRadioFailureCode.CANCELLED)
+            else -> LinuxCommandResult(0, "")
+        } }
+        val manager = LinuxRadioManager(files, "wlan0", events::add, commands, files.resolve("profiles"))
+        val failure = assertThrows(LinuxRadioFailure::class.java) { manager.connectCamera("DIRECT-camera", "camera-password") }
+        manager.close()
+        assertEquals(LinuxRadioFailureCode.CANCELLED, failure.code)
     }
 
     @Test fun `gateway from another interface or public or missing is rejected`() {

@@ -211,13 +211,10 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
     /** Association and DHCP both happen inside one `connection up`; only its exit status and the
      * device's numeric state and reason tell them apart. Never forward the tool's text. */
     private fun activateCamera() {
-        checkRadioInterrupted()
-        val result = try {
-            runner.run(listOf("/usr/bin/nmcli", "--wait", "15", "connection", "up", "uuid", cameraUuid, "ifname", wifiInterface), 20_000)
-        } catch (failure: Throwable) { throw safeRadioFailure(failure) }
+        val result = nmResult("connection", "up", "uuid", cameraUuid, "ifname", wifiInterface)
         if (result.exitCode == 0) return
         val device = try { nm("-g", "GENERAL.STATE,GENERAL.REASON", "device", "show", wifiInterface).lines() }
-            catch (_: LinuxRadioFailure) { emptyList() }
+            catch (failure: LinuxRadioFailure) { if (failure.code == LinuxRadioFailureCode.CANCELLED) throw failure; emptyList() }
         fun field(name: String, value: Int?, max: Int) = value?.takeIf { it in 0..max }?.let { " $name=$it" } ?: ""
         fun leading(line: Int) = device.getOrNull(line)?.let { Regex("([0-9]{1,4})(?: .*)?").matchEntire(it.trim()) }?.groupValues?.get(1)?.toInt()
         reportRadio(report, "LINUX_CAMERA_ACTIVATION_FAILED" + field("nm_exit", result.exitCode, 255) +
@@ -225,6 +222,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
     }
     private fun nm(vararg arguments: String): String = command(listOf("/usr/bin/nmcli", "--wait", "15") + arguments, 20_000)
+    private fun nmResult(vararg arguments: String) = run(listOf("/usr/bin/nmcli", "--wait", "15") + arguments, 20_000)
 
     /** UWE5622 firmware rejects AP association when NM advertises PSK-SHA256,
      * even with PMF disabled. Only alter our current AP, before announcing it. */
@@ -270,9 +268,13 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         catch (_: Exception) { radioFail(LinuxRadioFailureCode.PROFILE_UNSAFE) }
     }
 
-    private fun command(arguments: List<String>, timeout: Long): String {
+    private fun run(arguments: List<String>, timeout: Long): LinuxCommandResult {
         checkRadioInterrupted()
-        val result = try { runner.run(arguments, timeout) } catch (failure: Throwable) { throw safeRadioFailure(failure) }
+        return try { runner.run(arguments, timeout) } catch (failure: Throwable) { throw safeRadioFailure(failure) }
+    }
+
+    private fun command(arguments: List<String>, timeout: Long): String {
+        val result = run(arguments, timeout)
         if (result.exitCode != 0) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
         if (result.output.toByteArray(Charsets.UTF_8).size > 65_536) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
         return result.output
