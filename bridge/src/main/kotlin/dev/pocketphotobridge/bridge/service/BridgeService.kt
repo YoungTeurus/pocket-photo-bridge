@@ -313,7 +313,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_PAIRING_STARTED",
             "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_CAMERA_CONNECTING",
             "BRIDGE_IMAGE_PREPARING", "BRIDGE_PRINTER_CONNECTING", "BRIDGE_BOOT_QUEUE_DISCARDED", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
-            "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED", "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED") +
+            "LINUX_CAMERA_ACTIVATED", "LINUX_CAMERA_ACTIVATION_FAILED", "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED", "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED") +
             ServiceState.entries.map { "BRIDGE_${it.name}" } +
             dev.pocketphotobridge.sony.Stage.entries.map { "SONY_${it.name}" } +
             dev.pocketphotobridge.printer.PrinterStage.entries.map { "PRINTER_${it.name}" } +
@@ -328,8 +328,9 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 pair.size == 2 && seen.add(pair[0]) && when (pair[0]) {
                     "category" -> pair[1] in CATEGORIES
                     "reason" -> pair[1] in setOf("OK", "FAILED", "PENDING")
-                    "count", "queued", "native_error" -> pair[1].matches(Regex("[0-9]{1,8}")) &&
-                        (pair[1].toLongOrNull() ?: Long.MAX_VALUE) <= when (pair[0]) { "queued" -> 16; "native_error" -> 4095; else -> 64L * 1024 * 1024 }
+                    "count", "queued", "native_error", "nm_exit", "nm_state", "nm_reason" -> pair[1].matches(Regex("[0-9]{1,8}")) &&
+                        (pair[1].toLongOrNull() ?: Long.MAX_VALUE) <= when (pair[0]) {
+                            "queued" -> 16; "native_error" -> 4095; "nm_exit" -> 255; "nm_state", "nm_reason" -> 1000; else -> 64L * 1024 * 1024 }
                     else -> false
                 }
             }
