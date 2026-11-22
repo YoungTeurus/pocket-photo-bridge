@@ -88,6 +88,8 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
             nm("connection", "load", profile.toString())
             nm("connection", "up", "uuid", cameraUuid, "ifname", wifiInterface)
             cameraActive = true
+            // Joined; address and route are verified next, so a later failure means "joined but unusable".
+            reportRadio(report, "LINUX_CAMERA_ACTIVATED")
             val candidate = cameraCandidate()
             verifyRoute(candidate)
             val transport = BoundCameraHttpTransport(candidate, verifyRoute = { verifyRoute(candidate) })
