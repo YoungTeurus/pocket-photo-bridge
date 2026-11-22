@@ -327,9 +327,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         (raw["events"] as? List<*>)?.let { put("events", ServiceDiagnostics.recent(it)) }
         (raw["previousRuns"] as? List<*>)?.let { runs ->
             put("previousRuns", runs.takeLast(ServiceDiagnostics.GENERATIONS).mapNotNull { run ->
-                val fields = run as? Map<*, *>
-                val header = (fields?.get("header") as? String)?.takeIf(ServiceDiagnostics::safeHeader) ?: return@mapNotNull null
-                mapOf("header" to header, "events" to ServiceDiagnostics.recent(fields["events"] as? List<*> ?: emptyList<Any>()))
+                (run as? Map<*, *>)?.let { ServiceDiagnostics.safeRun(it["header"], it["events"] as? List<*> ?: emptyList<Any>()) }
             })
         }
     }

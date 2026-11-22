@@ -82,6 +82,23 @@ class ServiceDiagnosticsTest {
         assertEquals(accepted.map { "0 $it" }, Files.readAllLines(directory.resolve("diagnostics.txt")).drop(1))
     }
 
+    @Test fun theFirstStartAfterUpgradingKeepsTheOldFileAsRunZero() {
+        val directory = Files.createTempDirectory("legacy-service-")
+        Files.writeString(directory.resolve("diagnostics.txt"),
+            "Pocket Photo Bridge 0.5.0 | headless service\nSERVICE_OPERATION\nBRIDGE_QUEUED queued=1\nMYSECRETTOKEN\n")
+        val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), uptimeSeconds = null)
+        assertEquals(listOf(mapOf("header" to "Pocket Photo Bridge 0.5.0 | headless service",
+            "events" to listOf("SERVICE_OPERATION", "BRIDGE_QUEUED queued=1"))), report.previousRuns())
+        assertEquals("Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=1", report.header)
+    }
+
+    @Test fun aStartRemovesTemporaryFilesLeftByAPowerPull() {
+        val directory = Files.createTempDirectory("stale-service-")
+        Files.writeString(directory.resolve("diagnostic-123.tmp"), "half written")
+        ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()))
+        assertFalse(Files.exists(directory.resolve("diagnostic-123.tmp")))
+    }
+
     @Test fun headerOmitsUptimeWhereTheKernelDoesNotReportIt() {
         val directory = Files.createTempDirectory("header-service-")
         ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null).emit("SERVICE_SETUP")

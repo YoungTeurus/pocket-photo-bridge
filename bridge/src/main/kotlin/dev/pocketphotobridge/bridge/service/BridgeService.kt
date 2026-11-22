@@ -222,13 +222,16 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         // Rotate instead of parsing old runs back into memory; a probe or restart is one more run.
         try {
             if (Files.isDirectory(state, NOFOLLOW_LINKS)) {
+                // A power pull between write and rename leaves these behind.
+                Files.newDirectoryStream(state, "diagnostic-*.tmp").use { stale ->
+                    stale.forEach { if (Files.isRegularFile(it, NOFOLLOW_LINKS)) Files.deleteIfExists(it) } }
                 Files.deleteIfExists(generation(GENERATIONS))
                 for (n in GENERATIONS - 1 downTo 1)
                     if (Files.exists(generation(n), NOFOLLOW_LINKS)) Files.move(generation(n), generation(n + 1), ATOMIC_MOVE)
                 if (Files.exists(state.resolve(FILE), NOFOLLOW_LINKS)) Files.move(state.resolve(FILE), generation(1), ATOMIC_MOVE)
             }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
-        val run = (previousRuns().maxOfOrNull { HEADER.matchEntire(it["header"] as String)!!.groupValues[1].toInt() } ?: 0) + 1
+        val run = (previousRuns().maxOfOrNull { HEADER.matchEntire(it["header"] as String)!!.groupValues[1].toIntOrNull() ?: 0 } ?: 0) + 1
         header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=$run" + (uptimeSeconds?.let { " uptime_s=$it" } ?: "")
     }
 
@@ -249,8 +252,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             val file = generation(n)
             if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return@mapNotNull null
             val text = Files.readAllLines(file)
-            val header = text.firstOrNull()?.takeIf(::safeHeader) ?: return@mapNotNull null
-            mapOf("header" to header, "events" to recent(text.drop(1)))
+            safeRun(text.firstOrNull(), text.drop(1))
         } catch (_: Exception) { null }
     }
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
@@ -269,6 +271,10 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 if (" category=" in safe)
                     java.nio.channels.FileChannel.open(temp, java.nio.file.StandardOpenOption.WRITE).use { it.force(true) }
                 Files.move(temp, state.resolve(FILE), ATOMIC_MOVE, REPLACE_EXISTING)
+                // The rename is durable only once the directory is synced; Windows cannot open a directory channel.
+                if (" category=" in safe) try {
+                    java.nio.channels.FileChannel.open(state, java.nio.file.StandardOpenOption.READ).use { it.force(true) }
+                } catch (_: Exception) { }
             } finally { Files.deleteIfExists(temp) }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
     }
@@ -284,10 +290,14 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             return lines.asReversed().asSequence().mapNotNull { (it as? String)?.takeIf(::safeLine) }
                 .takeWhile { bytes += it.length + 1; bytes <= RUN_BYTES }.toList().asReversed()
         }
-        private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+ \\| headless service run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?")
+        /** Files written before run headers existed have no run counter; they count as run 0. */
+        private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+ \\| headless service(?: run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?)?")
         fun safeHeader(text: String) = HEADER.matches(text)
-        /** The one validator for file and HTTP: whole seconds since start, then a fixed-vocabulary event. */
-        fun safeLine(text: String) = OFFSET.matches(text.substringBefore(' ', "")) && safeEvent(text.substringAfter(' '))
+        /** A retained run, revalidated: its header and validated events, or null without a valid header. */
+        fun safeRun(header: Any?, events: List<*>): Map<String, Any>? =
+            (header as? String)?.takeIf(::safeHeader)?.let { mapOf("header" to it, "events" to recent(events)) }
+        /** The one validator for file and HTTP: whole seconds since start, then a fixed-vocabulary event (no offset in pre-header files). */
+        fun safeLine(text: String) = safeEvent(text) || OFFSET.matches(text.substringBefore(' ', "")) && safeEvent(text.substringAfter(' '))
         private val OFFSET = Regex("[0-9]{1,9}")
         /** Absent off Linux (Windows simulation, test runners): the header then omits it. */
         private fun kernelUptime(): Long? = try {
