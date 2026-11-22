@@ -52,6 +52,17 @@ class LinuxBluetoothSocketTest {
         assertEquals(1, fake.closed)
     }
 
+    @Test fun `bytes buffered before a hangup are read before EOF closes transport`() {
+        val fake = FakeSocket()
+        val connection = adapter(fake).connect("AA:BB:CC:DD:EE:FF", 7, 500)
+        fake.ready = LinuxPoll.READ or LinuxPoll.HANGUP
+        fake.receives.addAll(listOf(3, 0))
+        assertArrayEquals(byteArrayOf(1, 2, 3), connection.read(500))
+        assertEquals(0, fake.closed)
+        failure(PrinterFailureCode.DISCONNECTED) { connection.read(500) }
+        assertEquals(1, fake.closed)
+    }
+
     @Test fun `close interrupts active poll without recycling descriptor`() {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
