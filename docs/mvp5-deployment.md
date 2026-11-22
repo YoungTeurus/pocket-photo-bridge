@@ -199,6 +199,22 @@ after 1, 2, 4, 8 ... such retries, so hours of idling or of a switched-off
 printer do not push earlier events out. The run that was in place before the
 upgrade to run headers is kept as a previous run without a run counter.
 
+A failed camera or printer step names its own category, for example
+`CAMERA_ROUTE_UNSAFE`, `COMMAND_FAILED` or `COMMAND_TIMEOUT` for the camera
+Wi-Fi and `SPP_UNAVAILABLE` when the printer is off or out of range, instead of
+`IO_ERROR`. Joining the camera Wi-Fi logs `LINUX_CAMERA_ACTIVATED` before the
+address and route are checked and `LINUX_CAMERA_CONNECTED` after; a line
+without the first means the join itself failed. A failed join logs
+`LINUX_CAMERA_ACTIVATION_FAILED nm_exit=<n> nm_state=<n> nm_reason=<n>`:
+nmcli's exit status (for example 3 timeout, 4 activation failed, 10 no such
+network) and NetworkManager's numeric device state and reason read right after
+it. Association and address assignment happen in the same nmcli step, so only
+these numbers tell them apart. Whether NetworkManager still holds the reason at
+that moment on the board's image is not yet confirmed; record it in the field
+protocol. `LINUX_SETUP_STOPPED` appears only when a running hotspot was stopped.
+The camera transfer logs `SONY_SELECTION count=<items>` and
+`SONY_JPEG_BYTES count=<bytes>`.
+
 At start the previous run moves to `diagnostics.1.txt` and older runs shift up
 to `diagnostics.5.txt`; anything older is dropped. A probe, reboot, crash restart
 or service restart therefore no longer erases the service's history. The
