@@ -184,7 +184,25 @@ clear the warning. Deliberate reprints are outside this milestone.
 From authenticated setup, download **Diagnostics** and return that redacted
 text, the downloaded package version/architecture, your board/OS model, and a
 brief description of camera/printer power order and the physical outcome.
-Diagnostics contain fixed stage/category/count information. Do not send the
+Diagnostics contain fixed stage/category/count information.
+
+Each run of the service or of a probe (`--linux-status-only`,
+`--linux-receive-only`) starts with a header line such as
+`Pocket Photo Bridge 0.5.0 | headless service run=3 uptime_s=42`: the version,
+a run counter, and the kernel uptime in whole seconds when the process started
+(omitted where the kernel does not report it). Each event line starts with the
+whole seconds since that start; there is no wall-clock time, because the board
+has no backed-up clock. An unchanged state is written once, and a print attempt
+that keeps failing the same way is summarised by a line ending in `count=N`
+after 1, 2, 4, 8 ... retries, so hours of idling or of a switched-off printer
+do not push earlier events out.
+
+At start the previous run moves to `diagnostics.1.txt` and older runs shift up
+to `diagnostics.5.txt`; anything older is dropped. A probe, reboot, crash restart
+or service restart therefore no longer erases the service's history. The
+download keeps the current run in `events` and adds `previousRuns`, oldest
+first, each with its `header` and `events`. Every line is checked again when it
+is served; a line that is not a known event is left out. Do not send the
 private state directory, images, configuration/bootstrap files, printer token,
 hotspot password, administrator password, or the installer's credential output.
 
