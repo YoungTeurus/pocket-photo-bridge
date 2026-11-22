@@ -82,6 +82,20 @@ class ServiceDiagnosticsTest {
         assertEquals(accepted.map { "0 $it" }, Files.readAllLines(directory.resolve("diagnostics.txt")).drop(1))
     }
 
+    @Test fun radioStageEventsKeepOnlyBoundedNetworkManagerNumbers() {
+        val directory = Files.createTempDirectory("radio-service-")
+        val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        val accepted = listOf("LINUX_CAMERA_ACTIVATED", "LINUX_CAMERA_ACTIVATION_FAILED nm_exit=4 nm_state=30 nm_reason=53",
+            "LINUX_CAMERA_ACTIVATION_FAILED nm_exit=255 nm_state=1000 nm_reason=0", "SONY_SELECTION count=2")
+        val rejected = listOf("LINUX_CAMERA_ACTIVATION_FAILED nm_exit=256", "LINUX_CAMERA_ACTIVATION_FAILED nm_state=1001",
+            "LINUX_CAMERA_ACTIVATION_FAILED nm_reason=DIRECT-camera", "LINUX_CAMERA_ACTIVATION_FAILED reason=53",
+            "LINUX_CAMERA_ACTIVATED nm_exit=-1")
+        (accepted + rejected).forEach(report::emit)
+        val saved = Files.readAllLines(directory.resolve("diagnostics.txt")).drop(1)
+        assertEquals(accepted.map { "0 $it" } + rejected.map { "0 DIAGNOSTIC_REDACTED" }, saved)
+        assertFalse(saved.joinToString("\n").contains("DIRECT-camera"))
+    }
+
     @Test fun theFirstStartAfterUpgradingKeepsTheOldFileAsRunZero() {
         val directory = Files.createTempDirectory("legacy-service-")
         Files.writeString(directory.resolve("diagnostics.txt"),

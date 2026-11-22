@@ -158,7 +158,8 @@ class SetupServerTest {
 
     @Test fun diagnosticsExportAcceptsTheSameEventsAsTheDiagnosticsFile() = server { client, backend, _ ->
         val accepted = listOf("1 SERVICE_CAMERA_WAIT category=COMMAND_FAILED", "2 BRIDGE_CAMERA_CONNECTING",
-            "3 BRIDGE_PRINTER_CONNECTING", "4 SERVICE_CONFIG_SAVED", "5 SONY_JPEG_BYTES count=13805942")
+            "3 BRIDGE_PRINTER_CONNECTING", "4 SERVICE_CONFIG_SAVED", "5 SONY_JPEG_BYTES count=13805942", "6 SONY_SELECTION count=1",
+            "7 LINUX_CAMERA_ACTIVATED", "8 LINUX_CAMERA_ACTIVATION_FAILED nm_exit=4 nm_state=30 nm_reason=53")
         backend.events = accepted + backend.events
         client.login()
         val events = JsonParser.parseString(client.request("/diagnostics").body).asJsonObject.getAsJsonArray("events").map { it.asString }
