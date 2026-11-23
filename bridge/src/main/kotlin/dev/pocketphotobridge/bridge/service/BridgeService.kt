@@ -167,13 +167,28 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     /** A slow radio cold start is retried; the unit restarts the process after the limit. */
     private fun startSetup(wifiInterface: String): InetSocketAddress {
         val first = devices.now()
+        var failures = 0
+        var last: LinuxRadioFailureCode? = null
+        var unreported = false
+        fun report() { diagnostics.emit("SERVICE_SETUP_FAILED category=$last count=$failures"); unreported = false }
         while (true) {
-            try { return devices.startSetup(credentials, wifiInterface) }
-            catch (failure: LinuxRadioFailure) {
+            if (failures > 0) diagnostics.hold()
+            try {
+                val address = devices.startSetup(credentials, wifiInterface)
+                diagnostics.release(keep = true)
+                if (unreported) report()
+                return address
+            } catch (failure: LinuxRadioFailure) {
+                // A retry's own lines stay only when it fails differently from the attempt before it.
+                val repeated = failure.code == last
+                diagnostics.release(keep = !repeated)
+                failures++; last = failure.code; unreported = true
                 // No attempt starts at or after the limit; one already running is allowed to finish.
-                if (!running.get() || devices.now() + SETUP_RETRY_PAUSE_MS - first >= SETUP_RETRY_LIMIT_MS) throw failure
-                devices.pause(SETUP_RETRY_PAUSE_MS)
-            }
+                val giveUp = !running.get() || devices.now() + SETUP_RETRY_PAUSE_MS - first >= SETUP_RETRY_LIMIT_MS
+                if (!repeated || Integer.bitCount(failures) == 1 || giveUp) report()
+                if (giveUp) throw failure
+            } finally { diagnostics.release(keep = true) }
+            devices.pause(SETUP_RETRY_PAUSE_MS)
         }
     }
 
@@ -340,7 +355,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             dev.pocketphotobridge.sony.Failure.entries.map { it.name } +
             setOf("CAMERA_ACK_PENDING", "QUEUE_FULL", "DUPLICATE_SUPPRESSED", "NATIVE_UNAVAILABLE")
         private val STAGES = setOf("DIAGNOSTIC_REDACTED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT", "LINUX_HARDWARE_VALIDATION_PENDING",
-            "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT", "SERVICE_CAMERA_PRESENT", "SERVICE_CAMERA_ABSENT",
+            "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_SETUP_FAILED", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT", "SERVICE_CAMERA_PRESENT", "SERVICE_CAMERA_ABSENT",
             "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_PAIRING_STARTED",
             "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_CAMERA_CONNECTING",
             "BRIDGE_IMAGE_PREPARING", "BRIDGE_PRINTER_CONNECTING", "BRIDGE_BOOT_QUEUE_DISCARDED", "BRIDGE_QUEUE_RECONCILED", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
