@@ -28,7 +28,8 @@ data class ServiceSnapshot(val state: ServiceState, val queued: Int, val categor
     }
     val captureStep get() = when {
         category == "DUPLICATE_SUPPRESSED" -> CaptureStep.DUPLICATE
-        category == "QUEUE_FULL" || state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR) -> CaptureStep.BLOCKED
+        // Only the queue check before the radio blocks; a queue that overflows after the download is a failed check.
+        state == ServiceState.QUEUED && category == "QUEUE_FULL" || state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR) -> CaptureStep.BLOCKED
         state == ServiceState.QUEUED -> CaptureStep.NEW_PHOTO
         else -> CaptureStep.RETRY
     }
