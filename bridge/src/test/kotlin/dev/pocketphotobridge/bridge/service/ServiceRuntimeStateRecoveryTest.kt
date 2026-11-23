@@ -79,4 +79,66 @@ class ServiceRuntimeStateRecoveryTest {
             assertEquals(false, service.runtime.backend().status()["blocked"])
         }
     }
+
+    private fun assertStableStateError(service: Operating) {
+        val status = service.runtime.backend().status()
+        assertEquals(true, status["blocked"])
+        assertEquals("STATE_ERROR", status["blockedReason"])
+        assertEquals("STATE_ERROR", status["stage"])
+        assertTrue(service.service.isAlive)
+    }
+
+    @Test fun aDamagedStateGetsExactlyOneReopenThenAStableStateErrorAndTheServiceKeepsRunning() {
+        val devices = Faulty()
+        var printerCalls = 0
+        devices.sim.simulationAction("printer-on")
+        devices.sim.simulationAction("select-photo")
+        operate(devices) { service ->
+            // The queued photo's files vanish while the printer is reached, so the reopen's own verification fails too.
+            devices.onPrinter = {
+                printerCalls++
+                Files.list(service.state.resolve("service/images")).use { it.toList() }.forEach(Files::delete)
+                throw java.io.IOException("card read failed")
+            }
+            eventually { service.lines("SERVICE_STATE_REOPENED").isNotEmpty() }
+            // Several more print and camera steps pass; none reopens again or reaches the printer.
+            Thread.sleep(6_000)
+            assertEquals(listOf("SERVICE_STATE_REOPENED reason=FAILED category=PERSISTENCE_ERROR count=1"),
+                service.lines("SERVICE_STATE_REOPENED"))
+            assertEquals(1, printerCalls)
+            assertStableStateError(service)
+        }
+    }
+
+    @Test fun repeatedStateErrorsGetOneReopenEachAndAtMostThreeThenTheStateErrorStays() {
+        val devices = Faulty()
+        var printerCalls = 0
+        devices.onPrinter = { printerCalls++; throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR) }
+        devices.sim.simulationAction("printer-on")
+        devices.sim.simulationAction("select-photo")
+        operate(devices) { service ->
+            eventually { printerCalls == 4 }
+            Thread.sleep(6_000)
+            assertEquals((1..3).map { "SERVICE_STATE_REOPENED reason=OK count=$it" }, service.lines("SERVICE_STATE_REOPENED"))
+            // The fourth state error is not reopened, so the failed bridge never reaches the printer again.
+            assertEquals(4, printerCalls)
+            assertStableStateError(service)
+        }
+        assertEquals(0, devices.sim.safeCounts()["prints"])
+    }
+
+    @Test fun aPhotoPrintedBeforeAReopenIsStillRecognisedAfterItAndNeverPrintedTwice() {
+        val devices = Faulty()
+        var cameraCalls = 0
+        devices.onCamera = { if (++cameraCalls == 2) throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR) }
+        devices.sim.simulationAction("printer-on")
+        devices.sim.simulationAction("select-photo")
+        operate(devices) { service ->
+            // First check prints the photo; the re-check fails and reopens; the next re-check is offered the same photo.
+            eventually { cameraCalls >= 3 && devices.sim.safeCounts()["captured"] == 2 }
+            assertEquals(listOf("SERVICE_STATE_REOPENED reason=OK count=1"), service.lines("SERVICE_STATE_REOPENED"))
+            assertTrue(service.lines("BRIDGE_").any { "category=DUPLICATE_SUPPRESSED" in it })
+        }
+        assertEquals(1, devices.sim.safeCounts()["prints"])
+    }
 }
