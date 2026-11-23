@@ -416,6 +416,22 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun theFingerprintIsTakenBeforeDecodingSoADuplicateIsNeverDecodedAndANewPhotoOnce() = root { state ->
+        val real = JvmPrintImagePreparer()
+        var checks = 0; var preparations = 0
+        val counting = object : PrintImagePreparer {
+            override fun validateSource(source: File) { checks++; real.validateSource(source) }
+            override fun prepare(source: File, crop: Boolean) = real.prepare(source, crop).also { preparations++ }
+        }
+        bridge(state, images = counting).use {
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("first")).captureStep)
+            // One decode prepares the photo; the one check left is of the prepared output.
+            assertEquals(listOf(1, 1), listOf(preparations, checks))
+            assertEquals(CaptureStep.DUPLICATE, it.capture(SelectionTrigger("again")).captureStep)
+            assertEquals(listOf(1, 1), listOf(preparations, checks))
+        }
+    }
+
     @Test fun queueCapacityStopsCaptureBeforeAcknowledgement() = root { state ->
         val original = photo()
         val prepared = javaClass.getResourceAsStream("/simulation/portrait-standard.jpg")!!.use { it.readBytes() }
