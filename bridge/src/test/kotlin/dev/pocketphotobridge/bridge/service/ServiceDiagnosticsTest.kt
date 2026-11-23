@@ -119,6 +119,18 @@ class ServiceDiagnosticsTest {
         assertEquals(listOf(header(1), header(9), header(10)), start().previousRuns().map { it["header"] })
     }
 
+    @Test fun aRestartLoopThatFailsBeforeSetupKeepsTheRunBeforeIt() {
+        val directory = Files.createTempDirectory("failed-start-runs-")
+        fun start() = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        fun header(run: Int) = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=$run"
+        // The run a power cut ended, then a state the cut damaged fails every start that systemd makes.
+        start().apply { emit("LINUX_HARDWARE_VALIDATION_PENDING"); emit("SERVICE_SETUP"); emit("SERVICE_OPERATION") }
+        repeat(8) {
+            start().apply { emit("LINUX_HARDWARE_VALIDATION_PENDING"); emit("SERVICE_FAILED category=PERSISTENCE_ERROR") }
+        }
+        assertEquals(listOf(header(1), header(9)), start().previousRuns().map { it["header"] })
+    }
+
     @Test fun aPreviousRunThatIsNotTextIsStillRotatedOutOfTheWay() {
         val directory = Files.createTempDirectory("torn-run-")
         Files.write(directory.resolve("diagnostics.txt"), byteArrayOf(0xFF.toByte(), 0xFE.toByte(), '\n'.code.toByte()))
