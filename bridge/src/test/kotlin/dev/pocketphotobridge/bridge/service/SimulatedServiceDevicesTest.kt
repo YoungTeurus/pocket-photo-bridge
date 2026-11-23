@@ -13,6 +13,36 @@ class SimulatedServiceDevicesTest {
             PrinterConnector { devices.printer(devices.configuration) }, images, { SIMULATION_TOKEN },
             now = devices.clock::now, pause = devices.clock::pause)
 
+    /** The service's own loop around a real bridge; [duringPrint] runs inside each print step before the print. */
+    private class Service(val devices: SimulatedServiceDevices, val bridge: AutonomousBridge) {
+        var time = 0L
+        var duringPrint: () -> Unit = {}
+        val loop = ServiceLoop(BootModePolicy(0).apply { requestOperation() }, { time }, object : ServiceLoopActions {
+            override fun enterOperation() {}
+            override fun capture(trigger: SelectionTrigger) = bridge.capture(trigger).captureStep
+            override fun printNext(): Boolean { duringPrint(); return bridge.printNext().printAttemptFailed }
+        })
+        fun passes(count: Int, stepMs: Long = 1_000) = repeat(count) {
+            time += stepMs; loop.tick(time, true, devices.cameraPresent(devices.configuration))
+        }
+    }
+
+    @Test fun aPhotoSelectedDuringThePreviousPrintIsFetchedAfterItWithNoAbsenceInBetween() {
+        val devices = SimulatedServiceDevices()
+        devices.simulationAction("printer-on")
+        devices.simulationAction("select-photo")
+        open(devices).use { bridge ->
+            val service = Service(devices, bridge)
+            var selected = false
+            service.duringPrint = { if (!selected && bridge.snapshot().queued == 1) { selected = true; devices.simulationAction("select-photo") } }
+            service.passes(5)
+            assertTrue(selected)
+        }
+        assertEquals(2, devices.safeCounts()["captured"])
+        assertEquals(2, devices.safeCounts()["prints"])
+        assertEquals(2, devices.safeCounts()["completed"])
+    }
+
     @Test fun aSelectionIsVisibleOnTheNextScanAndStaysOfferedAfterItsTransfer() {
         val devices = SimulatedServiceDevices()
         devices.simulationAction("select-photo")
