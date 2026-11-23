@@ -101,6 +101,31 @@ class ServiceRuntimeStopTest {
         }
     }
 
+    @Test fun onceTheSwitchIntoOperationHasClosedThePageALateRequestNoLongerReachesTheBridge() {
+        val radio = Radio()
+        var started = false
+        val late = mutableListOf<String?>()
+        stopWhen(radio) { runtime, diagnostics ->
+            if (!started && setupServed(diagnostics)) {
+                started = true
+                runtime.backend().saveConfig(SimulatedServiceDevices().configuration)
+                runtime.backend().startOperation()
+            }
+            val operating = diagnostics.events().any { it.endsWith(" SERVICE_OPERATION") }
+            if (operating) {
+                // A request the closing page let through, arriving after the reopen with its handler's interrupt pending.
+                Thread.currentThread().interrupt()
+                try {
+                    late += (runCatching { runtime.backend().acknowledgeCheckedPrinter() }.exceptionOrNull() as? IllegalStateException)?.message
+                    late += (runCatching { runtime.backend().status() }.exceptionOrNull() as? IllegalStateException)?.message
+                } finally { Thread.interrupted() }
+                assertFalse(diagnostics.events().any { "BRIDGE_STATE_ERROR" in it })
+            }
+            operating
+        }
+        assertEquals(listOf("SETUP_REQUIRED", "SETUP_REQUIRED"), late)
+    }
+
     @Test fun aRadioStepCancelledByTheStopLeavesTheInterruptPendingAndTheCleanupStillRuns() {
         val radio = Radio().apply { holdStopSetup = true }
         var started = false

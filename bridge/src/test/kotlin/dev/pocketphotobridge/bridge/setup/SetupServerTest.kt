@@ -41,7 +41,8 @@ class SetupServerTest {
         override fun saveConfig(config: ServiceConfiguration) { if (throwSecret) error("private-token"); saved = config }
         var interfaces = setOf("wlan0")
         override fun wifiInterfaceExists(name: String) = name in interfaces
-        override fun acknowledgeCheckedPrinter() { acknowledged++ }
+        var onAcknowledge: () -> Unit = { }
+        override fun acknowledgeCheckedPrinter() { onAcknowledge(); acknowledged++ }
         override fun startOperation() { run++ }
         override fun staySetup() { held++ }
         var printersFail = false
@@ -346,6 +347,24 @@ class SetupServerTest {
         val failed = client.request("/config", form + ("printerToken" to "0123456789abcdef01234567"))
         assertEquals(503, failed.code)
         assertFalse(failed.body.contains("private-token"))
+    }
+
+    @Test fun closingTheServerLetsARequestAlreadyInTheBackendFinishWithoutAnInterrupt() = server { client, backend, server ->
+        client.login()
+        val token = client.csrfPage()
+        val inside = java.util.concurrent.CountDownLatch(1)
+        val interrupted = java.util.concurrent.atomic.AtomicReference<Boolean>()
+        // An interrupt would close the file channel of a journal write the request is making.
+        backend.onAcknowledge = {
+            inside.countDown()
+            interrupted.set(try { Thread.sleep(300); false } catch (_: InterruptedException) { true })
+        }
+        val request = Thread { try { client.request("/acknowledge", mapOf("csrf" to token, "checkedPrinter" to "on")) } catch (_: Exception) { } }
+        request.start()
+        assertTrue(inside.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        server.close()
+        request.join(10_000)
+        assertEquals(false, interrupted.get())
     }
 
     @Test fun pairAcknowledgementAndSimulationRequireAuthenticatedCsrfAndFixedInputs() = server { client, backend, _ ->
