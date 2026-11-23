@@ -215,7 +215,8 @@ loading after power-on or the radio is blocked, the service tries again 5
 seconds after each failed attempt. It starts no new attempt two minutes after
 the first one (an attempt already running then may finish) and exits with
 `SERVICE_FAILED`; systemd starts it again 30 seconds later, as often as needed,
-so the hotspot appears once the radio works, without a power cycle. The setup
+so the hotspot appears once the radio works, without a power cycle (not yet
+verified on the board; field session 1 checks it). The setup
 window counts from the moment the hotspot is up, however long that took. Until
 then nothing prints: operation begins only after setup. A failed attempt is
 logged as `SERVICE_SETUP_FAILED category=<category> count=<n>`, where `n` is the
@@ -227,7 +228,9 @@ then takes down the setup hotspot or the camera connection the bridge owns,
 also while the hotspot is still being retried; a printer pairing in progress
 is cancelled first. The service waits at most 30
 seconds for that cleanup, within the unit's 45-second stop timeout; a cleanup
-that fails logs `SERVICE_RADIO_CLEANUP_FAILED`. A stop during a print leaves
+that fails logs `SERVICE_RADIO_CLEANUP_FAILED`. That the stop leaves no
+bridge connection active is not yet verified on the board; field session 1
+checks it. A stop during a print leaves
 that print unknown, to be checked as described below.
 Setup refuses to save an interface name that is not a Wi-Fi interface on the
 board, including a wired, loopback or USB network name
@@ -384,7 +387,8 @@ not yet been verified on the board. Over the hotspot:
    takes the SSH session with it.
 2. Copy the archive and run the installer over SSH as above. Expect the SSH
    session to drop when the installer stops the service, because stopping it
-   takes the hotspot down; the installer's last lines may never appear.
+   takes the hotspot down (not yet verified on the board); the installer's last
+   lines may never appear.
 3. Rejoin the hotspot, which the new service opens again for 60 seconds, sign
    in, and check the `build` field in the setup status or Diagnostics. An
    unchanged build means the installer stopped and restored the previous

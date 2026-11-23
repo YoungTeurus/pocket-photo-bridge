@@ -92,7 +92,8 @@ counts as one such error); if that fails, the bridge stays blocked with
 loop. Stopping the
 service records the stop and takes down the hotspot or camera connection it owns
 before exiting, waiting at most 30 seconds, within the unit's 45-second stop
-timeout. The state root is
+timeout; this and the hotspot's return without a power cycle are not yet
+verified on the board. The state root is
 `/var/lib/pocket-photo-bridge`, root-owned and private. Upgrades retain the queue,
 configuration, bootstrap secrets, and print-history records within the current
 boot. The setup checkbox **Keep waiting photos across power cycles** defaults

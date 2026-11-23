@@ -139,7 +139,11 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
    download Diagnostics, read the previous run from `previousRuns`, and record
    the queue and print-history state (`queued`, the `stage`, for example
    `NEEDS_ATTENTION` for an unknown print waiting for **I checked the
-   printer**, and sheets).
+   printer**, and sheets). If setup does not appear after a cut, do not cut
+   the power again: over the serial console run
+   `sudo journalctl -u pocket-photo-bridge -b --no-pager` and copy
+   `/var/lib/pocket-photo-bridge/diagnostics*.txt` before further restarts
+   rotate them, then record the last `SERVICE_FAILED` category.
 7. **Retention.** With retention off, read the queue count with one photo
    waiting (printer off), reboot, and read it again from setup: expected 1, then
    0 with `BRIDGE_BOOT_QUEUE_DISCARDED count=1`. The "retention on" half is not
@@ -156,6 +160,22 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
    and compare it with `sha256sum` of the file on the camera's SD card.
 9. **Image check.** Print one FIT and one CROP sample and judge them by eye
    (orientation, colour, framing).
+10. **Hotspot recovery without a power cycle** (issue #21). Over the serial
+    console stop the service, run `sudo rfkill block wifi`, start the service,
+    wait at least five minutes, then run `sudo rfkill unblock wifi`. Expected:
+    the hotspot appears on the phone without a power cycle, and the run before
+    the outage is still in `previousRuns`. Record the time from the unblock to
+    the hotspot appearing, and the `SERVICE_SETUP_FAILED category=... count=...`
+    lines of the current and previous runs.
+11. **A stop takes the radio down** (issue #23). Run
+    `sudo systemctl stop pocket-photo-bridge.service` over the serial console
+    once in setup and once in operation while the camera is connected. Expected
+    each time: `nmcli connection show --active` lists no connection owned by
+    the bridge, the hotspot is gone from the phone, and
+    `sudo tail -n 3 /var/lib/pocket-photo-bridge/diagnostics.txt` ends with
+    `SERVICE_STOPPED`. Record whether a bridge connection was still listed (not
+    the network names) and the last diagnostic line, then start the service
+    again.
 
 Also record, for the conditional work: whether any power cut damaged the
 persistent state (setup `stage` is `STATE_ERROR`); whether the printer still
