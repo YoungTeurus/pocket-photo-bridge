@@ -77,6 +77,10 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var failed = false
     private var current = ServiceSnapshot(ServiceState.WAITING_CAMERA, queue.size)
     private var retries = 0
+    /** The last outcomes of each step on their own: a re-check between two print attempts does not end a retry series. */
+    private var lastPrint: ServiceSnapshot? = null
+    private var lastCapture: ServiceSnapshot? = null
+    private var captureRepeats = 0
     private var dropped = 0
     private val seriesRefusals = mutableSetOf<Long>()
     /** Photos dropped after a refusal in this selection generation (one camera presence); memory only. */
@@ -112,6 +116,21 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     }
 
     @Synchronized fun capture(trigger: SelectionTrigger): ServiceSnapshot {
+        // A re-check of a still-visible camera that ends as the last check did leaves none of its lines.
+        attempts.hold()
+        try {
+            val outcome = receive(trigger)
+            val repeated = outcome == lastCapture && outcome.category != null && outcome.captureStep != CaptureStep.NEW_PHOTO
+            attempts.release(keep = !repeated)
+            captureRepeats = if (repeated) captureRepeats + 1 else 0
+            if (Integer.bitCount(captureRepeats) == 1)
+                emit("BRIDGE_${outcome.state.name} queued=${outcome.queued} category=${outcome.category} count=$captureRepeats")
+            lastCapture = outcome
+            return outcome
+        } finally { attempts.release(keep = true) }
+    }
+
+    private fun receive(trigger: SelectionTrigger): ServiceSnapshot {
         var receiving: Path? = null
         var retained = false
         var duplicate = false
@@ -163,18 +182,18 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     }
 
     @Synchronized fun printNext(): ServiceSnapshot {
-        val previous = current
-        val retrying = previous.state == ServiceState.WAITING_PRINTER && previous.category != null
+        val previous = lastPrint
+        val retrying = previous?.state == ServiceState.WAITING_PRINTER && previous.category != null
         var refusal: Long? = null
         try {
             checkState()
-            if (journal.unresolved) return result(ServiceState.NEEDS_ATTENTION, "UNRESOLVED_JOB")
+            if (journal.unresolved) return settled(result(ServiceState.NEEDS_ATTENTION, "UNRESOLVED_JOB"))
             checkActive()
-            val entry = queue.entries.firstOrNull() ?: return result(ServiceState.WAITING_CAMERA)
+            // Every line of an attempt, radio steps included, is held until its outcome shows whether it repeats the last one.
+            attempts.hold()
+            val entry = queue.entries.firstOrNull() ?: return settled(result(ServiceState.WAITING_CAMERA))
             val prepared = queue.prepared(entry)
             journal.selectPhoto(entry.fingerprint)
-            // Every line of a retry, radio steps included, is held until its outcome shows whether it repeats the last one.
-            if (retrying) attempts.hold()
             result(ServiceState.WAITING_PRINTER); emit("BRIDGE_PRINTER_CONNECTING")
             var printingReported = false
             try { printer.connect().use { transport ->
@@ -203,7 +222,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             }
             queue.remove(entry)
             dropped = 0
-            return result(ServiceState.PRINTED)
+            return settled(result(ServiceState.PRINTED))
         } catch (failure: Exception) {
             if (failure is InterruptedException) Thread.currentThread().interrupt()
             val outcome = recover(failure, ServiceState.WAITING_PRINTER)
@@ -216,8 +235,16 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             // Doubling intervals keep a day of retries to a few dozen lines.
             if (Integer.bitCount(retries) == 1)
                 emit("BRIDGE_WAITING_PRINTER queued=${outcome.queued} category=${outcome.category} count=$retries")
+            lastPrint = outcome
             return outcome
         } finally { attempts.release(keep = true) }
+    }
+
+    /** An idle step after a re-check repeats the last step's outcome, so its state line says nothing new. */
+    private fun settled(outcome: ServiceSnapshot): ServiceSnapshot {
+        attempts.release(keep = outcome != lastPrint)
+        lastPrint = outcome
+        return outcome
     }
 
     @Synchronized fun snapshot(): ServiceSnapshot {

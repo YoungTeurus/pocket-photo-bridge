@@ -714,6 +714,41 @@ class AutonomousBridgeTest {
         assertTrue(diagnostics.events().size < 100)
     }
 
+    /** The service loop for an hour while the camera stays on its send screen, so every re-check offers the same photo. */
+    private fun anHourWithAVisibleCamera(diagnostics: ServiceDiagnostics, bridge: AutonomousBridge) {
+        var clock = 0L
+        val loop = ServiceLoop(BootModePolicy(0).apply { requestOperation() }, { clock }, object : ServiceLoopActions {
+            override fun enterOperation() {}
+            override fun capture(trigger: SelectionTrigger) = bridge.capture(trigger).captureStep
+            override fun printNext() = bridge.printNext().printStep
+            override fun cameraPresence(scan: Result<Boolean>) = diagnostics.emit("SERVICE_CAMERA_PRESENT")
+        })
+        repeat(3_600) { _ -> clock += 1_000; loop.tick(clock, true) { true } }
+    }
+
+    @Test fun anHourOfRecheckingAVisibleCameraAfterAPrintKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        val camera = SimulatedSony(photo())
+        bridge(state, camera = camera, report = diagnostics::emit, attempts = diagnostics).use { anHourWithAVisibleCamera(diagnostics, it) }
+        assertTrue(camera.completedTransfers > 5)
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertEquals(1, diagnostics.events().count { " category=DUPLICATE_SUPPRESSED" in it && "count=" !in it })
+        assertTrue(diagnostics.events().size < 60)
+    }
+
+    @Test fun anHourOfRecheckingAVisibleCameraWithTheQueuedPhotosPrinterOffKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        val camera = SimulatedSony(photo())
+        bridge(state, camera = camera, printer = SimulatedPrinter(PrinterFault.OFFLINE), report = diagnostics::emit,
+            attempts = diagnostics).use { anHourWithAVisibleCamera(diagnostics, it) }
+        assertTrue(camera.completedTransfers > 5)
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        // Re-checks in between do not restart the retry series: its count keeps doubling.
+        val count = diagnostics.events().last { " BRIDGE_WAITING_PRINTER " in it }.substringAfter(" count=", "").toInt()
+        assertTrue(count >= 64)
+        assertTrue(diagnostics.events().size < 80)
+    }
+
     @Test fun aRefusalAfterABusyPreflightIsReportedOnceAndItsRepeatsCollapse() = root { state ->
         val diagnostics = diagnostics(state)
         var printer = SimulatedPrinter(PrinterFault.BUSY)
