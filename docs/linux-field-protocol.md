@@ -37,6 +37,15 @@ is closed while the bridge operates, so the bridge cannot be its own witness.
   screen and a clock for the whole session. Sheets are counted from the video,
   not from memory; durations are read from the clock.
 
+Bridge events carry only whole seconds since the service started, and the
+header's `uptime_s` is the kernel uptime when the service started; the board has
+no wall clock. To place an event on the video clock, keep the serial terminal in
+frame running `sudo journalctl -f -u pocket-photo-bridge.service`, which prints
+each event as the service emits it, and time the event by the moment its line
+appears. Without that, estimate it as the filmed bridge power-on plus
+`uptime_s` plus the line's offset; this leaves out the time before the kernel
+starts and is accurate only to a few seconds.
+
 Reading the bridge's own record:
 
 - Over the serial console, the current run is
@@ -99,7 +108,8 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
 
 1. **Measurements.**
    - Scan duration: from the camera network appearing on the phone to
-     `SERVICE_CAMERA_PRESENT`.
+     `SERVICE_CAMERA_PRESENT`, in operation only. It includes the service's
+     one-second pause between checks.
    - How long the camera keeps its Wi-Fi after a completed transfer, as seen by
      the phone.
    - What the camera screen shows when the bridge connects a second time
@@ -107,6 +117,8 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
    - Print duration: from the start of the upload to the sheet leaving the
      printer.
    - Power-on to operation: from bridge power-on to `SERVICE_OPERATION`.
+     Record both the filmed time to the console line and `uptime_s` plus the
+     line's offset; the second excludes the time before the kernel starts.
 2. **Series in one boot.** Send photo A, then B, then A again, then choose C on
    the camera while a print is running. Expected: three sheets, no fourth.
 3. **Printer off and on.** With the printer off, send a photo; it must wait
@@ -129,8 +141,16 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
    waiting (printer off), reboot, and read it again from setup: expected 1, then
    0 with `BRIDGE_BOOT_QUEUE_DISCARDED count=1`. The "retention on" half is not
    applicable (issue #18, decision 4).
-8. **Receive fidelity.** Compare the SHA-256 of a received original with that of
-   the file on the camera's SD card (`sha256sum` on both copies).
+8. **Receive fidelity.** The bridge keeps a received original only while its
+   photo waits: as
+   `/var/lib/pocket-photo-bridge/service/images/<fingerprint>.original.jpg`,
+   where the fingerprint is the original's SHA-256. The file is deleted once
+   the photo prints, and a reboot with retention off discards it. So send the
+   photo with the printer off (or stop the service and use
+   `--linux-receive-only`), then, in the same boot and before the printer is
+   switched on, run over the serial console
+   `sudo sha256sum /var/lib/pocket-photo-bridge/service/images/*.original.jpg`
+   and compare it with `sha256sum` of the file on the camera's SD card.
 9. **Image check.** Print one FIT and one CROP sample and judge them by eye
    (orientation, colour, framing).
 
