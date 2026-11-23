@@ -34,7 +34,7 @@ class ServiceDiagnosticsTest {
         report.emit("SERVICE_SETUP")
         millis += 65_999
         report.emit("SERVICE_OPERATION")
-        assertEquals(listOf("Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=1 uptime_s=1234",
+        assertEquals(listOf("Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=1 uptime_s=1234",
             "0 SERVICE_SETUP", "65 SERVICE_OPERATION"), Files.readAllLines(directory.resolve("diagnostics.txt")))
         assertEquals(listOf("0 SERVICE_SETUP", "65 SERVICE_OPERATION"), report.events())
     }
@@ -42,7 +42,7 @@ class ServiceDiagnosticsTest {
     @Test fun aRestartKeepsTheFiveMostRecentRunsAsPreviousRunsOldestFirst() {
         val directory = Files.createTempDirectory("restart-service-")
         fun start() = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
-        fun header(run: Int) = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=$run"
+        fun header(run: Int) = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=$run"
         val crashed = start()
         crashed.emit("SERVICE_OPERATION")
         crashed.emit("BRIDGE_WAITING_CAMERA queued=0 category=IO_ERROR")
@@ -60,7 +60,7 @@ class ServiceDiagnosticsTest {
 
     @Test fun handWrittenSecretsInAnOldRunNeverReachTheNextRun() {
         val directory = Files.createTempDirectory("tampered-service-")
-        val header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=4"
+        val header = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=4"
         Files.writeString(directory.resolve("diagnostics.1.txt"), "$header token=MYSECRET\n3 SERVICE_OPERATION\n")
         Files.writeString(directory.resolve("diagnostics.txt"), listOf(header, "3 SERVICE_OPERATION", "sensitive-camera-name",
             "5 LINUX_PRINTER_PAIRED AA:BB:CC:DD:EE:FF", "7 SERVICE_FAILED category=0123456789abcdef01234567",
@@ -103,7 +103,7 @@ class ServiceDiagnosticsTest {
         val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), uptimeSeconds = null)
         assertEquals(listOf(mapOf("header" to "Pocket Photo Bridge 0.5.0 | headless service",
             "events" to listOf("SERVICE_OPERATION", "BRIDGE_QUEUED queued=1"))), report.previousRuns())
-        assertEquals("Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=1", report.header)
+        assertEquals("Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=1", report.header)
     }
 
     @Test fun previousRunsKeepTheBuildTheyWereWrittenBy() {
@@ -136,7 +136,7 @@ class ServiceDiagnosticsTest {
     @Test fun headerOmitsUptimeWhereTheKernelDoesNotReportIt() {
         val directory = Files.createTempDirectory("header-service-")
         ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null).emit("SERVICE_SETUP")
-        assertEquals("Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=1",
+        assertEquals("Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=1",
             Files.readAllLines(directory.resolve("diagnostics.txt")).first())
     }
 }

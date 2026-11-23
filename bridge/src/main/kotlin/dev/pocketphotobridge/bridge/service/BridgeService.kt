@@ -172,7 +172,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     private fun backend() = object : SetupBackend {
         override fun status(): Map<String, Any> {
             val snapshot = synchronized(bridgeLock) { bridge.snapshot() }
-            return linkedMapOf<String, Any>("build" to BridgeCli.VERSION, "mode" to if (loop.operating) "OPERATION" else "SETUP",
+            return linkedMapOf<String, Any>("build" to BridgeCli.BUILD, "mode" to if (loop.operating) "OPERATION" else "SETUP",
                 "stage" to if (pairing.pending) "PAIRING" else snapshot.state.name, "queued" to snapshot.queued, "simulation" to devices.simulation,
                 "configured" to (configuration.get() != null), "autoPrintEnabled" to (configuration.get()?.autoPrintEnabled == true))
                 .apply { (snapshot.category ?: pairing.failure)?.let { put("category", it) }; putAll(devices.safeCounts()) }
@@ -232,7 +232,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
         val run = (previousRuns().maxOfOrNull { HEADER.matchEntire(it["header"] as String)!!.groupValues[1].toIntOrNull() ?: 0 } ?: 0) + 1
-        header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=$run" + (uptimeSeconds?.let { " uptime_s=$it" } ?: "")
+        header = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=$run" + (uptimeSeconds?.let { " uptime_s=$it" } ?: "")
     }
 
     @Synchronized fun events(): List<String> = lines
@@ -291,7 +291,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 .takeWhile { bytes += it.length + 1; bytes <= RUN_BYTES }.toList().asReversed()
         }
         /** Files written before run headers existed have no run counter; they count as run 0. Builds before #13 carry no build suffix. */
-        private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+(?:\\+(?:[0-9a-f]{7,40}|dev))? \\| headless service(?: run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?)?")
+        private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+(?:${BridgeCli.BUILD_SUFFIX})? \\| headless service(?: run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?)?")
         fun safeHeader(text: String) = HEADER.matches(text)
         /** A retained run, revalidated: its header and validated events, or null without a valid header. */
         fun safeRun(header: Any?, events: List<*>): Map<String, Any>? =

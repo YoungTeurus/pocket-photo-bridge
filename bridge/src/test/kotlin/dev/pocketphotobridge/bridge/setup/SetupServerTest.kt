@@ -170,7 +170,7 @@ class SetupServerTest {
 
     @Test fun diagnosticsAddPreviousRunsOldestFirstAndStayWithinTheSmokeSizeLimitAtTheCap() = server { client, backend, _ ->
         client.login()
-        fun header(run: Int) = "Pocket Photo Bridge ${dev.pocketphotobridge.bridge.BridgeCli.VERSION} | headless service run=$run uptime_s=9999999999"
+        fun header(run: Int) = "Pocket Photo Bridge ${dev.pocketphotobridge.bridge.BridgeCli.BUILD} | headless service run=$run uptime_s=9999999999"
         // The longest valid line, and the shortest line with four escaped '=' (most JSON bytes per file byte).
         for (line in listOf("999999999 LINUX_HARDWARE_VALIDATION_PENDING category=KEY_OR_PROFILE_REJECTED count=67108864 queued=16 native_error=4095",
             "0 SONY_ACTIONS count=0 queued=0 reason=OK category=BUSY")) {

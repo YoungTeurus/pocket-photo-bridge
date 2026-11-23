@@ -12,11 +12,13 @@ import kotlin.system.exitProcess
 fun main(arguments: Array<String>) { exitProcess(BridgeCli.run(arguments)) }
 
 object BridgeCli {
-    /** version+commit recorded at build time (version+dev without a commit); the first line printed and of diagnostics. */
-    val VERSION: String = BridgeCli::class.java.getResource("BUILD")!!.readText().trim()
+    /** dev stands in for the commit when the build was given none. */
+    val BUILD: String = BridgeCli::class.java.getResource("BUILD")!!.readText().trim()
+    internal const val BUILD_SUFFIX = "\\+(?:[0-9a-f]{7,40}|dev)"
+    internal const val BUILD_PATTERN = "[0-9]+\\.[0-9]+\\.[0-9]+$BUILD_SUFFIX"
 
     fun run(arguments: Array<String>, output: PrintStream = System.out, defaultState: Path? = null): Int {
-        output.println("Pocket Photo Bridge $VERSION | headless bridge")
+        output.println("Pocket Photo Bridge $BUILD | headless bridge")
         val options = try { CliOptions.parse(arguments) } catch (_: Exception) {
             output.println("BRIDGE_ARGUMENT_ERROR")
             output.println("Use --help for supported options.")
@@ -151,7 +153,7 @@ private class SimulationReport(private val output: PrintStream) {
         if (Files.isSymbolicLink(destination)) throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR)
         val temporary = Files.createTempFile(directory, "report-", ".tmp")
         try {
-            val header = "Pocket Photo Bridge ${BridgeCli.VERSION} | headless simulation\nSIMULATION_ONLY\nNO_PHYSICAL_PRINT\n"
+            val header = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless simulation\nSIMULATION_ONLY\nNO_PHYSICAL_PRINT\n"
             Files.writeString(temporary, header + lines.joinToString("\n") + "\n", Charsets.UTF_8)
             Files.move(temporary, destination, ATOMIC_MOVE, REPLACE_EXISTING)
         } finally { Files.deleteIfExists(temporary) }
