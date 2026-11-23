@@ -278,7 +278,9 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         """.trimIndent() else ""
         return shell("Bridge setup", """
             <h1>Pocket Photo Bridge</h1><p>Local setup is open. Authenticated interactions keep this setup window open.</p>
-            <section><h2>Status</h2>${BLOCKED_SENTENCES[status["blockedReason"]]?.let { "<p><strong>${escape(it)}</strong></p>" } ?: ""}<dl>${status.entries.joinToString("") { "<dt>${escape(it.key)}</dt><dd>${escape(it.value.toString())}</dd>" }}</dl></section>
+            <section><h2>Status</h2>${BLOCKED_SENTENCES[status["blockedReason"]]?.let { "<p><strong>${escape(it)}</strong></p>" } ?: ""}<dl>${status.entries.joinToString("") { "<dt>${escape(it.key)}</dt><dd>${escape(it.value.toString())}</dd>" }}</dl>
+            ${status["discardedAtBoot"]?.let { "<p>Waiting photos discarded at this boot: $it</p>" } ?: ""}
+            <p>With Keep waiting photos across power cycles off, every reboot discards photos still waiting for the printer; send them again from the camera.</p></section>
             <section><h2>Camera and printer</h2><form action="/config" method="post">${csrfField(session)}
             <label>Camera Wi-Fi name (SSID)<input name="cameraSsid" value="${escape(config?.cameraSsid.orEmpty())}" required maxlength="32" autocomplete="off"></label>
             <label>Camera Wi-Fi password<input type="password" name="cameraPassword" autocomplete="new-password" maxlength="64" placeholder="${if (config == null) "Enter camera password" else "Leave blank to keep saved password"}"></label>
@@ -315,7 +317,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
             if (value is String && value in STATUS_VALUES) put(key, value)
         }
         (raw["blockedReason"] as? String)?.takeIf(BLOCKED_SENTENCES::containsKey)?.let { put("blockedReason", it) }
-        for (key in listOf("queued", "pending", "completed", "captured", "printed", "prints", "queueCount", "queuedCount", "submittedCount", "unknownCount", "retainedBytes")) {
+        for (key in listOf("queued", "pending", "completed", "captured", "printed", "prints", "queueCount", "queuedCount", "submittedCount", "unknownCount", "retainedBytes", "discardedAtBoot")) {
             val value = raw[key]
             if (value is Int && value in 0..1_000_000) put(key, value)
             else if (value is Long && value in 0..1_000_000_000_000L) put(key, value)
