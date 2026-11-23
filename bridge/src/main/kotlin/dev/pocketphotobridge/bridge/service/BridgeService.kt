@@ -290,8 +290,8 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             return lines.asReversed().asSequence().mapNotNull { (it as? String)?.takeIf(::safeLine) }
                 .takeWhile { bytes += it.length + 1; bytes <= RUN_BYTES }.toList().asReversed()
         }
-        /** Files written before run headers existed have no run counter; they count as run 0. */
-        private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+ \\| headless service(?: run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?)?")
+        /** Files written before run headers existed have no run counter; they count as run 0. Builds before #13 carry no build suffix. */
+        private val HEADER = Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+(?:\\+(?:[0-9a-f]{7,40}|dev))? \\| headless service(?: run=([1-9][0-9]{0,8})( uptime_s=[0-9]{1,10})?)?")
         fun safeHeader(text: String) = HEADER.matches(text)
         /** A retained run, revalidated: its header and validated events, or null without a valid header. */
         fun safeRun(header: Any?, events: List<*>): Map<String, Any>? =
