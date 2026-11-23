@@ -4,7 +4,10 @@ plugins {
 }
 
 // The one version source for Gradle, the CLI, the packaging scripts, the installer and the workflow.
-version = file("VERSION").readText().trim()
+// Exactly N.N.N and one optional line end (CRLF in a Windows checkout), so Gradle, bash $(<) and PowerShell Trim() read the same string.
+val versionText = file("VERSION").readText()
+require(Regex("[0-9]+\\.[0-9]+\\.[0-9]+(?:\r?\n)?").matches(versionText)) { "bridge/VERSION must hold exactly N.N.N." }
+version = versionText.trim()
 // CI passes -PbuildCommit=<commit>; a build made without it reports dev.
 val buildCommit = providers.gradleProperty("buildCommit").getOrElse("dev")
 require(buildCommit == "dev" || Regex("[0-9a-f]{7,40}").matches(buildCommit)) { "buildCommit must be 7 to 40 lowercase hexadecimal characters." }
