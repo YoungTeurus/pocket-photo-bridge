@@ -332,8 +332,9 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 // A power pull between write and rename leaves these behind.
                 Files.newDirectoryStream(state, "diagnostic-*.tmp").use { stale ->
                     stale.forEach { if (Files.isRegularFile(it, NOFOLLOW_LINKS)) Files.deleteIfExists(it) } }
-                // Endless hotspot retries would rotate out the run before the outage; back-to-back retry-only runs share generation 1.
-                if (!(retryOnly(state.resolve(FILE)) && retryOnly(generation(1)))) {
+                // Endless restarts would rotate out the run before the outage; back-to-back failed starts share generation 1.
+                val repeated = failedStart(state.resolve(FILE))
+                if (repeated == null || repeated != failedStart(generation(1))) {
                     Files.deleteIfExists(generation(GENERATIONS))
                     for (n in GENERATIONS - 1 downTo 1)
                         if (Files.exists(generation(n), NOFOLLOW_LINKS)) Files.move(generation(n), generation(n + 1), ATOMIC_MOVE)
@@ -368,13 +369,17 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         } catch (_: Exception) { null }
     }
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
-    /** A run that only failed to start the hotspot and holds nothing else worth keeping. */
-    private fun retryOnly(file: Path): Boolean {
-        if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return false
+    /**
+     * What a run that only failed to start repeats, or null for a run worth keeping. Hotspot retries match whatever their
+     * category; any other failed start matches only the same failure, so the first of a different kind is kept.
+     */
+    private fun failedStart(file: Path): String? {
+        if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return null
         // A run torn by a power cut may not be text; it is rotated like any other run.
-        val stages = try { Files.readAllLines(file) } catch (_: Exception) { return false }
-            .drop(1).map { it.substringAfter(' ').substringBefore(' ') }
-        return "SERVICE_SETUP_FAILED" in stages && stages.all { it in RETRY_STAGES }
+        val events = try { Files.readAllLines(file) } catch (_: Exception) { return null }.drop(1).map { it.substringAfter(' ') }
+        if (!events.all { it.substringBefore(' ') in RETRY_STAGES }) return null
+        return if (events.any { it.substringBefore(' ') == "SERVICE_SETUP_FAILED" }) "SERVICE_SETUP_FAILED"
+            else events.lastOrNull { it.substringBefore(' ') == "SERVICE_FAILED" }
     }
     @Synchronized fun emit(message: String) {
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
