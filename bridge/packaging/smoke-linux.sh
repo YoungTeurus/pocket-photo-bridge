@@ -95,6 +95,6 @@ run_case acknowledge 0 --acknowledge-checked-printer --confirm "--state-dir=$cra
 require_line acknowledge '^SIMULATED_PRINTS count=0$'
 run_case after-acknowledge 0 --simulate "--state-dir=$crash_state"
 require_line after-acknowledge '^SIMULATED_PRINTS count=0$'
-python3 "$repository/bridge/packaging/smoke-service.py" "$launcher" "$work/service state with spaces" >"$reports/service-http.txt"
+python3 "$repository/bridge/packaging/smoke-service.py" "$launcher" "$work/service state with spaces" "$build" >"$reports/service-http.txt"
 checks=$((checks + 1))
 printf 'SMOKE_LINUX_PASS checks=%s bundled_runtime=true\n' "$checks" | tee "$reports/summary.txt"

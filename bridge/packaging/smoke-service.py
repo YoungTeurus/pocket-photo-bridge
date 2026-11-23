@@ -21,9 +21,10 @@ def require(condition, reason):
 
 
 def main():
-    require(len(sys.argv) == 3, "launcher_and_state_required")
+    require(len(sys.argv) == 4, "launcher_state_and_build_required")
     launcher = str(Path(sys.argv[1]).resolve())
     state = Path(sys.argv[2]).resolve()
+    build = sys.argv[3]
     require(not state.exists(), "fresh_smoke_state_required")
     environment = os.environ.copy()
     for name in ("JAVA_HOME", "JDK_HOME", "JRE_HOME", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"):
@@ -140,7 +141,8 @@ def main():
                     time.sleep(1.0)
 
             initial = status()
-            require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+\+(?:[0-9a-f]{7,40}|dev)", initial.get("build") or ""), "service_build_missing")
+            require(initial.get("build") == build, "service_build_mismatch")
+            require(json.loads(private_get("/diagnostics")).get("build") == build, "diagnostics_build_mismatch")
             require(initial["mode"] == "SETUP", "first_boot_not_setup")
             require((initial["queued"], initial["prints"], initial["completed"]) == (0, 0, 0), "fresh_service_state_not_empty")
             private_get("/diagnostics")
