@@ -116,8 +116,9 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     }
 
     @Synchronized fun capture(trigger: SelectionTrigger): ServiceSnapshot {
-        // A re-check of a still-visible camera that ends as the last check did leaves none of its lines.
-        attempts.hold()
+        // A re-check that ends as the last check did leaves none of its lines. Only a check that could repeat
+        // is held: a first transfer is written as it happens, so a power cut during it leaves its steps.
+        if (lastCapture?.let { it.category != null && it.captureStep != CaptureStep.NEW_PHOTO } == true) attempts.hold()
         try {
             val outcome = receive(trigger)
             val repeated = outcome == lastCapture && outcome.category != null && outcome.captureStep != CaptureStep.NEW_PHOTO
@@ -192,6 +193,8 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             // Every line of an attempt, radio steps included, is held until its outcome shows whether it repeats the last one.
             attempts.hold()
             val entry = queue.entries.firstOrNull() ?: return settled(result(ServiceState.WAITING_CAMERA))
+            // Only a retry waits for its outcome; a first attempt is written as it happens.
+            if (!retrying) attempts.release(keep = true)
             val prepared = queue.prepared(entry)
             journal.selectPhoto(entry.fingerprint)
             result(ServiceState.WAITING_PRINTER); emit("BRIDGE_PRINTER_CONNECTING")
