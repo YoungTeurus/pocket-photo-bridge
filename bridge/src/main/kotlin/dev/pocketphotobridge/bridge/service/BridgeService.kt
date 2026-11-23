@@ -184,7 +184,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 diagnostics.release(keep = !repeated)
                 failures++; last = failure.code; unreported = true
                 // No attempt starts at or after the limit; one already running is allowed to finish.
-                val giveUp = !running.get() || devices.now() + SETUP_RETRY_PAUSE_MS - first >= SETUP_RETRY_LIMIT_MS
+                val giveUp = devices.now() + SETUP_RETRY_PAUSE_MS - first >= SETUP_RETRY_LIMIT_MS
                 if (!repeated || Integer.bitCount(failures) == 1 || giveUp) report()
                 if (giveUp) throw failure
             } finally { diagnostics.release(keep = true) }
