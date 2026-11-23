@@ -12,7 +12,8 @@ import kotlin.system.exitProcess
 fun main(arguments: Array<String>) { exitProcess(BridgeCli.run(arguments)) }
 
 object BridgeCli {
-    const val VERSION = "0.5.0"
+    /** version+commit recorded at build time (version+dev without a commit); the first line printed and of diagnostics. */
+    val VERSION: String = BridgeCli::class.java.getResource("BUILD")!!.readText().trim()
 
     fun run(arguments: Array<String>, output: PrintStream = System.out, defaultState: Path? = null): Int {
         output.println("Pocket Photo Bridge $VERSION | headless bridge")
