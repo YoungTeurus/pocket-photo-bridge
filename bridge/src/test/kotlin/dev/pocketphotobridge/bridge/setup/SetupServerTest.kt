@@ -250,7 +250,7 @@ class SetupServerTest {
         val sentences = mapOf(
             "UNRESOLVED_PRINT" to "The bridge is not accepting or printing photos because the last print may or may not have come out. Check the printer and its paper output, then acknowledge below.",
             "QUEUE_FULL" to "The bridge is not accepting new photos because the waiting queue is full. Switch the printer on and start operation so the waiting photos print, then send new photos.",
-            "STATE_ERROR" to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then choose Start operation: the bridge reads its state again. If photos still do not print, restart the bridge; with Keep waiting photos across power cycles off, a restart discards waiting photos. Do not delete its state files.")
+            "STATE_ERROR" to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then, with automatic printing enabled and saved, choose Start operation: the bridge reads its state again. Otherwise, or if photos still do not print, restart the bridge; with Keep waiting photos across power cycles off, a power cycle discards waiting photos, while restarting only the service keeps them. Do not delete its state files.")
         fun status() = JsonParser.parseString(client.request("/status").body).asJsonObject
         for ((reason, sentence) in sentences) {
             backend.blockedReason = reason

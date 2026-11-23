@@ -173,11 +173,14 @@ sentence, and the status reports `blocked` with a fixed `blockedReason`:
 `UNRESOLVED_PRINT` (check the printer and its output, then acknowledge; see
 below), `QUEUE_FULL` (the waiting queue is full; start operation with the printer
 on so they print, then send new photos) or `STATE_ERROR` (the saved state
-cannot be read; download the diagnostics, then choose Run, which reads the
-state again; if photos still do not print, restart the bridge without deleting
-its state files, keeping in mind that with the retention setting off a power
-cycle discards waiting photos). In setup the state error stays on the page
-until Run: the state is read again only on the switch into operation. The page also shows how many waiting photos were
+cannot be read; download the diagnostics, then, with automatic printing
+enabled and saved, choose Run, which reads the state again; otherwise, or if
+photos still do not print, restart the bridge without deleting its state files,
+keeping in mind that with the retention setting off a power cycle discards
+waiting photos, while restarting only the service keeps them). In setup the state error stays on the page
+until Run or a restart: the state is read again only on the switch into
+operation, which Run refuses while automatic printing is off, no configuration
+is saved or a pairing is in progress. The page also shows how many waiting photos were
 discarded at this boot (`discardedAtBoot`) and always notes that with the
 retention setting off a reboot discards waiting photos. The count is known
 only to the service run that began the boot: after a service restart within
