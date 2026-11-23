@@ -19,9 +19,13 @@ import java.util.concurrent.TimeUnit
 
 class ServiceRuntimeStopTest {
     /** A radio whose cleanup notes whether it could run: the bounded command runner refuses an interrupted thread. */
-    private class Radio(private val hotspotFails: Boolean = false) : ServiceDevices {
+    private class Radio(private val hotspotFails: Boolean = false, private val quickPauses: Int = 0) : ServiceDevices {
         override val simulation = false
         val attempted = CountDownLatch(1)
+        /** Entered by the first retry pause that really waits, after [quickPauses] that do not. */
+        val pausing = CountDownLatch(1)
+        private var pauses = 0
+        override fun pause(ms: Long) { if (++pauses > quickPauses) { pausing.countDown(); Thread.sleep(ms) } }
         /** Entered by a radio step that holds the radio until the stop's interrupt reaches it. */
         val holding = CountDownLatch(1)
         @Volatile var holdStopSetup = false
@@ -50,7 +54,7 @@ class ServiceRuntimeStopTest {
     }
 
     /** Starts the service, waits for [ready], stops it as a termination signal does and checks what the stop left behind. */
-    private fun stopWhen(radio: Radio, ready: (ServiceRuntime, ServiceDiagnostics) -> Boolean) {
+    private fun stopWhen(radio: Radio, onDisk: (List<String>) -> Unit = { }, ready: (ServiceRuntime, ServiceDiagnostics) -> Boolean) {
         val root = Files.createTempDirectory("service-stop-")
         try {
             val state = root.resolve("state")
@@ -73,7 +77,9 @@ class ServiceRuntimeStopTest {
             assertEquals("RAN", radio.cleanup)
             assertTrue(diagnostics.events().any { it.endsWith(" SERVICE_STOPPED") })
             // The file is the only record that outlives the process; a pending interrupt must not keep the line out of it.
-            assertTrue(Files.readAllLines(state.resolve("diagnostics.txt")).any { it.endsWith(" SERVICE_STOPPED") })
+            val file = Files.readAllLines(state.resolve("diagnostics.txt"))
+            assertTrue(file.any { it.endsWith(" SERVICE_STOPPED") })
+            onDisk(file)
             service.join(60_000)
             assertFalse(service.isAlive)
             assertNull(failure)
@@ -120,5 +126,14 @@ class ServiceRuntimeStopTest {
     @Test fun aStopWhileTheHotspotIsStillBeingRetriedRecordsItAndCleansUpTheRadio() {
         val radio = Radio(hotspotFails = true)
         stopWhen(radio) { _, diagnostics -> radio.attempted.count == 0L && diagnostics.events().any { "SERVICE_SETUP_FAILED" in it } }
+    }
+
+    @Test fun aStopDuringTheHotspotRetryPauseStillCountsEveryFailedAttempt() {
+        // The third failure is due no line of its own (counts 1, 2, 4 ...), and the stop lands in the pause after it.
+        val radio = Radio(hotspotFails = true, quickPauses = 2)
+        stopWhen(radio, onDisk = { file ->
+            assertEquals("SERVICE_SETUP_FAILED category=COMMAND_FAILED count=3",
+                file.map { it.substringAfter(' ') }.last { it.startsWith("SERVICE_SETUP_FAILED") })
+        }) { _, _ -> radio.pausing.count == 0L }
     }
 }
