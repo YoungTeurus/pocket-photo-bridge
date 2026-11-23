@@ -158,11 +158,13 @@ def main():
             post("/simulate", action="select-photo")
             wait_counts("series_retention", queued=2, prints=0, completed=0)
             post("/simulate", action="printer-busy")
-            stable_counts("printer_busy_retention", queued=2, prints=0, completed=0, seconds=3)
+            # Print attempts back off 2, 4 and 8 s apart, so 8 s always include a busy attempt.
+            stable_counts("printer_busy_retention", queued=2, prints=0, completed=0, seconds=8)
             post("/simulate", action="printer-ready")
             wait_counts("printer_ready_completion", queued=0, prints=2, completed=2, seconds=PRINTER_RETURN_SECONDS)
-            post("/simulate", action="duplicate-photo")
-            stable_counts("duplicate_suppression", queued=0, prints=2, completed=2, seconds=3)
+            # Offering the first, already printed photo again; re-checks run at most 10 s apart.
+            post("/simulate", action="select-photo")
+            stable_counts("duplicate_suppression", queued=0, prints=2, completed=2, seconds=12)
             private_get("/diagnostics")
             require(process.poll() is None, "service_exited_during_http_smoke")
             process.terminate()

@@ -104,13 +104,15 @@ with the scan's failure category. The simulated devices use 2 s and 10 s pauses
 so the packaged smoke test can send a series within its waits.
 
 **Deliberate deviation from the MVP 4 design.** The [MVP 4 design](superpowers/specs/2026-10-12-mvp4-headless-design.md)
-required waiting for the camera network to disappear before rearming. On the
-board the camera keeps its network across a print and often between two
-selections, so a second photo in one power-on was never fetched. The owner
-replaced that rule with the re-check above (issue #20). The 60 s and 300 s
-values are starting points for the first field session, which measures scan
-duration, how long the camera keeps its network after a completed transfer and
-what a second connection does on the camera screen.
+required waiting for the camera network to disappear before rearming. In the
+code that meant a new photo was accepted only after a scan without the camera;
+no scan ran during a transfer or a print (up to four minutes) and a failed scan
+reused the earlier result, so a photo chosen quickly or during a print was not
+fetched until an absence was seen; this is reasoning from the code, not a board
+observation. The owner replaced that rule with the re-check above (issue #20).
+The 60 s and 300 s values are starting points for the first field session,
+which measures scan duration, how long the camera keeps its network after a
+completed transfer and what a second connection does on the camera screen.
 
 The local page uses generated credentials, sessions, CSRF and exact Host/Origin
 checks. Credentials are private persisted configuration, never diagnostic
