@@ -164,6 +164,20 @@ print reservations are always retained.
 Pairing runs in the background because BlueZ discovery and pairing can take
 about 40 seconds. Refresh the page while status shows `PAIRING`; choose Run
 after it finishes. A failed pairing reports a fixed category in diagnostics.
+If the paired-printer list cannot be read (for example Bluetooth is hung), the
+page still opens, says the list is unavailable, and accepts the printer address
+typed by hand; saving, acknowledging and Run keep working.
+
+When the bridge accepts or prints no photos, the status section says why in one
+sentence, and the status reports `blocked` with a fixed `blockedReason`:
+`UNRESOLVED_PRINT` (check the printer and its output, then acknowledge; see
+below), `QUEUE_FULL` (the waiting queue is full; start operation with the printer
+on so they print, then send new photos) or `STATE_ERROR` (the saved state
+cannot be read; download the diagnostics, then restart the bridge without
+deleting its state files). The page also shows how many waiting photos were
+discarded at this boot (`discardedAtBoot`; a service restart within the same
+boot shows 0 again) and always notes that with the retention setting off a
+reboot discards waiting photos.
 
 After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP
@@ -192,7 +206,8 @@ the page's **I checked the printer** acknowledgement only after that check.
 
 Rebooting into setup discards photos still waiting for the printer when
 **Keep waiting photos across power cycles** is off; the unknown print's record
-itself is kept. The discard happens when the service starts, before setup is
+itself is kept. The setup page shows how many were discarded at this boot;
+send those again from the camera after the acknowledgement. The discard happens when the service starts, before setup is
 reachable, so switching the setting on in that setup session protects only
 later boots: check it in setup and save; it applies from the next device boot.
 With shell access over Ethernet or a serial console,
