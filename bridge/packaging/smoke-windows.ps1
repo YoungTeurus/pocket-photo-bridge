@@ -107,7 +107,7 @@ $normalState = Get-StateDirectory normal
 Invoke-SmokeCase -Name normal -ExpectedExit 0 -CommandArguments @('--simulate', "--state-dir=$normalState") -ExpectedPatterns @($onePrint)
 Invoke-SmokeCase -Name duplicate -ExpectedExit 0 -CommandArguments @('--simulate', "--state-dir=$normalState") -ExpectedPatterns @($zeroPrints)
 Invoke-SmokeCase -Name crop -ExpectedExit 0 -CommandArguments @('--simulate', '--crop', "--state-dir=$(Get-StateDirectory crop)") -ExpectedPatterns @($onePrint)
-foreach ($scenario in @('missing-ssid', 'camera-offline', 'camera-timeout', 'no-selected-jpeg', 'interrupted-transfer', 'printer-offline', 'printer-busy')) {
+foreach ($scenario in @('missing-ssid', 'camera-offline', 'camera-timeout', 'no-selected-jpeg', 'interrupted-transfer', 'printer-offline', 'printer-busy', 'refused-submit')) {
     Invoke-SmokeCase -Name $scenario -ExpectedExit 2 -CommandArguments @("--simulate-failure=$scenario", "--state-dir=$(Get-StateDirectory $scenario)") -ExpectedPatterns @($zeroPrints)
 }
 foreach ($scenario in @('dropped-after-submit', 'uncertain-completion')) {

@@ -132,7 +132,7 @@ object BridgeCli {
 No arguments: run the suite and wait for Enter when an interactive console is attached.
 Scenarios: missing-ssid, camera-offline, camera-timeout, no-selected-jpeg, interrupted-transfer,
 printer-offline, printer-busy, dropped-after-submit, uncertain-completion, duplicate-trigger,
-duplicate-photo, restart, manual-recovery, power-cut.
+duplicate-photo, restart, manual-recovery, power-cut, refused-submit.
 Exit codes: 0 success/suppressed; 1 failed simulation check; 2 pre-print/state failure;
 3 unknown print outcome; 64 invalid usage/unsupported hardware; 71 simulated process power cut.
 Share diagnostics.txt only; it contains fixed stages/counts, no credentials, identities or photos."""

@@ -75,7 +75,7 @@ Version **0.4.3** fixes native error capture: the 0.4.2 printer report stopped a
 1. Open [Actions → Headless bridge](https://github.com/YoungTeurus/pocket-photo-bridge/actions/workflows/bridge.yml) and a successful run for this implementation.
 2. Download `pocket-photo-bridge-windows-x64-0.5.0` and extract GitHub's outer ZIP.
 3. Extract the inner `PocketPhotoBridge-0.5.0-windows-x64.zip`, keep its complete folder together, then double-click **PocketPhotoBridge.exe** for the protocol suite or **WindowsServiceSimulation.cmd** for the automatic service and setup page.
-4. Expect `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=14`. Send back `%LOCALAPPDATA%\PocketPhotoBridge\simulation\diagnostics.txt` if a check fails; it contains fixed stages/counts and no identities, tokens, fingerprints or photo bytes.
+4. Expect `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=15`. Send back `%LOCALAPPDATA%\PocketPhotoBridge\simulation\diagnostics.txt` if a check fails; it contains fixed stages/counts and no identities, tokens, fingerprints or photo bytes.
 
 The package contains the EXE **and a bundled Java runtime**, including Java desktop imaging. Explicit `--simulate`, `--simulate-all`, `--simulate-failure=<scenario>` and `--help` commands also work in PowerShell. Repeating an ordinary simulation on the same state suppresses its already-consumed selection. Manual acknowledgement clears uncertainty only and never replays its photo. A known rejected submission is conservatively suppressed too; intentional reprinting is outside this milestone.
 

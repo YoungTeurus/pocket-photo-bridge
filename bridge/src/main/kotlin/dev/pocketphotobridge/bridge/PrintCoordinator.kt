@@ -115,6 +115,7 @@ class PrintCoordinator(private val camera: CameraWifiConnector, private val prin
 
     companion object {
         private val PROGRESS = setOf(PrinterStage.PREFLIGHT, PrinterStage.JOB_RESERVED, PrinterStage.UPLOAD,
-            PrinterStage.JOB_CONFIRMED, PrinterStage.PRINT_FINISHED, PrinterStage.OUTCOME_UNKNOWN, PrinterStage.REJECTED)
+            PrinterStage.JOB_CONFIRMED, PrinterStage.PRINT_FINISHED, PrinterStage.OUTCOME_UNKNOWN, PrinterStage.REJECTED,
+            PrinterStage.SUBMIT_REFUSED)
     }
 }

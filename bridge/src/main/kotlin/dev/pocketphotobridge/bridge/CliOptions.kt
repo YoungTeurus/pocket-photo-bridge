@@ -12,7 +12,7 @@ enum class SimulationScenario(val option: String) {
     PRINTER_BUSY("printer-busy"), DROPPED_AFTER_SUBMIT("dropped-after-submit"),
     UNCERTAIN_COMPLETION("uncertain-completion"), DUPLICATE_TRIGGER("duplicate-trigger"),
     DUPLICATE_PHOTO("duplicate-photo"), RESTART("restart"), MANUAL_RECOVERY("manual-recovery"),
-    POWER_CUT("power-cut");
+    POWER_CUT("power-cut"), REFUSED_SUBMIT("refused-submit");
 
     companion object {
         fun fromOption(value: String): SimulationScenario = entries.singleOrNull { it.option == value }

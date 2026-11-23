@@ -52,4 +52,14 @@ class SimulationRunnerTest {
         assertEquals(1, result.submissions); assertEquals(0, result.prints)
         assertTrue(result.verified)
     }
+
+    @Test fun refusedSubmissionScenarioReportsBusyAndPrintsNothing() = root { root ->
+        val lines = mutableListOf<String>()
+        val result = SimulationRunner.run(SimulationScenario.REFUSED_SUBMIT, root, false, lines::add)
+        assertEquals(BridgeOutcome.PRINTER_FAILED, result.outcome)
+        assertEquals("BUSY", result.category)
+        assertEquals(0, result.submissions); assertEquals(0, result.prints)
+        assertTrue(lines.contains("PRINTER_SUBMIT_REFUSED code=8006"))
+        assertTrue(result.verified)
+    }
 }

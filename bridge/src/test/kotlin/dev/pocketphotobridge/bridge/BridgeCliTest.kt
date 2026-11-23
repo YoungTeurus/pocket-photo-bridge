@@ -60,9 +60,9 @@ class BridgeCliTest {
 
     @Test fun explorerDefaultAndExplicitSuiteProduceCheckedSuccessAndPermitRepeatRuns() = root { directory ->
         val first = run(directory)
-        assertEquals(0, first.first); assertTrue(first.second.contains("SIMULATION_SUITE_PASS checks=14"))
+        assertEquals(0, first.first); assertTrue(first.second.contains("SIMULATION_SUITE_PASS checks=15"))
         val second = run(directory, "--simulate-all")
-        assertEquals(0, second.first); assertTrue(second.second.contains("SIMULATION_SUITE_PASS checks=14"))
+        assertEquals(0, second.first); assertTrue(second.second.contains("SIMULATION_SUITE_PASS checks=15"))
     }
 
     @Test fun arbitraryArgumentAndDamagedStateNeverLeakExceptionMessagesOrResetGuard() = root { directory ->

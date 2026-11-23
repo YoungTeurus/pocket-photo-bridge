@@ -75,7 +75,7 @@ run_case duplicate 0 --simulate "--state-dir=$normal_state"
 require_line duplicate '^SIMULATED_PRINTS count=0$'
 run_case crop 0 --simulate --crop "--state-dir=$work/state with spaces/crop"
 require_line crop '^SIMULATED_PRINTS count=1$'
-for scenario in missing-ssid camera-offline camera-timeout no-selected-jpeg interrupted-transfer printer-offline printer-busy; do
+for scenario in missing-ssid camera-offline camera-timeout no-selected-jpeg interrupted-transfer printer-offline printer-busy refused-submit; do
     run_case "$scenario" 2 "--simulate-failure=$scenario" "--state-dir=$work/state with spaces/$scenario"
     require_line "$scenario" '^SIMULATED_PRINTS count=0$'
 done
