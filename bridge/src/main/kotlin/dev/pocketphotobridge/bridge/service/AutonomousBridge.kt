@@ -44,6 +44,12 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             journal.resolve(reservation)
             journalHash = readJournalHash()
         }
+        // Only this unattended service retries a busy refusal; the journal's own guard keeps suppressing it.
+        override fun release(reservation: String) {
+            checkJournalDisk()
+            journal.withdraw(reservation)
+            journalHash = readJournalHash()
+        }
         override fun acknowledgeCheckedPrinter() {
             checkJournalDisk()
             journal.acknowledgeCheckedPrinter()
@@ -149,6 +155,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             printer.connect().use { transport ->
                 val progress: (PrinterDiagnostic) -> Unit = { diagnostic ->
                     if (diagnostic.stage in PROGRESS) emit("PRINTER_${diagnostic.stage.name}")
+                    if (diagnostic.stage == PrinterStage.SUBMIT_REFUSED) emit(diagnostic.safeText())
                     if (diagnostic.stage == PrinterStage.JOB_RESERVED) {
                         attempts.release(keep = true)
                         result(ServiceState.PRINTING)

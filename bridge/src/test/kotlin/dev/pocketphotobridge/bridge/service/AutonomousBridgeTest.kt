@@ -219,6 +219,27 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun busyRefusalOfTheJobKeepsThePhotoUntilAReadyPrinterPrintsItOnce() = root { state ->
+        val refusing = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT)
+        val logs = mutableListOf<String>()
+        bridge(state, printer = refusing, report = logs::add).use {
+            it.capture(SelectionTrigger("selected"))
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext())
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.snapshot())
+            assertEquals(1, refusing.refusals); assertEquals(0, refusing.submissions)
+        }
+        assertEquals(1, logs.count { it == "PRINTER_SUBMIT_REFUSED code=8006" })
+        assertEquals(2, imageFiles(state).size)
+        val ready = SimulatedPrinter()
+        bridge(state, printer = ready).use {
+            assertEquals(1, it.snapshot().queued)
+            assertEquals(ServiceState.PRINTED, it.printNext().state)
+            assertEquals("DUPLICATE_SUPPRESSED", it.capture(SelectionTrigger("again")).category)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0), it.printNext())
+            assertEquals(1, ready.submissions); assertEquals(1, ready.completedJobs)
+        }
+    }
+
     @Test fun radioFailuresKeepTheirOwnCategoryInsteadOfIoError() = root { state ->
         val logs = mutableListOf<String>()
         val camera = CameraWifiConnector { throw LinuxRadioFailure(LinuxRadioFailureCode.CAMERA_ROUTE_UNSAFE) }

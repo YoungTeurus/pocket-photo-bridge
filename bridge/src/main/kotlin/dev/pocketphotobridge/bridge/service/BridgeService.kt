@@ -328,9 +328,10 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 pair.size == 2 && seen.add(pair[0]) && when (pair[0]) {
                     "category" -> pair[1] in CATEGORIES
                     "reason" -> pair[1] in setOf("OK", "FAILED", "PENDING")
-                    "count", "queued", "native_error", "nm_exit", "nm_state", "nm_reason" -> pair[1].matches(Regex("[0-9]{1,8}")) &&
+                    "count", "queued", "code", "native_error", "nm_exit", "nm_state", "nm_reason" -> pair[1].matches(Regex("[0-9]{1,8}")) &&
                         (pair[1].toLongOrNull() ?: Long.MAX_VALUE) <= when (pair[0]) {
-                            "queued" -> 16; "native_error" -> 4095; "nm_exit" -> 255; "nm_state", "nm_reason" -> 1000; else -> 64L * 1024 * 1024 }
+                            "queued" -> 16; "code" -> dev.pocketphotobridge.printer.PrinterSession.MAX_CODE; "native_error" -> 4095; "nm_exit" -> 255
+                            "nm_state", "nm_reason" -> 1000; else -> 64L * 1024 * 1024 }
                     else -> false
                 }
             }

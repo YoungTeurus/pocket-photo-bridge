@@ -17,7 +17,7 @@ import javax.imageio.plugins.jpeg.JPEGHuffmanTable
 
 /** Public synthetic fixture key. Never use this for an actual printer. */
 const val SIMULATION_TOKEN = "000102030405060708090a0b"
-enum class PrinterFault { NONE, OFFLINE, BUSY, DROP_AFTER_SUBMIT, NEVER_FINISH, POWER_CUT }
+enum class PrinterFault { NONE, OFFLINE, BUSY, DROP_AFTER_SUBMIT, NEVER_FINISH, POWER_CUT, REFUSE_SUBMIT }
 class SimulatedPowerLoss : Error("SIMULATED_POWER_LOSS")
 
 class SimulationClock {
@@ -38,6 +38,9 @@ class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE,
     var completedJobs: Int = 0
         private set
     var uploadedFrames: Int = 0
+        private set
+    /** print_job requests answered with the busy error; they create no job. */
+    var refusals: Int = 0
         private set
     private var uploaded: ByteArray? = null
     val uploadedJpeg: ByteArray? get() = uploaded?.copyOf()
@@ -122,6 +125,11 @@ class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE,
                         number(values["job_type"]) == 0L)
                     val size = number(values["file_size"])
                     requireProtocol(size in 16..PrinterSession.MAX_JPEG_BYTES.toLong())
+                    if (fault == PrinterFault.REFUSE_SUBMIT) {
+                        cleaned = false
+                        refusals++
+                        return enqueue(id, "{\"id\":$id,\"error\":{\"code\":${PrinterSession.BUSY_CODE}}}")
+                    }
                     job = Job(nextJobId++, size.toInt())
                     cleaned = false
                     submissions++
