@@ -86,9 +86,10 @@ restarts the service every 30 seconds without a start limit, and setup refuses
 an interface name that is not a Wi-Fi interface on the board (see the deployment instructions,
 which describe the diagnostics). A state error during operation is answered by
 reopening the saved state from disk, once per error and at most three times per
-service run; if that fails, or the state cannot be opened when setup switches
-into operation, the bridge stays blocked with `STATE_ERROR` and the process
-keeps running instead of exiting into a restart loop. Stopping the
+service run (a state that cannot be opened when setup switches into operation
+counts as one such error); if that fails, the bridge stays blocked with
+`STATE_ERROR` and the process keeps running instead of exiting into a restart
+loop. Stopping the
 service records the stop and takes down the hotspot or camera connection it owns
 before exiting, waiting at most 30 seconds, within the unit's 45-second stop
 timeout. The state root is

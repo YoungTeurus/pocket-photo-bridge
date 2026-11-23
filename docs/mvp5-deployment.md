@@ -193,7 +193,8 @@ three reopens have been used, the bridge stays blocked with `STATE_ERROR` and
 the service keeps running without exiting, so systemd does not restart it into
 a loop through setup. The switch from setup into operation also opens the state
 again; if that fails, it logs the same `reason=FAILED` line with the count so
-far and the bridge stays blocked in the same way. A state error caused by a
+far, and operation then treats it as a new state error with one reopen of its
+own, within the three. A state error caused by a
 stop is not reopened. Because the
 page is unreachable during operation, a bridge that stops printing needs a
 restart: `sudo systemctl restart pocket-photo-bridge.service` keeps waiting

@@ -122,8 +122,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 // The setup listener closes before Linux switches the exclusive radio.
                 if (!devices.simulation) { server?.close(); server = null }
                 devices.stopSetup()
-                // Not counted as a reopen; a failure leaves the stand-in, so the run stays up instead of looping through setup.
-                synchronized(bridgeLock) { reopen(bridge.snapshot().queued)?.let { reportReopen(it) } }
+                // Routine, so not counted; a failure leaves a stand-in that operation reopens once, and the run stays up either way.
+                synchronized(bridgeLock) { reopen(bridge.snapshot().queued, retry = true)?.let { reportReopen(it) } }
                 diagnostics.emit("SERVICE_OPERATION")
             }
             override fun capture(trigger: SelectionTrigger) = step { it.capture(trigger) }.captureStep
@@ -145,11 +145,12 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
 
     /**
      * A state error in operation gets one reopen, which re-verifies the state from disk. A failed reopen leaves a stand-in
-     * that reports the state error, so that occurrence gets no other. Never an exit: the unit's restart would loop through setup.
+     * that reports the state error, so that occurrence gets no other; one left by the switch into operation is a new occurrence.
+     * Never an exit: the unit's restart would loop through setup.
      */
     private fun step(action: (ServiceBridge) -> ServiceSnapshot): ServiceSnapshot = synchronized(bridgeLock) {
         val outcome = action(bridge)
-        if (outcome.state != ServiceState.STATE_ERROR || bridge is StateErrorBridge || reopens >= MAX_STATE_REOPENS) return outcome
+        if (outcome.state != ServiceState.STATE_ERROR || (bridge as? StateErrorBridge)?.retry == false || reopens >= MAX_STATE_REOPENS) return outcome
         // A stop's interrupt can surface as a state error; the stop is not storage damage and must not wait on a reopen.
         if (!running.get() || Thread.currentThread().isInterrupted) return outcome
         reopens++
@@ -159,14 +160,14 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     }
 
     /** Closes the bridge and opens it again from disk, under [bridgeLock]; a failure leaves the stand-in and is returned. */
-    private fun reopen(queued: Int): Exception? {
+    private fun reopen(queued: Int, retry: Boolean = false): Exception? {
         try { bridge.close() } catch (_: Exception) { }
         return try {
             bridge = openBridge().also { reopened ->
                 if (reopened.snapshot().state == ServiceState.STATE_ERROR) { reopened.close(); throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR) }
             }
             null
-        } catch (failure: Exception) { bridge = StateErrorBridge(queued); failure }
+        } catch (failure: Exception) { bridge = StateErrorBridge(queued, retry); failure }
     }
     private fun reportReopen(failure: Exception) =
         diagnostics.emit("SERVICE_STATE_REOPENED reason=FAILED category=${BridgeService.category(failure)} count=$reopens")
@@ -307,8 +308,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     }
 }
 
-/** Stands in after a failed reopen: reports the state error and touches no storage. */
-private class StateErrorBridge(queued: Int) : ServiceBridge {
+/** Stands in after a failed reopen: reports the state error and touches no storage; [retry] if operation may reopen it once. */
+private class StateErrorBridge(queued: Int, val retry: Boolean) : ServiceBridge {
     private val error = ServiceSnapshot(ServiceState.STATE_ERROR, queued, "PERSISTENCE_ERROR")
     override fun capture(trigger: SelectionTrigger) = error
     override fun printNext() = error
