@@ -630,6 +630,30 @@ class AutonomousBridgeTest {
         assertTrue(diagnostics.events().size < 100)
     }
 
+    @Test fun aRefusalAfterABusyPreflightIsReportedOnceAndItsRepeatsCollapse() = root { state ->
+        val diagnostics = diagnostics(state)
+        var printer = SimulatedPrinter(PrinterFault.BUSY)
+        bridge(state, printer = PrinterConnector { printer.connect() }, report = diagnostics::emit, attempts = diagnostics).use {
+            it.capture(SelectionTrigger("selected"))
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext())
+            printer = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT)
+            repeat(20) { _ -> assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext()) }
+            assertEquals(20, printer.refusals)
+        }
+        assertEquals(1, diagnostics.events().count { it.endsWith(" PRINTER_SUBMIT_REFUSED code=8006") })
+        assertTrue(diagnostics.events().none { "REDACTED" in it })
+    }
+
+    @Test fun reconciliationReportsHowManyQueuedPhotosItRemoved() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, printer = SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT), report = diagnostics::emit).use {
+            it.capture(SelectionTrigger("first"))
+            assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0), it.acknowledgeCheckedPrinter())
+        }
+        assertEquals(1, diagnostics.events().count { it.endsWith(" BRIDGE_QUEUE_RECONCILED count=1") })
+    }
+
     @Test fun diagnosticsUseOnlyFixedCategoriesAndCollapsePrintingPolls() = root { state ->
         val logs = mutableListOf<String>()
         val camera = CameraWifiConnector { throw IOException("private camera password and address") }

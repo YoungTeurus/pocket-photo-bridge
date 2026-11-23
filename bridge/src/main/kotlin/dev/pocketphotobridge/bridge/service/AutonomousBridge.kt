@@ -60,6 +60,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var failed = false
     private var current = ServiceSnapshot(ServiceState.WAITING_CAMERA, queue.size)
     private var retries = 0
+    private var lastRefusal: Long? = null
 
     init {
         var opened: FileBridgeJournal? = null
@@ -141,6 +142,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     @Synchronized fun printNext(): ServiceSnapshot {
         val previous = current
         val retrying = previous.state == ServiceState.WAITING_PRINTER && previous.category != null
+        var refusal: Long? = null
         try {
             checkState()
             if (journal.unresolved) return result(ServiceState.NEEDS_ATTENTION, "UNRESOLVED_JOB")
@@ -155,7 +157,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             printer.connect().use { transport ->
                 val progress: (PrinterDiagnostic) -> Unit = { diagnostic ->
                     if (diagnostic.stage in PROGRESS) emit("PRINTER_${diagnostic.stage.name}")
-                    if (diagnostic.stage == PrinterStage.SUBMIT_REFUSED) emit(diagnostic.safeText())
+                    if (diagnostic.stage == PrinterStage.SUBMIT_REFUSED) { refusal = diagnostic.code; emit(diagnostic.safeText()) }
                     if (diagnostic.stage == PrinterStage.JOB_RESERVED) {
                         attempts.release(keep = true)
                         result(ServiceState.PRINTING)
@@ -172,7 +174,9 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         } catch (failure: Exception) {
             if (failure is InterruptedException) Thread.currentThread().interrupt()
             val outcome = recover(failure, ServiceState.WAITING_PRINTER)
-            val repeated = retrying && outcome == previous
+            // A refusal is news after a busy preflight with the same outcome, but not after the same refusal.
+            val repeated = retrying && outcome == previous && refusal == lastRefusal
+            lastRefusal = refusal
             attempts.release(keep = !repeated)
             retries = if (repeated) retries + 1 else 0
             // Doubling intervals keep a day of retries to a few dozen lines.
@@ -228,7 +232,10 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         return DurableCaptureQueue.fingerprint(snapshot)
     }
     private fun reconcile() {
-        if (!journal.unresolved) queue.entries.filter { journal.wasSubmitted(it.fingerprint) }.forEach(queue::remove)
+        if (journal.unresolved) return
+        val submitted = queue.entries.filter { journal.wasSubmitted(it.fingerprint) }
+        submitted.forEach(queue::remove)
+        if (submitted.isNotEmpty()) emit("BRIDGE_QUEUE_RECONCILED count=${submitted.size}")
     }
     private fun baseState() = when {
         journal.unresolved -> ServiceState.NEEDS_ATTENTION
