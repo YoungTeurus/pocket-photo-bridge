@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import dev.pocketphotobridge.bridge.BridgeFailureCode
 import dev.pocketphotobridge.bridge.linux.LinuxRadioFailureCode
+import dev.pocketphotobridge.bridge.service.BlockedReason
 import dev.pocketphotobridge.bridge.service.ServiceDiagnostics
 import dev.pocketphotobridge.printer.PrinterFailureCode
 import dev.pocketphotobridge.sony.Failure
@@ -25,6 +26,8 @@ interface SetupBackend {
     fun configuration(): ServiceConfiguration? = null
     fun diagnostics(): Map<String, Any> = status()
     fun saveConfig(config: ServiceConfiguration)
+    /** Answered by the device layer: a saved interface the board lacks would stop every later setup hotspot. */
+    fun wifiInterfaceExists(name: String): Boolean
     fun acknowledgeCheckedPrinter()
     fun startOperation()
     fun staySetup()
@@ -258,14 +261,17 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         val config = ServiceConfiguration(form["cameraSsid"].orEmpty(), password, form["printerAddress"].orEmpty(), token,
             form["wifiInterface"] ?: "wlan0", form["autoPrintEnabled"] == "on", form["crop"] == "on",
             form["keepQueueAcrossBoots"] == "on")
+        if (!backend.wifiInterfaceExists(config.wifiInterface)) reject(400, "WIFI_INTERFACE_NOT_FOUND")
         backend.saveConfig(config)
     }
 
     private fun dashboard(session: Session): String {
         val status = safeStatus(backend.status())
         val config = backend.configuration()
-        val printers = safePrinters()
-        val devices = if (printers.isEmpty()) "<p>No paired printers found. Enter the Bluetooth address from your printer.</p>"
+        // A hung or missing Bluetooth service must not cost the owner the page and its form tokens.
+        val printers = try { safePrinters() } catch (_: Exception) { null }
+        val devices = if (printers == null) "<p>The paired printer list is unavailable. Enter the printer's Bluetooth address by hand.</p>"
+            else if (printers.isEmpty()) "<p>No paired printers found. Enter the Bluetooth address from your printer.</p>"
             else printers.joinToString("") { printer -> "<li>${escape(printer.name)} — ${escape(printer.address)}</li>" }
         val simulation = if (address.address.isLoopbackAddress && status["simulation"] == true) """
             <section><h2>Simulation controls</h2><p>These controls use synthetic devices and never print paper.</p>
@@ -275,7 +281,9 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         """.trimIndent() else ""
         return shell("Bridge setup", """
             <h1>Pocket Photo Bridge</h1><p>Local setup is open. Authenticated interactions keep this setup window open.</p>
-            <section><h2>Status</h2><dl>${status.entries.joinToString("") { "<dt>${escape(it.key)}</dt><dd>${escape(it.value.toString())}</dd>" }}</dl></section>
+            <section><h2>Status</h2>${BLOCKED_SENTENCES[status["blockedReason"]]?.let { "<p><strong>${escape(it)}</strong></p>" } ?: ""}<dl>${status.entries.joinToString("") { "<dt>${escape(it.key)}</dt><dd>${escape(it.value.toString())}</dd>" }}</dl>
+            ${status["discardedAtBoot"]?.let { "<p>Waiting photos discarded at this boot: $it</p>" } ?: ""}
+            <p>With Keep waiting photos across power cycles off, every reboot discards photos still waiting for the printer; send them again from the camera.</p></section>
             <section><h2>Camera and printer</h2><form action="/config" method="post">${csrfField(session)}
             <label>Camera Wi-Fi name (SSID)<input name="cameraSsid" value="${escape(config?.cameraSsid.orEmpty())}" required maxlength="32" autocomplete="off"></label>
             <label>Camera Wi-Fi password<input type="password" name="cameraPassword" autocomplete="new-password" maxlength="64" placeholder="${if (config == null) "Enter camera password" else "Leave blank to keep saved password"}"></label>
@@ -311,7 +319,8 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
             val value = raw[key]
             if (value is String && value in STATUS_VALUES) put(key, value)
         }
-        for (key in listOf("queued", "pending", "completed", "captured", "printed", "prints", "queueCount", "queuedCount", "submittedCount", "unknownCount", "retainedBytes")) {
+        (raw["blockedReason"] as? String)?.takeIf(BLOCKED_SENTENCES::containsKey)?.let { put("blockedReason", it) }
+        for (key in listOf("queued", "pending", "completed", "captured", "printed", "prints", "queueCount", "queuedCount", "submittedCount", "unknownCount", "retainedBytes", "discardedAtBoot")) {
             val value = raw[key]
             if (value is Int && value in 0..1_000_000) put(key, value)
             else if (value is Long && value in 0..1_000_000_000_000L) put(key, value)
@@ -375,6 +384,9 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
 
     override fun close() {
         server.stop(0)
+        // A request already in the backend finishes first: an interrupt would close the file channel of its journal write.
+        executor.shutdown()
+        try { executor.awaitTermination(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         executor.shutdownNow()
         sessions.clear()
         logins.clear()
@@ -382,9 +394,17 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
 
     companion object {
         private const val MAX_BODY = 8192
+        /** Longest wait for requests in progress when the page closes; well within the service's stop wait. */
+        private const val CLOSE_WAIT_MS = 2_000L
         private const val LOGIN_COOKIE = "setupLogin"
         private const val SESSION_COOKIE = "setupSession"
         private val SIMULATION_ACTIONS = listOf("select-photo", "duplicate-photo", "printer-on", "printer-off", "printer-busy", "printer-ready", "interrupted-download", "uncertain-print")
+        /** What the owner reads for each reason; the reason travels only as its fixed code. */
+        private val BLOCKED_SENTENCES = mapOf(
+            BlockedReason.UNRESOLVED_PRINT to "The bridge is not accepting or printing photos because the last print may or may not have come out. Check the printer and its paper output, then acknowledge below.",
+            BlockedReason.QUEUE_FULL to "The bridge is not accepting new photos because the waiting queue is full. Switch the printer on and start operation so the waiting photos print, then send new photos.",
+            BlockedReason.STATE_ERROR to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then, with automatic printing enabled and saved, choose Start operation: the bridge reads its state again. Otherwise, or if photos still do not print, restart the bridge; with Keep waiting photos across power cycles off, a power cycle discards waiting photos, while restarting only the service keeps them. Do not delete its state files.",
+        ).mapKeys { it.key.name }
         private val SERVICE_STATES = setOf("WAITING_CAMERA", "RECEIVING", "QUEUED", "WAITING_PRINTER", "PRINTING", "PRINTED", "NEEDS_ATTENTION", "STATE_ERROR", "PAIRING")
         /** The one value that is neither numeric nor an enum: version, plus sign, hexadecimal commit or dev. */
         private val BUILD = Regex(dev.pocketphotobridge.bridge.BridgeCli.BUILD_PATTERN)

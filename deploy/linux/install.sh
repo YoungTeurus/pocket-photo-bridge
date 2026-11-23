@@ -126,10 +126,9 @@ if [[ -f "/etc/systemd/system/$unit" ]]; then
     cp -- "/etc/systemd/system/$unit" "$previous_unit"
 fi
 if systemctl is-enabled --quiet "$unit"; then was_enabled=true; fi
-if systemctl is-active --quiet "$unit"; then
-    was_active=true
-    systemctl stop "$unit"
-fi
+# A unit waiting to restart after a failed run is activating, not active; stopping it also cancels that restart.
+case $(systemctl show -p ActiveState --value "$unit") in active|activating|reloading) was_active=true ;; esac
+if [[ $was_active == true ]]; then systemctl stop "$unit"; fi
 "$release/bin/bridge" --make-bootstrap "--state-dir=$state"
 unit_installed=true
 install -o root -g root -m 0644 "$release/deploy/linux/pocket-photo-bridge.service" "/etc/systemd/system/$unit"

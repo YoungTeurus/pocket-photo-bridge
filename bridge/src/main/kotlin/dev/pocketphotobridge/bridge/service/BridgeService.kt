@@ -6,12 +6,15 @@ import dev.pocketphotobridge.bridge.linux.*
 import dev.pocketphotobridge.bridge.setup.*
 import dev.pocketphotobridge.bridge.simulation.SIMULATION_TOKEN
 import java.io.PrintStream
+import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -102,10 +105,14 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         devices.pairPrinter(address)
         printerCache.set(devices.printers())
     }, diagnostics::emit)
-    private var bridge: AutonomousBridge
+    private var bridge: ServiceBridge
+    /** Counted per process run: a state error never ends the process, so it cannot restart and reset the count; per boot would need a new stored marker. */
+    private var reopens = 0
     private var server: SetupServer? = null
     private val loop: ServiceLoop
     private var closed = false
+    /** Set before the page closes: a request it let through must not reach the bridge reopened or closed after it. */
+    @Volatile private var pageClosed = false
 
     init {
         if (devices is SimulatedServiceDevices && configuration.get() == null) {
@@ -115,13 +122,19 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         loop = ServiceLoop(policy, ::monotonicNow, object : ServiceLoopActions {
             override fun enterOperation() {
                 // The setup listener closes before Linux switches the exclusive radio.
-                if (!devices.simulation) { server?.close(); server = null }
+                if (!devices.simulation) {
+                    // Under the lock, so no pairing or save starts after it; one that slipped in after the tick's check is cancelled.
+                    synchronized(bridgeLock) { pageClosed = true }
+                    server?.close(); server = null
+                    pairing.close()
+                }
                 devices.stopSetup()
-                synchronized(bridgeLock) { bridge.close(); bridge = openBridge() }
+                // Routine, so not counted; a failure leaves a stand-in that operation reopens once, and the run stays up either way.
+                synchronized(bridgeLock) { reopen(bridge.snapshot().queued, retry = true)?.let { reportReopen(it) } }
                 diagnostics.emit("SERVICE_OPERATION")
             }
-            override fun capture(trigger: SelectionTrigger) = synchronized(bridgeLock) { bridge.capture(trigger) }.captureStep
-            override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printStep
+            override fun capture(trigger: SelectionTrigger) = step { it.capture(trigger) }.captureStep
+            override fun printNext() = step { it.printNext() }.printStep
             override fun cameraPresence(scan: Result<Boolean>) = diagnostics.emit(scan.fold(
                 { if (it) "SERVICE_CAMERA_PRESENT" else "SERVICE_CAMERA_ABSENT" },
                 { "SERVICE_CAMERA_WAIT category=${BridgeService.category(it as Exception)}" }))
@@ -137,70 +150,185 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             bootId?.let { bridge.beginBoot(it, configuration.get()?.keepQueueAcrossBoots == true) }
         }
 
+    /**
+     * A state error in operation gets one reopen, which re-verifies the state from disk. A failed reopen leaves a stand-in
+     * that reports the state error, so that occurrence gets no other; one left by the switch into operation is a new occurrence.
+     * Never an exit: the unit's restart would loop through setup.
+     */
+    private fun step(action: (ServiceBridge) -> ServiceSnapshot): ServiceSnapshot = synchronized(bridgeLock) {
+        val outcome = action(bridge)
+        if (outcome.state != ServiceState.STATE_ERROR || (bridge as? StateErrorBridge)?.retry == false || reopens >= MAX_STATE_REOPENS) return outcome
+        // A stop's interrupt can surface as a state error; the stop is not storage damage and must not wait on a reopen.
+        if (!running.get() || Thread.currentThread().isInterrupted) return outcome
+        reopens++
+        val failure = reopen(outcome.queued)
+        if (failure == null) diagnostics.emit("SERVICE_STATE_REOPENED reason=OK count=$reopens") else reportReopen(failure)
+        outcome
+    }
+
+    /** Closes the bridge and opens it again from disk, under [bridgeLock]; a failure leaves the stand-in and is returned. */
+    private fun reopen(queued: Int, retry: Boolean = false): Exception? {
+        try { bridge.close() } catch (_: Exception) { }
+        return try {
+            bridge = openBridge().also { reopened ->
+                if (reopened.snapshot().state == ServiceState.STATE_ERROR) { reopened.close(); throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR) }
+            }
+            null
+        } catch (failure: Exception) { bridge = StateErrorBridge(queued, retry); failure }
+    }
+    private fun reportReopen(failure: Exception) =
+        diagnostics.emit("SERVICE_STATE_REOPENED reason=FAILED category=${BridgeService.category(failure)} count=$reopens")
+
     fun run() {
-        val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
-        val address = devices.startSetup(credentials, initialInterface)
-        policy.beginWindow(monotonicNow())
-        server = SetupServer(address, credentials.adminPassword, backend()).also { it.start() }
-        diagnostics.emit("SERVICE_SETUP")
-        output.println("Setup page: http://${address.address.hostAddress}:${address.port}/")
-        output.println("Use the administrator password shown during installation or by --make-bootstrap in a private local terminal.")
-        val worker = Thread.currentThread()
-        val shutdown = Thread({ running.set(false); worker.interrupt() }, "bridge-shutdown")
+        worker = Thread.currentThread()
+        // Registered before the hotspot retries, so a stop at any point cleans up the radio.
+        val shutdown = Thread(::stop, "bridge-shutdown")
         Runtime.getRuntime().addShutdownHook(shutdown)
         try {
-            while (running.get() && !worker.isInterrupted) {
+            val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
+            val address = startSetup(initialInterface)
+            setupInterface = initialInterface
+            // The setup window counts from the moment the hotspot is up, however many attempts that took.
+            policy.beginWindow(monotonicNow())
+            server = SetupServer(address, credentials.adminPassword, backend()).also { it.start() }
+            diagnostics.emit("SERVICE_SETUP")
+            output.println("Setup page: http://${address.address.hostAddress}:${address.port}/")
+            output.println("Use the administrator password shown during installation or by --make-bootstrap in a private local terminal.")
+            while (running.get() && !Thread.currentThread().isInterrupted) {
                 val config = configuration.get()
                 // Enabled implies a saved configuration, so the scan always has one.
                 loop.tick(monotonicNow(), config?.autoPrintEnabled == true && !pairing.pending) { devices.cameraPresent(requireNotNull(config)) }
                 Thread.sleep(1_000)
             }
-        } catch (_: InterruptedException) { worker.interrupt() }
-        finally {
+        } catch (_: InterruptedException) {
+        } catch (failure: Exception) {
+            // A radio step refused because of the stop is part of the stop, not a failure.
+            if (running.get()) throw failure
+        } finally {
             try { Runtime.getRuntime().removeShutdownHook(shutdown) } catch (_: IllegalStateException) { }
-            diagnostics.emit("SERVICE_STOPPED")
+            // A hotspot that never came up and was not stopped ends as a failure, which the caller reports.
+            if (setupInterface != null || !running.get()) diagnostics.emit("SERVICE_STOPPED")
+            // The bounded command runner refuses an interrupted thread, so the radio cleanup runs with the flag clear.
+            val interrupted = Thread.interrupted()
+            // The page and a pairing in progress go first: pairing holds the radio, which the cleanup needs.
+            try { close() } finally {
+                try { devices.close() } catch (_: Exception) { diagnostics.emit("SERVICE_RADIO_CLEANUP_FAILED") }
+                stopped.countDown()
+                if (interrupted) Thread.currentThread().interrupt()
+            }
         }
     }
 
-    private fun backend() = object : SetupBackend {
+    @Volatile private var worker: Thread? = null
+    private val stopped = CountDownLatch(1)
+    /** What a termination signal does: the JVM halts when this returns, so it waits, bounded, for the recorded stop and radio cleanup. */
+    internal fun stop() {
+        running.set(false); worker?.interrupt()
+        stopped.await(STOP_WAIT_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /** The interface the setup hotspot is up on. Serving the page proves it, so a save keeps it even if the system check says no. */
+    @Volatile private var setupInterface: String? = null
+
+    /** A slow radio cold start is retried; the unit restarts the process after the limit. */
+    private fun startSetup(wifiInterface: String): InetSocketAddress {
+        val first = devices.now()
+        var failures = 0
+        var last: LinuxRadioFailureCode? = null
+        var unreported = false
+        fun report() { diagnostics.emit("SERVICE_SETUP_FAILED category=$last count=$failures"); unreported = false }
+        while (true) {
+            if (failures > 0) diagnostics.hold()
+            try {
+                val address = devices.startSetup(credentials, wifiInterface)
+                diagnostics.release(keep = true)
+                if (unreported) report()
+                return address
+            } catch (failure: LinuxRadioFailure) {
+                // An attempt the stop cancelled is the stop, not a failed attempt; the count so far is written first.
+                if (failure.code == LinuxRadioFailureCode.CANCELLED && !running.get()) {
+                    diagnostics.release(keep = true); if (unreported) report(); throw failure
+                }
+                // A retry's own lines stay only when it fails differently from the attempt before it.
+                val repeated = failure.code == last
+                diagnostics.release(keep = !repeated)
+                failures++; last = failure.code; unreported = true
+                // No attempt starts at or after the limit; one already running is allowed to finish.
+                val giveUp = devices.now() + SETUP_RETRY_PAUSE_MS - first >= SETUP_RETRY_LIMIT_MS
+                if (!repeated || Integer.bitCount(failures) == 1 || giveUp) report()
+                if (giveUp) throw failure
+            } finally { diagnostics.release(keep = true) }
+            // A stop usually lands in the pause, since a blocked radio fails fast; the count so far is written first.
+            try { devices.pause(SETUP_RETRY_PAUSE_MS) } catch (stop: InterruptedException) { if (unreported) report(); throw stop }
+        }
+    }
+
+    internal fun backend() = object : SetupBackend {
         override fun status(): Map<String, Any> {
-            val snapshot = synchronized(bridgeLock) { bridge.snapshot() }
+            val snapshot = synchronized(bridgeLock) { check(!pageClosed) { "SETUP_REQUIRED" }; bridge.snapshot() }
             return linkedMapOf<String, Any>("build" to BridgeCli.BUILD, "mode" to if (loop.operating) "OPERATION" else "SETUP",
                 "stage" to if (pairing.pending) "PAIRING" else snapshot.state.name, "queued" to snapshot.queued, "simulation" to devices.simulation,
-                "configured" to (configuration.get() != null), "autoPrintEnabled" to (configuration.get()?.autoPrintEnabled == true))
-                .apply { (snapshot.category ?: pairing.failure)?.let { put("category", it) }; putAll(devices.safeCounts()) }
+                "configured" to (configuration.get() != null), "autoPrintEnabled" to (configuration.get()?.autoPrintEnabled == true),
+                "blocked" to (snapshot.blocked != null))
+                .apply {
+                    (snapshot.category ?: pairing.failure)?.let { put("category", it) }
+                    snapshot.blocked?.let { put("blockedReason", it.name) }
+                    snapshot.discardedAtBoot?.let { put("discardedAtBoot", it) }
+                    putAll(devices.safeCounts())
+                }
         }
         override fun configuration() = this@ServiceRuntime.configuration.get()
         override fun diagnostics() = status() + mapOf("header" to diagnostics.header, "events" to diagnostics.events(),
             "previousRuns" to diagnostics.previousRuns())
         override fun staySetup() { if (!loop.operating) policy.holdSetup() }
-        override fun saveConfig(config: ServiceConfiguration) {
-            check(!loop.operating) { "SETUP_REQUIRED" }
+        override fun saveConfig(config: ServiceConfiguration) = synchronized(bridgeLock) {
+            check(!pageClosed && !loop.operating) { "SETUP_REQUIRED" }
             configStore.save(config); configuration.set(config)
             diagnostics.emit("SERVICE_CONFIG_SAVED")
         }
+        override fun wifiInterfaceExists(name: String) = name == setupInterface || devices.wifiInterfaceExists(name)
         override fun startOperation() {
             check(!pairing.pending) { "PAIRING_IN_PROGRESS" }
             check(requiredConfiguration().autoPrintEnabled) { "AUTOMATIC_PRINTING_DISABLED" }
             policy.requestOperation()
         }
         override fun acknowledgeCheckedPrinter() {
-            synchronized(bridgeLock) { bridge.acknowledgeCheckedPrinter() }
+            synchronized(bridgeLock) { check(!pageClosed) { "SETUP_REQUIRED" }; bridge.acknowledgeCheckedPrinter() }
         }
         override fun printers(): List<SetupPrinter> {
             if (pairing.pending) return printerCache.get()
             return devices.printers().also { printerCache.set(it) }
         }
-        override fun pairPrinter(address: String) { check(!loop.operating); pairing.start(address) }
+        override fun pairPrinter(address: String) = synchronized(bridgeLock) {
+            check(!pageClosed && !loop.operating) { "SETUP_REQUIRED" }; pairing.start(address)
+        }
         override fun simulationAction(action: String) { check(devices.simulation); devices.simulationAction(action) }
     }
 
     override fun close() {
         if (closed) return
-        closed = true; running.set(false)
+        closed = true; running.set(false); pageClosed = true
         try { server?.close() } finally { pairing.close(); synchronized(bridgeLock) { bridge.close() } }
     }
     private fun monotonicNow() = System.nanoTime() / 1_000_000
+    companion object {
+        const val SETUP_RETRY_PAUSE_MS = 5_000L
+        const val SETUP_RETRY_LIMIT_MS = 120_000L
+        /** Reopens after a runtime state error per process run, one per occurrence. */
+        const val MAX_STATE_REOPENS = 3
+        /** Longest wait for the stop's radio cleanup; below the unit's TimeoutStopSec=45 so the exit is clean, not killed. */
+        const val STOP_WAIT_MS = 30_000L
+    }
+}
+
+/** Stands in after a failed reopen: reports the state error and touches no storage; [retry] if operation may reopen it once. */
+private class StateErrorBridge(queued: Int, val retry: Boolean) : ServiceBridge {
+    private val error = ServiceSnapshot(ServiceState.STATE_ERROR, queued, "PERSISTENCE_ERROR")
+    override fun capture(trigger: SelectionTrigger) = error
+    override fun printNext() = error
+    override fun snapshot() = error
+    override fun acknowledgeCheckedPrinter() = error
+    override fun close() { }
 }
 
 /** Only fixed codes and counts enter disk/web reports. Bootstrap credentials have a separate output path. */
@@ -218,10 +346,15 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 // A power pull between write and rename leaves these behind.
                 Files.newDirectoryStream(state, "diagnostic-*.tmp").use { stale ->
                     stale.forEach { if (Files.isRegularFile(it, NOFOLLOW_LINKS)) Files.deleteIfExists(it) } }
-                Files.deleteIfExists(generation(GENERATIONS))
-                for (n in GENERATIONS - 1 downTo 1)
-                    if (Files.exists(generation(n), NOFOLLOW_LINKS)) Files.move(generation(n), generation(n + 1), ATOMIC_MOVE)
-                if (Files.exists(state.resolve(FILE), NOFOLLOW_LINKS)) Files.move(state.resolve(FILE), generation(1), ATOMIC_MOVE)
+                // Endless restarts would rotate out the run before the outage; back-to-back failed starts share generation 1.
+                val repeated = failedStart(state.resolve(FILE))
+                if (repeated == null || repeated != failedStart(generation(1))) {
+                    Files.deleteIfExists(generation(GENERATIONS))
+                    for (n in GENERATIONS - 1 downTo 1)
+                        if (Files.exists(generation(n), NOFOLLOW_LINKS)) Files.move(generation(n), generation(n + 1), ATOMIC_MOVE)
+                }
+                if (Files.exists(state.resolve(FILE), NOFOLLOW_LINKS))
+                    Files.move(state.resolve(FILE), generation(1), ATOMIC_MOVE, REPLACE_EXISTING)
             }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
         val run = (previousRuns().maxOfOrNull { HEADER.matchEntire(it["header"] as String)!!.groupValues[1].toIntOrNull() ?: 0 } ?: 0) + 1
@@ -250,6 +383,18 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         } catch (_: Exception) { null }
     }
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
+    /**
+     * What a run that only failed to start repeats, or null for a run worth keeping. Hotspot retries match whatever their
+     * category; any other failed start matches only the same failure, so the first of a different kind is kept.
+     */
+    private fun failedStart(file: Path): String? {
+        if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return null
+        // A run torn by a power cut may not be text; it is rotated like any other run.
+        val events = try { Files.readAllLines(file) } catch (_: Exception) { return null }.drop(1).map { it.substringAfter(' ') }
+        if (!events.all { it.substringBefore(' ') in RETRY_STAGES }) return null
+        return if (events.any { it.substringBefore(' ') == "SERVICE_SETUP_FAILED" }) "SERVICE_SETUP_FAILED"
+            else events.lastOrNull { it.substringBefore(' ') == "SERVICE_FAILED" }
+    }
     @Synchronized fun emit(message: String) {
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
         val at = (now() - start) / 1000
@@ -266,6 +411,8 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         lines = recent(lines + "$at $safe"); if (print) output.println(safe)
         // The board usually stops by a power pull; force only failures to spare the SD card.
         val force = " category=" in safe && NOT_FAILURES.none { " category=$it" in safe }
+        // A file channel closes on a pending interrupt, as a stop leaves on the worker and pairing threads; it is restored after.
+        val interrupted = Thread.interrupted()
         try {
             if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve(FILE))) return
             val temp = Files.createTempFile(state, "diagnostic-", ".tmp")
@@ -280,11 +427,14 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 } catch (_: Exception) { }
             } finally { Files.deleteIfExists(temp) }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
+        finally { if (interrupted) Thread.currentThread().interrupt() }
     }
     companion object {
         /** Categories that name an outcome, not a failure: a re-check finding a known photo, or a transfer kept before its acknowledgement. */
         private val NOT_FAILURES = setOf("DUPLICATE_SUPPRESSED", "CAMERA_ACK_PENDING")
         private const val FILE = "diagnostics.txt"
+        private val RETRY_STAGES = setOf("LINUX_HARDWARE_VALIDATION_PENDING", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
+            "SERVICE_SETUP_FAILED", "SERVICE_FAILED")
         /** Previous runs kept besides the current one. */
         const val GENERATIONS = 5
         /** Per-run cap in file bytes: six capped runs stay within the 64 KiB export even with Gson's escaped '='. */
@@ -314,8 +464,8 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             dev.pocketphotobridge.sony.Failure.entries.map { it.name } +
             setOf("CAMERA_ACK_PENDING", "QUEUE_FULL", "DUPLICATE_SUPPRESSED", "NATIVE_UNAVAILABLE")
         private val STAGES = setOf("DIAGNOSTIC_REDACTED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT", "LINUX_HARDWARE_VALIDATION_PENDING",
-            "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT", "SERVICE_CAMERA_PRESENT", "SERVICE_CAMERA_ABSENT",
-            "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_PAIRING_STARTED",
+            "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_SETUP_FAILED", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT", "SERVICE_CAMERA_PRESENT", "SERVICE_CAMERA_ABSENT",
+            "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_STATE_REOPENED", "SERVICE_PAIRING_STARTED",
             "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_CAMERA_CONNECTING",
             "BRIDGE_IMAGE_PREPARING", "BRIDGE_PRINTER_CONNECTING", "BRIDGE_BOOT_QUEUE_DISCARDED", "BRIDGE_QUEUE_RECONCILED", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
             "LINUX_CAMERA_ACTIVATED", "LINUX_CAMERA_ACTIVATION_FAILED", "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED", "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED") +

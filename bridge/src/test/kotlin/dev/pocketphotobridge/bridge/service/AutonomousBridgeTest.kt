@@ -22,6 +22,9 @@ class AutonomousBridgeTest {
         assertEquals(CaptureStep.BLOCKED, ServiceSnapshot(ServiceState.QUEUED, 16, "QUEUE_FULL").captureStep)
         // The photo was downloaded and prepared before the queue refused it, so this costs like a failed check.
         assertEquals(CaptureStep.RETRY, ServiceSnapshot(ServiceState.WAITING_CAMERA, 15, "QUEUE_FULL").captureStep)
+        // A capture outcome and a snapshot give the same blocked reason.
+        assertEquals(BlockedReason.QUEUE_FULL, ServiceSnapshot(ServiceState.QUEUED, 16, "QUEUE_FULL").blocked)
+        assertNull(ServiceSnapshot(ServiceState.WAITING_CAMERA, 15, "QUEUE_FULL").blocked)
     }
     private fun photo() = javaClass.getResourceAsStream("/simulation/sony-selected.jpg")!!.use { it.readBytes() }
     private fun root(test: (Path) -> Unit) {
@@ -81,15 +84,34 @@ class AutonomousBridgeTest {
     @Test fun powerRestartDiscardsWaitingPhotoAndAllowsCameraToSendItAgain() = root { state ->
         bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE)).use {
             it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            assertEquals(0, it.snapshot().discardedAtBoot)
             assertEquals(1, it.capture(SelectionTrigger("first")).queued)
             assertEquals(ServiceState.WAITING_PRINTER, it.printNext().state)
         }
         val printer = SimulatedPrinter()
         bridge(state, printer = printer).use {
             assertEquals(0, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+            assertEquals(1, it.snapshot().discardedAtBoot)
+            // A second start in the same boot discards nothing more and keeps the count of this boot.
+            it.beginBoot("00000000-0000-4000-8000-000000000002", false)
+            assertEquals(1, it.snapshot().discardedAtBoot)
             assertEquals(ServiceState.WAITING_CAMERA, it.printNext().state)
             assertEquals(0, printer.submissions)
             assertEquals(ServiceSnapshot(ServiceState.QUEUED, 1), it.capture(SelectionTrigger("first")))
+        }
+        // A bridge opened later in the same boot (a service restart, or Run) did not see the discard: no count, not a zero.
+        bridge(state).use {
+            assertNull(it.snapshot().discardedAtBoot)
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+            assertNull(it.snapshot().discardedAtBoot)
+        }
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000003", false)
+            assertEquals(1, it.snapshot().discardedAtBoot)
+        }
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000004", false)
+            assertEquals(0, it.snapshot().discardedAtBoot)
         }
     }
 
@@ -318,6 +340,7 @@ class AutonomousBridgeTest {
         val sony = SimulatedSony(photo())
         bridge(state, sony, ready).use {
             assertEquals(ServiceState.NEEDS_ATTENTION, it.snapshot().state)
+            assertEquals(BlockedReason.UNRESOLVED_PRINT, it.snapshot().blocked)
             assertEquals(ServiceState.NEEDS_ATTENTION, it.capture(SelectionTrigger("next")).state)
             assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
             assertEquals(0, sony.downloads)
@@ -407,7 +430,22 @@ class AutonomousBridgeTest {
             Files.delete(imageFiles(state).first())
             assertEquals(ServiceState.STATE_ERROR, it.printNext().state)
             assertEquals(ServiceState.STATE_ERROR, it.snapshot().state)
+            assertEquals(BlockedReason.STATE_ERROR, it.snapshot().blocked)
             assertEquals(0, printer.submissions)
+        }
+    }
+
+    @Test fun aStateErrorKeepsTheCountOfWaitingPhotosThisBootDiscarded() = root { state ->
+        bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE)).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            it.capture(SelectionTrigger("first"))
+        }
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000002", false)
+            it.capture(SelectionTrigger("again"))
+            Files.delete(imageFiles(state).first())
+            assertEquals(BlockedReason.STATE_ERROR, it.snapshot().blocked)
+            assertEquals(1, it.snapshot().discardedAtBoot)
         }
     }
 
@@ -448,9 +486,13 @@ class AutonomousBridgeTest {
         var camera = SimulatedSony(original)
         bridge(state, CameraWifiConnector { camera.connect(it) }, images = preparation).use {
             repeat(16) { index ->
+                assertTrue(it.snapshot().canAccept)
+                assertNull(it.snapshot().blocked)
                 camera = SimulatedSony(original + byteArrayOf(index.toByte(), -1, -39))
                 assertEquals(index + 1, it.capture(SelectionTrigger("$index")).queued)
             }
+            assertFalse(it.snapshot().canAccept)
+            assertEquals(BlockedReason.QUEUE_FULL, it.snapshot().blocked)
             camera = SimulatedSony(original + byteArrayOf(17, -1, -39))
             assertEquals(ServiceSnapshot(ServiceState.QUEUED, 16, "QUEUE_FULL"), it.capture(SelectionTrigger("overflow")))
             assertEquals(0, camera.downloads)

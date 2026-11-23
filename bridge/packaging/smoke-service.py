@@ -156,6 +156,7 @@ def main():
             require(json.loads(private_get("/diagnostics")).get("build") == build, "diagnostics_build_mismatch")
             require(initial["mode"] == "SETUP", "first_boot_not_setup")
             require((initial["queued"], initial["prints"], initial["completed"]) == (0, 0, 0), "fresh_service_state_not_empty")
+            require(initial.get("blocked") is False and "blockedReason" not in initial, "blocked_status_missing")
             private_get("/diagnostics")
             post("/simulate", action="printer-off")
             post("/run")

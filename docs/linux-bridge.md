@@ -1,19 +1,19 @@
-# Linux portable bridge and pilot service (0.5.0)
+# Linux portable bridge and pilot service (0.6.0)
 
-Version 0.5.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. Earlier 0.5.0 builds were installed and printed on the board; [the Linux field protocol](linux-field-protocol.md) records what was and was not physically validated.
+Version 0.6.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. Earlier 0.5.0 builds were installed and printed on the board; [the Linux field protocol](linux-field-protocol.md) records what was and was not physically validated.
 
 The Sony/printer protocols, bounded JPEG preparation and durable duplicate guard remain shared with the proven Android and separate [Windows live workflow](windows-live.md). Those Windows adapters refuse Linux. The old unsupported `--hardware` command still exits `64`; the Linux pilot runs explicitly with `--service`. Windows/Android physical success is evidence for those workflows and does not establish Linux radio success.
 
 ## Run the offline simulation
 
-Download the ARM64/AArch64 board package `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz`
+Download the ARM64/AArch64 board package `PocketPhotoBridge-0.6.0-linux-arm64.tar.gz`
 and its `.tar.gz.sha256` file from the repository's
 [Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases) (tag
-`v0.5.0`). The x64 package `pocket-photo-bridge-linux-x64-0.5.0` and untagged
+`v0.6.0`). The x64 package `pocket-photo-bridge-linux-x64-0.6.0` and untagged
 builds are **Headless bridge** Actions artifacts kept for 30 days; extract
 GitHub's outer artifact ZIP to obtain the native portable `.tar.gz` and its
 `.tar.gz.sha256` file. The bundle's `BUILD` file names `version+commit`. These packages include Java 17
-and need no system Java or JDK. The separate `pocket-photo-bridge-jvm-0.5.0`
+and need no system Java or JDK. The separate `pocket-photo-bridge-jvm-0.6.0`
 artifact remains available for developers with their own matching Java runtime.
 
 On Debian/Ubuntu, install the native font dependencies used by headless Java
@@ -22,8 +22,8 @@ desktop imaging. For the ARM64 bundle:
 ```bash
 sudo apt-get update
 sudo apt-get install --no-install-recommends libfreetype6 fontconfig
-sha256sum -c PocketPhotoBridge-0.5.0-linux-arm64.tar.gz.sha256
-tar -xzf PocketPhotoBridge-0.5.0-linux-arm64.tar.gz
+sha256sum -c PocketPhotoBridge-0.6.0-linux-arm64.tar.gz.sha256
+tar -xzf PocketPhotoBridge-0.6.0-linux-arm64.tar.gz
 cd PocketPhotoBridge
 ./runtime/bin/java -version
 ./runtime/bin/java --list-modules | grep -E '^(java.desktop|jdk.httpserver)@'
@@ -60,7 +60,7 @@ Acknowledgement keeps event/photo tombstones and clears only the uncertainty gat
 
 ## Linux autonomous pilot and hardware validation
 
-Use [0.5.0 deployment instructions](mvp5-deployment.md) for Windows SSH transfer,
+Use [0.6.0 deployment instructions](mvp5-deployment.md) for Windows SSH transfer,
 the bundled-runtime installer, private bootstrap credentials, authenticated
 setup, and normal power-order operation. The installer requires NetworkManager,
 BlueZ (including `sdptool`), `libbluetooth3`, `iproute2`, FreeType and fontconfig.
@@ -80,7 +80,20 @@ the hotspot and sign in before the board leaves setup. No joining time was
 measured; field session 1 measures power-on to operation.
 The unique SSID starts with `PocketPhoto-`, and only the setup interface
 serves `http://10.212.77.1:8080/`. The hotspot and HTTP listener stop before
-joining the camera network. Reboot to enter setup again. The state root is
+joining the camera network. Reboot to enter setup again. A hotspot that fails to
+start is retried in the process every 5 seconds for two minutes; the unit then
+restarts the service every 30 seconds without a start limit, and setup refuses
+an interface name that is not a Wi-Fi interface on the board (see the deployment instructions,
+which describe the diagnostics). A state error during operation is answered by
+reopening the saved state from disk, once per error and at most three times per
+service run (a state that cannot be opened when setup switches into operation
+counts as one such error); if that fails, the bridge stays blocked with
+`STATE_ERROR` and the process keeps running instead of exiting into a restart
+loop. Stopping the
+service records the stop and takes down the hotspot or camera connection it owns
+before exiting, waiting at most 30 seconds, within the unit's 45-second stop
+timeout; this and the hotspot's return without a power cycle are not yet
+verified on the board. The state root is
 `/var/lib/pocket-photo-bridge`, root-owned and private. Upgrades retain the queue,
 configuration, bootstrap secrets, and print-history records within the current
 boot. The setup checkbox **Keep waiting photos across power cycles** defaults

@@ -1,4 +1,4 @@
-# Pocket Photo Bridge 0.5.0: service simulation and Linux pilot
+# Pocket Photo Bridge 0.6.0: service simulation and Linux pilot
 
 The portable downloads contain the application and Java 17 runtime. You do not
 need a JDK, Gradle, Android SDK, or a compiler on Windows or the bridge board.
@@ -15,16 +15,16 @@ successful boot does not establish working Wi-Fi AP/Bluetooth support.
 
 ## Download and run the Windows simulation
 
-1. In this repository's **Actions → Headless bridge**, open a successful 0.5.0
-   run and download `pocket-photo-bridge-windows-x64-0.5.0`.
+1. In this repository's **Actions → Headless bridge**, open a successful 0.6.0
+   run and download `pocket-photo-bridge-windows-x64-0.6.0`.
 2. Extract GitHub's outer artifact ZIP. It contains
-   `PocketPhotoBridge-0.5.0-windows-x64.zip` and its `.zip.sha256` file. In
+   `PocketPhotoBridge-0.6.0-windows-x64.zip` and its `.zip.sha256` file. In
    PowerShell, compare the two SHA256 values before extracting the inner ZIP:
 
    ```powershell
-   Get-FileHash .\PocketPhotoBridge-0.5.0-windows-x64.zip -Algorithm SHA256
-   Get-Content .\PocketPhotoBridge-0.5.0-windows-x64.zip.sha256
-   Expand-Archive .\PocketPhotoBridge-0.5.0-windows-x64.zip .\bridge-0.5.0
+   Get-FileHash .\PocketPhotoBridge-0.6.0-windows-x64.zip -Algorithm SHA256
+   Get-Content .\PocketPhotoBridge-0.6.0-windows-x64.zip.sha256
+   Expand-Archive .\PocketPhotoBridge-0.6.0-windows-x64.zip .\bridge-0.6.0
    ```
 
 3. Open the extracted `PocketPhotoBridge` folder and double-click
@@ -69,27 +69,27 @@ use the authenticated setup page described below.
    A supported Wi-Fi AP interface and Bluetooth Classic adapter are required.
 2. Open this repository's
    [Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases),
-   choose the release (tag `v0.5.0` for this version) and download
-   `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz` and its `.tar.gz.sha256` file.
+   choose the release (tag `v0.6.0` for this version) and download
+   `PocketPhotoBridge-0.6.0-linux-arm64.tar.gz` and its `.tar.gz.sha256` file.
    Releases do not expire; a build from an untagged branch is still available
-   as the `pocket-photo-bridge-linux-arm64-0.5.0` artifact of a **Headless
+   as the `pocket-photo-bridge-linux-arm64-0.6.0` artifact of a **Headless
    bridge** run for 30 days (extract GitHub's outer ZIP). The checksum detects
-   transfer corruption only; the bundle's `BUILD` file (`0.5.0+<commit>`) names
+   transfer corruption only; the bundle's `BUILD` file (`0.6.0+<commit>`) names
    the source commit. The Linux x64 package is for an x64 machine; do not
    install it on ARM64.
 3. In Windows PowerShell, replace `YOUR_USER@BOARD_LAN_IP` with your board's SSH
    account and address, then copy the two files:
 
    ```powershell
-   scp .\PocketPhotoBridge-0.5.0-linux-arm64.tar.gz .\PocketPhotoBridge-0.5.0-linux-arm64.tar.gz.sha256 YOUR_USER@BOARD_LAN_IP:~/
+   scp .\PocketPhotoBridge-0.6.0-linux-arm64.tar.gz .\PocketPhotoBridge-0.6.0-linux-arm64.tar.gz.sha256 YOUR_USER@BOARD_LAN_IP:~/
    ssh -t YOUR_USER@BOARD_LAN_IP
    ```
 
 4. In that interactive SSH session, verify and install:
 
    ```bash
-   sha256sum -c PocketPhotoBridge-0.5.0-linux-arm64.tar.gz.sha256
-   tar -xzf PocketPhotoBridge-0.5.0-linux-arm64.tar.gz
+   sha256sum -c PocketPhotoBridge-0.6.0-linux-arm64.tar.gz.sha256
+   tar -xzf PocketPhotoBridge-0.6.0-linux-arm64.tar.gz
    cd PocketPhotoBridge
    sudo ./deploy/linux/install.sh
    ```
@@ -102,7 +102,7 @@ use the authenticated setup page described below.
    `dpkg-query` reports all of these packages as installed (an upgrade), it
    skips apt, so an upgrade should need no internet uplink (not yet verified on
    the board; see the upgrade steps below). It prints the installed
-   build (`0.5.0+<commit>`) and names its release directory after it.
+   build (`0.6.0+<commit>`) and names its release directory after it.
 
    The dedicated setup AP explicitly disables optional PMF (`pmf=1`) because
    the tested Orange Pi UWE5622 driver cannot initialize that mode. It remains
@@ -164,6 +164,47 @@ print reservations are always retained.
 Pairing runs in the background because BlueZ discovery and pairing can take
 about 40 seconds. Refresh the page while status shows `PAIRING`; choose Run
 after it finishes. A failed pairing reports a fixed category in diagnostics.
+If the paired-printer list cannot be read (for example Bluetooth is hung), the
+page still opens, says the list is unavailable, and accepts the printer address
+typed by hand; saving, acknowledging and Run keep working.
+
+When the bridge accepts or prints no photos, the status section says why in one
+sentence, and the status reports `blocked` with a fixed `blockedReason`:
+`UNRESOLVED_PRINT` (check the printer and its output, then acknowledge; see
+below), `QUEUE_FULL` (the waiting queue is full; start operation with the printer
+on so they print, then send new photos) or `STATE_ERROR` (the saved state
+cannot be read; download the diagnostics, then, with automatic printing
+enabled and saved, choose Run, which reads the state again; otherwise, or if
+photos still do not print, restart the bridge without deleting its state files,
+keeping in mind that with the retention setting off a power cycle discards
+waiting photos, while restarting only the service keeps them). In setup the state error stays on the page
+until Run or a restart: the state is read again only on the switch into
+operation, which Run refuses while automatic printing is off, no configuration
+is saved or a pairing is in progress. The page also shows how many waiting photos were
+discarded at this boot (`discardedAtBoot`) and always notes that with the
+retention setting off a reboot discards waiting photos. The count is known
+only to the service run that began the boot: after a service restart within
+the same boot the page shows no count, and the earlier run's diagnostics keep
+the `BRIDGE_BOOT_QUEUE_DISCARDED` line.
+
+A state error during operation, for example a failed write to a worn SD card,
+does not end printing for the rest of the boot. The service closes the bridge
+and opens it again, which checks the saved state from disk as a start does;
+duplicate prevention and an unknown print's block are kept because they live in
+that state. Each state error gets one such reopen, and a service run gets at
+most three. Each is logged as `SERVICE_STATE_REOPENED reason=OK count=<n>` or,
+when the state still cannot be read, `SERVICE_STATE_REOPENED reason=FAILED
+category=<category> count=<n>`. After a failed reopen, or a state error once
+three reopens have been used, the bridge stays blocked with `STATE_ERROR` and
+the service keeps running without exiting, so systemd does not restart it into
+a loop through setup. The switch from setup into operation also opens the state
+again; if that fails, it logs the same `reason=FAILED` line with the count so
+far, and operation then treats it as a new state error with one reopen of its
+own, within the three. A state error caused by a
+stop is not reopened. Because the
+page is unreachable during operation, a bridge that stops printing needs a
+restart: `sudo systemctl restart pocket-photo-bridge.service` keeps waiting
+photos, while a reboot with the retention setting off discards them.
 
 After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP
@@ -171,6 +212,33 @@ server stop before the board joins the camera network. Reboot to enter setup
 again. With **Keep waiting photos across power cycles** off, that reboot
 discards photos still waiting for the printer before setup opens. A single radio alternates between these modes; the setup page is
 unreachable while the bridge is connected to the camera.
+
+If the hotspot cannot start, for example because the Wi-Fi driver is still
+loading after power-on or the radio is blocked, the service tries again 5
+seconds after each failed attempt. It starts no new attempt two minutes after
+the first one (an attempt already running then may finish) and exits with
+`SERVICE_FAILED`; systemd starts it again 30 seconds later, as often as needed,
+so the hotspot appears once the radio works, without a power cycle (not yet
+verified on the board; field session 1 checks it). The setup
+window counts from the moment the hotspot is up, however long that took. Until
+then nothing prints: operation begins only after setup. A failed attempt is
+logged as `SERVICE_SETUP_FAILED category=<category> count=<n>`, where `n` is the
+number of failed attempts so far in that run; it is written after 1, 2, 4, 8 ...
+failures, whenever the category changes, and once more when the hotspot comes up,
+the run gives up or a stop arrives. `sudo systemctl stop` stops the service without a restart.
+A stop, including the one every upgrade performs, logs `SERVICE_STOPPED` and
+then takes down the setup hotspot or the camera connection the bridge owns,
+also while the hotspot is still being retried; a printer pairing in progress
+is cancelled first. The service waits at most 30
+seconds for that cleanup, within the unit's 45-second stop timeout; a cleanup
+that fails logs `SERVICE_RADIO_CLEANUP_FAILED`. That the stop leaves no
+bridge connection active is not yet verified on the board; field session 1
+checks it. A stop during a print leaves
+that print unknown, to be checked as described below.
+Setup refuses to save an interface name that is not a Wi-Fi interface on the
+board, such as a wired port, the loopback device or a USB network link
+(`WIFI_INTERFACE_NOT_FOUND`; a USB Wi-Fi adapter is a Wi-Fi interface and is accepted), and keeps the configuration saved before, because
+the hotspot itself starts on the saved interface.
 
 For normal use, power on the bridge and printer in either order, then use the
 RX100 VII's selected-photo transfer for one JPEG. The bridge durably stores the
@@ -192,7 +260,8 @@ the page's **I checked the printer** acknowledgement only after that check.
 
 Rebooting into setup discards photos still waiting for the printer when
 **Keep waiting photos across power cycles** is off; the unknown print's record
-itself is kept. The discard happens when the service starts, before setup is
+itself is kept. The setup page shows how many were discarded at this boot;
+send those again from the camera after the acknowledgement. The discard happens when the service starts, before setup is
 reachable, so switching the setting on in that setup session protects only
 later boots: check it in setup and save; it applies from the next device boot.
 With shell access over Ethernet or a serial console,
@@ -211,7 +280,7 @@ Diagnostics contain fixed stage/category/count information.
 
 Each run of the service or of a probe (`--linux-status-only`,
 `--linux-receive-only`) starts with a header line such as
-`Pocket Photo Bridge 0.5.0+1a2b3c4 | headless service run=3 uptime_s=42`: the version and build commit (`dev` for a build made without one),
+`Pocket Photo Bridge 0.6.0+1a2b3c4 | headless service run=3 uptime_s=42`: the version and build commit (`dev` for a build made without one),
 a run counter, and the kernel uptime in whole seconds when the process started
 (omitted where the kernel does not report it). Each event line starts with the
 whole seconds since that start; there is no wall-clock time, because the board
@@ -245,13 +314,20 @@ network) and NetworkManager's numeric device state and reason read right after
 it. Association and address assignment happen in the same nmcli step, so only
 these numbers tell them apart. Whether NetworkManager still holds the reason at
 that moment on the board's image is not yet confirmed; record it in the field
-protocol. `LINUX_SETUP_STOPPED` appears only when a running hotspot was stopped.
+protocol. An activation that failed, including one nmcli gave up on after its
+wait (exit 3) while NetworkManager may still be bringing it up, is taken down
+with a checked `nmcli connection down`. `LINUX_SETUP_STOPPED` appears only when
+a running hotspot was stopped or a hotspot activation failed.
 The camera transfer logs `SONY_SELECTION count=<items>` and
 `SONY_JPEG_BYTES count=<bytes>`.
 
 At start the previous run moves to `diagnostics.1.txt` and older runs shift up
 to `diagnostics.5.txt`; anything older is dropped. A probe, reboot, crash restart
-or service restart therefore no longer erases the service's history. The
+or service restart therefore no longer erases the service's history. Runs that
+failed before setup opened replace each other in `diagnostics.1.txt` when they
+failed the same way (any runs that only failed to start the hotspot count as the
+same), so a long restart loop, for example on a state a power cut damaged, keeps
+the latest of them and the runs before it. The
 download keeps the current run in `events` and adds `previousRuns`, oldest
 first, each with its `header` and `events`. Every line is checked again when it
 is served; a line that is not a known event is left out. Do not send the
@@ -310,11 +386,12 @@ upgrade over the setup hotspot without internet should also work, but this has
 not yet been verified on the board. Over the hotspot:
 
 1. Sign in to the setup page and keep interacting with it, or choose
-   **Keep setup open**; otherwise the hotspot stops 60 seconds after boot and
-   takes the SSH session with it.
+   **Keep setup open**; otherwise the hotspot stops 60 seconds after it came
+   up and takes the SSH session with it.
 2. Copy the archive and run the installer over SSH as above. Expect the SSH
    session to drop when the installer stops the service, because stopping it
-   takes the hotspot down; the installer's last lines may never appear.
+   takes the hotspot down (not yet verified on the board); the installer's last
+   lines may never appear.
 3. Rejoin the hotspot, which the new service opens again for 60 seconds, sign
    in, and check the `build` field in the setup status or Diagnostics. An
    unchanged build means the installer stopped and restored the previous

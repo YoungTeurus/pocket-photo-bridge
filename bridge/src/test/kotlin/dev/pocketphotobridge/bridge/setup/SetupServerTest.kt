@@ -23,9 +23,13 @@ class SetupServerTest {
         var stage = "SETUP"
         var pairingTask: dev.pocketphotobridge.bridge.service.PairingTask? = null
         var build: Any = "0.5.0+0123abc"
+        var blockedReason: Any? = null
+        var discardedAtBoot: Any = 0
         override fun status(): Map<String, Any> = mapOf("build" to build, "stage" to if (pairingTask?.pending == true) "PAIRING" else stage, "category" to "READY", "queued" to 2, "prints" to 3,
             "unresolved" to true, "simulation" to true, "adminPassword" to "never-disclose", "log" to "private-token",
-            "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name")
+            "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name", "blocked" to (blockedReason != null),
+            "discardedAtBoot" to discardedAtBoot) +
+            (blockedReason?.let { mapOf("blockedReason" to it) } ?: emptyMap())
         override fun configuration() = saved
         var events = listOf(
             "0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
@@ -35,10 +39,17 @@ class SetupServerTest {
         var runs: Map<String, Any> = emptyMap()
         override fun diagnostics(): Map<String, Any> = status() + mapOf("events" to events) + runs
         override fun saveConfig(config: ServiceConfiguration) { if (throwSecret) error("private-token"); saved = config }
-        override fun acknowledgeCheckedPrinter() { acknowledged++ }
+        var interfaces = setOf("wlan0")
+        override fun wifiInterfaceExists(name: String) = name in interfaces
+        var onAcknowledge: () -> Unit = { }
+        override fun acknowledgeCheckedPrinter() { onAcknowledge(); acknowledged++ }
         override fun startOperation() { run++ }
         override fun staySetup() { held++ }
-        override fun printers() = listOf(SetupPrinter("AA:BB:CC:DD:EE:FF", "<script>alert('x')</script>"))
+        var printersFail = false
+        override fun printers(): List<SetupPrinter> {
+            if (printersFail) throw IllegalStateException("bluetoothctl timed out private-token")
+            return listOf(SetupPrinter("AA:BB:CC:DD:EE:FF", "<script>alert('x')</script>"))
+        }
         override fun pairPrinter(address: String) { pairingTask?.let { it.start(address); return }; paired = address }
         override fun simulationAction(action: String) { simulated = action }
     }
@@ -216,6 +227,71 @@ class SetupServerTest {
         assertFalse(client.request("/status").body.contains("private-token"))
     }
 
+    @Test fun aFailingPrinterListStillServesTheDashboardWhoseFormsWork() = server { client, backend, _ ->
+        backend.printersFail = true
+        client.login()
+        val page = client.request("/")
+        assertEquals(200, page.code)
+        assertTrue(page.body.contains("The paired printer list is unavailable. Enter the printer's Bluetooth address by hand."))
+        assertFalse(page.body.contains("private-token"))
+        val csrf = Client.csrf(page.body)
+        val form = mapOf("csrf" to csrf, "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
+            "printerAddress" to "AA:BB:CC:DD:EE:FF", "printerToken" to "0123456789abcdef01234567", "wifiInterface" to "wlan0")
+        assertEquals(303, client.request("/config", form).code)
+        assertEquals("AA:BB:CC:DD:EE:FF", backend.saved!!.printerAddress)
+        assertEquals(303, client.request("/acknowledge", mapOf("csrf" to csrf, "checkedPrinter" to "on")).code)
+        assertEquals(1, backend.acknowledged)
+        assertEquals(303, client.request("/run", mapOf("csrf" to csrf)).code)
+        assertEquals(1, backend.run)
+    }
+
+    @Test fun eachBlockedReasonIsReportedAsAFixedCodeAndSaidInOnePlainSentence() = server { client, backend, _ ->
+        client.login()
+        val sentences = mapOf(
+            "UNRESOLVED_PRINT" to "The bridge is not accepting or printing photos because the last print may or may not have come out. Check the printer and its paper output, then acknowledge below.",
+            "QUEUE_FULL" to "The bridge is not accepting new photos because the waiting queue is full. Switch the printer on and start operation so the waiting photos print, then send new photos.",
+            "STATE_ERROR" to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then, with automatic printing enabled and saved, choose Start operation: the bridge reads its state again. Otherwise, or if photos still do not print, restart the bridge; with Keep waiting photos across power cycles off, a power cycle discards waiting photos, while restarting only the service keeps them. Do not delete its state files.")
+        fun status() = JsonParser.parseString(client.request("/status").body).asJsonObject
+        for ((reason, sentence) in sentences) {
+            backend.blockedReason = reason
+            assertEquals(reason, status()["blockedReason"].asString)
+            assertTrue(status()["blocked"].asBoolean)
+            val page = client.request("/").body
+            assertEquals(listOf(sentence), sentences.values.filter(page::contains))
+        }
+        for (unknown in listOf("private-token", "BLOCKED", 3)) {
+            backend.blockedReason = unknown
+            assertNull(status()["blockedReason"])
+            val page = client.request("/").body
+            assertEquals(emptyList<String>(), sentences.values.filter(page::contains))
+            assertFalse(page.contains("private-token"))
+        }
+        backend.blockedReason = null
+        assertFalse(status()["blocked"].asBoolean)
+        assertEquals(emptyList<String>(), sentences.values.filter(client.request("/").body::contains))
+    }
+
+    @Test fun setupCountsTheWaitingPhotosThisBootDiscardedAndAlwaysSaysARebootDiscardsThem() = server { client, backend, _ ->
+        client.login()
+        val note = "With Keep waiting photos across power cycles off, every reboot discards photos still waiting for the printer; send them again from the camera."
+        backend.discardedAtBoot = 3
+        assertEquals(3, JsonParser.parseString(client.request("/status").body).asJsonObject["discardedAtBoot"].asInt)
+        var page = client.request("/").body
+        assertTrue(page.contains("Waiting photos discarded at this boot: 3"))
+        assertTrue(page.contains(note))
+        backend.discardedAtBoot = 0
+        page = client.request("/").body
+        assertTrue(page.contains("Waiting photos discarded at this boot: 0"))
+        assertTrue(page.contains(note))
+        for (invalid in listOf(-1, 2_000_000, "3")) {
+            backend.discardedAtBoot = invalid
+            assertNull(JsonParser.parseString(client.request("/status").body).asJsonObject["discardedAtBoot"])
+            page = client.request("/").body
+            assertFalse(page.contains("Waiting photos discarded at this boot"))
+            assertTrue(page.contains(note))
+        }
+    }
+
     @Test fun savesConfigOnlyAfterExplicitOptInAndPreservesBlankSecrets() = server { client, backend, _ ->
         client.login()
         val form = mapOf("csrf" to client.csrfPage(), "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
@@ -228,6 +304,18 @@ class SetupServerTest {
         assertTrue(backend.saved!!.autoPrintEnabled)
         assertTrue(backend.saved!!.crop)
         assertFalse(client.request("/").body.contains("camera-password"))
+    }
+
+    @Test fun aWifiInterfaceTheBoardDoesNotHaveIsRejectedAndTheSavedConfigurationStays() = server { client, backend, _ ->
+        client.login()
+        val form = mapOf("csrf" to client.csrfPage(), "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
+            "printerAddress" to "AA:BB:CC:DD:EE:FF", "printerToken" to "0123456789abcdef01234567", "wifiInterface" to "wlan0")
+        assertEquals(303, client.request("/config", form).code)
+        val stored = backend.saved
+        val rejected = client.request("/config", form + mapOf("cameraSsid" to "DIRECT-other", "wifiInterface" to "wlxtypo9"))
+        assertEquals(400, rejected.code)
+        assertEquals("WIFI_INTERFACE_NOT_FOUND", rejected.body)
+        assertSame(stored, backend.saved)
     }
 
     @Test fun waitingQueueRetentionIsAnUncheckedSavedChoice() = server { client, _, _ ->
@@ -259,6 +347,24 @@ class SetupServerTest {
         val failed = client.request("/config", form + ("printerToken" to "0123456789abcdef01234567"))
         assertEquals(503, failed.code)
         assertFalse(failed.body.contains("private-token"))
+    }
+
+    @Test fun closingTheServerLetsARequestAlreadyInTheBackendFinishWithoutAnInterrupt() = server { client, backend, server ->
+        client.login()
+        val token = client.csrfPage()
+        val inside = java.util.concurrent.CountDownLatch(1)
+        val interrupted = java.util.concurrent.atomic.AtomicReference<Boolean>()
+        // An interrupt would close the file channel of a journal write the request is making.
+        backend.onAcknowledge = {
+            inside.countDown()
+            interrupted.set(try { Thread.sleep(300); false } catch (_: InterruptedException) { true })
+        }
+        val request = Thread { try { client.request("/acknowledge", mapOf("csrf" to token, "checkedPrinter" to "on")) } catch (_: Exception) { } }
+        request.start()
+        assertTrue(inside.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        server.close()
+        request.join(10_000)
+        assertEquals(false, interrupted.get())
     }
 
     @Test fun pairAcknowledgementAndSimulationRequireAuthenticatedCsrfAndFixedInputs() = server { client, backend, _ ->

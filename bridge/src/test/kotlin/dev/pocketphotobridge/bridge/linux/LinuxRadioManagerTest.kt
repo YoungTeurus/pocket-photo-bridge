@@ -260,6 +260,22 @@ class LinuxRadioManagerTest {
         assertFalse(Files.exists(files.resolve("profiles").resolve(manager.setupProfileName)))
     }
 
+    @Test fun `an activation that timed out is torn down with a checked down`() {
+        // nmcli exits 3 when --wait runs out; NetworkManager may still bring the profile up afterwards.
+        for (camera in listOf(false, true)) {
+            val files = Files.createTempDirectory("linux-up-timeout")
+            val commands = FakeCommands { args -> LinuxCommandResult(if (args.contains("up")) 3 else 0, "") }
+            val manager = LinuxRadioManager(files, "wlan0", {}, commands, files.resolve("profiles"))
+            assertThrows(LinuxRadioFailure::class.java) {
+                if (camera) manager.connectCamera("camera", "camera-password") else manager.startSetup("setup", "hotspot-password")
+            }
+            val up = commands.calls.indexOfFirst { it.contains("up") }
+            val uuid = commands.calls[up][commands.calls[up].indexOf("uuid") + 1]
+            assertTrue(commands.calls.drop(up + 1).any { it.takeLast(4) == listOf("connection", "down", "uuid", uuid) })
+            manager.close()
+        }
+    }
+
     @Test fun `startup deactivates stale radio connection before activating a new profile`() {
         val files = Files.createTempDirectory("linux-radio-test")
         val commands = FakeCommands { LinuxCommandResult(0, "") }

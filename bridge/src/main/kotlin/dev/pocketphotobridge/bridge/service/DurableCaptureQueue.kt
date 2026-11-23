@@ -165,6 +165,10 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
         } catch (_: Exception) { /* No live record references these bytes anymore. */ }
     }
 
+    /** Waiting photos discarded when this queue began the boot; null when the boot was begun earlier (a service restart within it) or never. */
+    var discardedThisBoot: Int? = null
+        private set
+
     /** The queue owner records a boot only after its discard commit has reached disk. */
     fun beginBoot(bootId: String, keepWaiting: Boolean, wasSubmitted: (String) -> Boolean): Int {
         checkOpen()
@@ -193,6 +197,7 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
             Files.move(temporary, bootFile, ATOMIC_MOVE, REPLACE_EXISTING)
             forceDirectory(root)
         } finally { Files.deleteIfExists(temporary) }
+        discardedThisBoot = discarded.size
         return discarded.size
     }
 
