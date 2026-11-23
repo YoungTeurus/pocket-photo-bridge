@@ -24,9 +24,10 @@ class ServiceRuntimeSetupRetryTest {
         var clock = 0L
         val starts = mutableListOf<Long>()
         val pauses = mutableListOf<Long>()
+        var report: (String) -> Unit = { }
         override fun startSetup(credentials: SetupCredentials, wifiInterface: String): InetSocketAddress {
             starts += clock; clock += attemptMs
-            if (starts.size <= failures) throw LinuxRadioFailure(LinuxRadioFailureCode.COMMAND_FAILED)
+            if (starts.size <= failures) { report("LINUX_SETUP_STOPPED"); throw LinuxRadioFailure(LinuxRadioFailureCode.COMMAND_FAILED) }
             return InetSocketAddress("127.0.0.1", 0)
         }
         override fun now() = clock
@@ -53,6 +54,7 @@ class ServiceRuntimeSetupRetryTest {
                 override fun println(x: String?) { super.println(x); if (x?.startsWith("Setup page:") == true) finished.countDown() }
             }
             val diagnostics = ServiceDiagnostics(state, output, radio::now, null)
+            radio.report = diagnostics::emit
             var failure: Throwable? = null
             val service = Thread {
                 try { ServiceRuntime(state, radio, diagnostics, output).use { it.run() } }
@@ -86,5 +88,15 @@ class ServiceRuntimeSetupRetryTest {
         val late = SlowRadio(failures = 100, attemptMs = 36_000)
         assertTrue(run(late).failure is LinuxRadioFailure)
         assertEquals(listOf(0L, 41_000L, 82_000L), late.starts)
+    }
+
+    @Test fun eachFailedAttemptIsCountedInTheDiagnosticsWithoutALinePerRepeat() {
+        val run = run(SlowRadio(failures = 20, attemptMs = 0))
+        assertNull(run.failure)
+        assertEquals(listOf("0 LINUX_SETUP_STOPPED", "0 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=1",
+            "5 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=2", "15 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=4",
+            "35 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=8", "75 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=16",
+            "100 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=20", "100 SERVICE_SETUP"),
+            run.events.take(8))
     }
 }
