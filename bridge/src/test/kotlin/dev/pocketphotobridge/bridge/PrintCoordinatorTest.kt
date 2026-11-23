@@ -177,16 +177,18 @@ class PrintCoordinatorTest {
         }
     }
 
-    @Test fun busyRefusedSubmissionStaysSuppressedInTheWatchedFlows() = root { directory ->
-        FileBridgeJournal(directory.resolve("state")).use { journal ->
-            val camera = Camera(photo())
-            val refusing = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT)
-            val refused = coordinator(directory, journal, camera, refusing).process(SelectionTrigger("first"))
-            assertEquals(BridgeResult(BridgeOutcome.PRINTER_FAILED, "BUSY"), refused)
-            assertEquals(1, refusing.refusals); assertFalse(journal.unresolved)
-            val ready = SimulatedPrinter()
-            assertEquals(BridgeOutcome.DUPLICATE_SUPPRESSED, coordinator(directory, journal, camera, ready).process(SelectionTrigger("fresh")).outcome)
-            assertEquals(0, ready.submissions)
+    @Test fun refusedSubmissionStaysSuppressedInTheWatchedFlowsWhateverItsCode() {
+        for ((code, category) in listOf(PrinterSession.BUSY_CODE to "BUSY", -8100L to "JOB_REJECTED")) root { directory ->
+            FileBridgeJournal(directory.resolve("state")).use { journal ->
+                val camera = Camera(photo())
+                val refusing = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT, refusalCode = code)
+                val refused = coordinator(directory, journal, camera, refusing).process(SelectionTrigger("first"))
+                assertEquals(BridgeResult(BridgeOutcome.PRINTER_FAILED, category), refused)
+                assertEquals(1, refusing.refusals); assertFalse(journal.unresolved)
+                val ready = SimulatedPrinter()
+                assertEquals(BridgeOutcome.DUPLICATE_SUPPRESSED, coordinator(directory, journal, camera, ready).process(SelectionTrigger("fresh")).outcome)
+                assertEquals(0, ready.submissions)
+            }
         }
     }
 
