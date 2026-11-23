@@ -2,11 +2,13 @@
 # Install a downloaded native Linux portable bundle; no compilation or JDK.
 set -euo pipefail
 umask 077
-version=0.5.0
 application=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 base=/opt/pocket-photo-bridge
 state=/var/lib/pocket-photo-bridge
 unit=pocket-photo-bridge.service
+packages=(network-manager wpasupplicant dnsmasq-base nftables bluez libbluetooth3 iproute2 libfreetype6 fontconfig)
+build=
+version=
 stage=
 release=
 old_target=
@@ -21,7 +23,10 @@ completed=false
 [[ -t 1 ]] || {
     printf '%s\n' 'Use an interactive terminal (Windows SSH: ssh -t). Bootstrap credentials must stay local.' >&2; exit 1;
 }
-[[ -f "$application/lib/bridge-$version.jar" && -x "$application/runtime/bin/java" ]] || {
+# The bundle's BUILD file names version+commit; the release directory and the final message use it.
+[[ -f "$application/BUILD" ]] && build=$(<"$application/BUILD")
+[[ $build =~ ^([0-9]+\.[0-9]+\.[0-9]+)\+([0-9a-f]{7,40}|dev)$ ]] && version=${BASH_REMATCH[1]}
+[[ -n $version && -f "$application/lib/bridge-$version.jar" && -x "$application/runtime/bin/java" ]] || {
     printf '%s\n' 'Run the installer from the extracted Linux portable bundle.' >&2; exit 1;
 }
 case "$(uname -m)" in x86_64|aarch64|arm64) ;; *) printf '%s\n' 'The board must run a supported 64-bit Linux OS.' >&2; exit 1 ;; esac
@@ -55,8 +60,19 @@ fi
 # Validate native architecture before making changes. Uses the bundled runtime.
 "$application/runtime/bin/java" -version
 command -v apt-get >/dev/null || { printf '%s\n' 'This pilot installer requires Debian/Ubuntu apt-get.' >&2; exit 1; }
-apt-get update
-apt-get install --no-install-recommends -y network-manager wpasupplicant dnsmasq-base nftables bluez libbluetooth3 iproute2 libfreetype6 fontconfig
+all_installed() {
+    local package
+    for package in "${packages[@]}"; do
+        [[ $(dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null) == installed ]] || return 1
+    done
+}
+# An upgrade on the setup hotspot has no internet uplink; apt is needed only when a package is missing.
+if all_installed; then
+    printf '%s\n' 'Required packages are already installed; skipping apt.'
+else
+    apt-get update
+    apt-get install --no-install-recommends -y "${packages[@]}"
+fi
 for executable in nmcli wpa_cli readlink bluetoothctl sdptool ip dnsmasq nft; do
     command -v "$executable" >/dev/null || { printf '%s\n' 'A required NetworkManager/BlueZ executable is missing.' >&2; exit 1; }
 done
@@ -101,7 +117,7 @@ cp -a -- "$application/." "$stage/"
 chown -hR root:root "$stage"
 chmod -R go-w "$stage"
 chmod 0755 "$stage/bin/bridge"
-release="$base/releases/$version-${stage##*.}"
+release="$base/releases/$build-${stage##*.}"
 mv -- "$stage" "$release"
 stage=
 # Stop before opening state; durable queue and uncertainty records stay intact.
@@ -128,6 +144,6 @@ systemctl enable "$unit"
 systemctl start "$unit"
 systemctl is-active --quiet "$unit"
 completed=true
-printf '%s\n' 'Pocket Photo Bridge 0.5.0 installed. Keep the displayed credentials private.'
+printf 'Pocket Photo Bridge %s installed in %s. Keep the displayed credentials private.\n' "$build" "$release"
 printf '%s\n' 'Unconfigured boots stay in setup. Configured boots offer setup for 60 seconds.'
 printf '%s\n' 'Connect only to the dedicated PocketPhotoBridge hotspot and open the Setup URL shown above.'
