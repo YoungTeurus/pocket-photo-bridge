@@ -188,9 +188,13 @@ duplicate prevention and an unknown print's block are kept because they live in
 that state. Each state error gets one such reopen, and a service run gets at
 most three. Each is logged as `SERVICE_STATE_REOPENED reason=OK count=<n>` or,
 when the state still cannot be read, `SERVICE_STATE_REOPENED reason=FAILED
-category=<category> count=<n>`. After a failed reopen or the third one, the
-bridge stays blocked with `STATE_ERROR` and the service keeps running without
-exiting, so systemd does not restart it into a loop through setup. Because the
+category=<category> count=<n>`. After a failed reopen, or a state error once
+three reopens have been used, the bridge stays blocked with `STATE_ERROR` and
+the service keeps running without exiting, so systemd does not restart it into
+a loop through setup. The switch from setup into operation also opens the state
+again; if that fails, it logs the same `reason=FAILED` line with the count so
+far and the bridge stays blocked in the same way. A state error caused by a
+stop is not reopened. Because the
 page is unreachable during operation, a bridge that stops printing needs a
 restart: `sudo systemctl restart pocket-photo-bridge.service` keeps waiting
 photos, while a reboot with the retention setting off discards them.
@@ -216,7 +220,8 @@ failures, whenever the category changes, and once more when the hotspot comes up
 or the run gives up. `sudo systemctl stop` stops the service without a restart.
 A stop, including the one every upgrade performs, logs `SERVICE_STOPPED` and
 then takes down the setup hotspot or the camera connection the bridge owns,
-also while the hotspot is still being retried. The service waits at most 30
+also while the hotspot is still being retried; a printer pairing in progress
+is cancelled first. The service waits at most 30
 seconds for that cleanup, within the unit's 45-second stop timeout; a cleanup
 that fails logs `SERVICE_RADIO_CLEANUP_FAILED`. A stop during a print leaves
 that print unknown, to be checked as described below.
