@@ -21,10 +21,10 @@ enum class ServiceState { WAITING_CAMERA, RECEIVING, QUEUED, WAITING_PRINTER, PR
 enum class BlockedReason { UNRESOLVED_PRINT, QUEUE_FULL, STATE_ERROR }
 /**
  * [dropped] counts photos forgotten after a printer refusal since the last successful print.
- * [canAccept] is filled in by [AutonomousBridge.snapshot] only; step outcomes keep the default.
+ * [canAccept] and [discardedAtBoot] are filled in by [AutonomousBridge.snapshot] only; step outcomes keep the defaults.
  */
 data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null, val dropped: Int = 0,
-    val canAccept: Boolean = true) {
+    val canAccept: Boolean = true, val discardedAtBoot: Int = 0) {
     val blocked: BlockedReason? get() = when {
         state == ServiceState.STATE_ERROR -> BlockedReason.STATE_ERROR
         state == ServiceState.NEEDS_ATTENTION -> BlockedReason.UNRESOLVED_PRINT
@@ -94,6 +94,8 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var lastCapture: ServiceSnapshot? = null
     private var captureRepeats = 0
     private var dropped = 0
+    /** Waiting photos discarded when this bridge began the boot; memory only, so a service restart within the boot reports 0. */
+    private var discardedAtBoot = 0
     private val seriesRefusals = mutableSetOf<Long>()
     /** Photos dropped after a refusal in this selection generation (one camera presence); memory only. */
     private val droppedPhotos = mutableSetOf<String>()
@@ -123,6 +125,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             checkState()
             val count = queue.beginBoot(bootId, keepQueueAcrossBoots, journal::wasSubmitted)
             if (count > 0) emit("BRIDGE_BOOT_QUEUE_DISCARDED count=$count")
+            discardedAtBoot += count
             return result(baseState())
         } catch (_: Exception) { return stateError() }
     }
@@ -267,7 +270,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             checkState()
             val base = if (journal.unresolved) result(ServiceState.NEEDS_ATTENTION, current.category ?: "UNRESOLVED_JOB")
                 else current.copy(queued = queue.size)
-            return base.copy(canAccept = queue.canAccept())
+            return base.copy(canAccept = queue.canAccept(), discardedAtBoot = discardedAtBoot)
         } catch (_: Exception) { return stateError() }
     }
 
