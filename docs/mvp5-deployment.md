@@ -68,10 +68,16 @@ use the authenticated setup page described below.
    instructions. Enable SSH, create your account, and connect the board to your
    home network or Ethernet for this one-time installation. Update the OS.
    A supported Wi-Fi AP interface and Bluetooth Classic adapter are required.
-2. Download `pocket-photo-bridge-linux-arm64-0.5.0` from the same successful
-   **Headless bridge** run. Extract the outer ZIP to obtain
+2. Open this repository's
+   [Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases),
+   choose the release (tag `v0.5.0` for this version) and download
    `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz` and its `.tar.gz.sha256` file.
-   The Linux x64 artifact is for an x64 machine; do not install it on ARM64.
+   Releases do not expire; a build from an untagged branch is still available
+   as the `pocket-photo-bridge-linux-arm64-0.5.0` artifact of a **Headless
+   bridge** run for 30 days (extract GitHub's outer ZIP). The checksum detects
+   transfer corruption only; the bundle's `BUILD` file (`0.5.0+<commit>`) names
+   the source commit. The Linux x64 package is for an x64 machine; do not
+   install it on ARM64.
 3. In Windows PowerShell, replace `YOUR_USER@BOARD_LAN_IP` with your board's SSH
    account and address, then copy the two files:
 
@@ -93,7 +99,10 @@ use the authenticated setup page described below.
    pipe its output to a log or share a screenshot of its credential lines. It
    installs `network-manager`, `dnsmasq-base`, `nftables`, `bluez` (including `sdptool`), `libbluetooth3`,
    `iproute2`, `libfreetype6`, and `fontconfig` with apt, uses the bundled runtime, and enables
-   `pocket-photo-bridge.service`. No board-side compilation is involved.
+   `pocket-photo-bridge.service`. No board-side compilation is involved. When
+   `dpkg-query` reports all of these packages as installed (an upgrade), it
+   skips apt, so an upgrade needs no internet uplink. It prints the installed
+   build (`0.5.0+<commit>`) and names its release directory after it.
 
    The dedicated setup AP explicitly disables optional PMF (`pmf=1`) because
    the tested Orange Pi UWE5622 driver cannot initialize that mode. It remains
@@ -183,13 +192,13 @@ clear the warning. Deliberate reprints are outside this milestone.
 ## Diagnostics, credentials, and upgrades
 
 From authenticated setup, download **Diagnostics** and return that redacted
-text, the downloaded package version/architecture, your board/OS model, and a
+text (its `build` field names version and commit), the package architecture, your board/OS model, and a
 brief description of camera/printer power order and the physical outcome.
 Diagnostics contain fixed stage/category/count information.
 
 Each run of the service or of a probe (`--linux-status-only`,
 `--linux-receive-only`) starts with a header line such as
-`Pocket Photo Bridge 0.5.0 | headless service run=3 uptime_s=42`: the version,
+`Pocket Photo Bridge 0.5.0+1a2b3c4 | headless service run=3 uptime_s=42`: the version and build commit (`dev` for a build made without one),
 a run counter, and the kernel uptime in whole seconds when the process started
 (omitted where the kernel does not report it). Each event line starts with the
 whole seconds since that start; there is no wall-clock time, because the board
@@ -270,7 +279,8 @@ sudo systemctl start pocket-photo-bridge.service
 ```
 
 For an upgrade, verify and extract the new matching portable archive and run its
-installer in the same way. It stops the service before switching releases,
+installer in the same way; with the packages already installed this works over
+the setup hotspot without internet. It stops the service before switching releases,
 reuses existing bootstrap/configuration, and retains all queue and print-history
 state. A stopped process may leave an uncertain print; resolve it by checking
 the printer as described above. Do not run two service instances with the same

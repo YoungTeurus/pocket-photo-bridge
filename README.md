@@ -10,8 +10,13 @@ print automatically after a one-time setup opt-in. A dedicated setup Wi-Fi mode
 provides a local configuration/status page. Try the same service and page with
 fake wire devices on Windows before the board arrives. Downloadable packages
 include Java; you compile nothing. Follow [the Windows simulation and Linux
-installation guide](docs/mvp5-deployment.md). Linux radio/printing validation is
-pending physical Orange Pi testing.
+installation guide](docs/mvp5-deployment.md). Download the Orange Pi (Linux
+ARM64) package and its SHA-256 file from
+[Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases); they
+stay available after CI artifacts expire. Each build names its source commit as
+`version+commit` in the first line of `bridge --help`, the bundle's `BUILD` file,
+the diagnostics header and the setup page's `build` field. Linux radio/printing
+validation is pending physical Orange Pi testing.
 
 ## Roadmap
 

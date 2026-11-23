@@ -6,10 +6,13 @@ The Sony/printer protocols, bounded JPEG preparation and durable duplicate guard
 
 ## Run the offline simulation
 
-Download `pocket-photo-bridge-linux-arm64-0.5.0` (ARM64/AArch64 board) or
-`pocket-photo-bridge-linux-x64-0.5.0` (x64 Linux) from a successful **Headless
-bridge** Actions run. Extract GitHub's outer artifact ZIP to obtain the native
-portable `.tar.gz` and its `.tar.gz.sha256` file. These packages include Java 17
+Download the ARM64/AArch64 board package `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz`
+and its `.tar.gz.sha256` file from the repository's
+[Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases) (tag
+`v0.5.0`). The x64 package `pocket-photo-bridge-linux-x64-0.5.0` and untagged
+builds are **Headless bridge** Actions artifacts kept for 30 days; extract
+GitHub's outer artifact ZIP to obtain the native portable `.tar.gz` and its
+`.tar.gz.sha256` file. The bundle's `BUILD` file names `version+commit`. These packages include Java 17
 and need no system Java or JDK. The separate `pocket-photo-bridge-jvm-0.5.0`
 artifact remains available for developers with their own matching Java runtime.
 
@@ -101,7 +104,7 @@ it provides no evidence about Orange Pi radios or physical printer output.
 
 ## Build and CI
 
-The Windows x64, Linux x64 and Linux ARM64 jobs use Java 17.0.12 and pinned Actions. Headless builds do not configure Android or require its SDK:
+The Windows x64, Linux x64 and Linux ARM64 jobs use Java 17.0.12 and pinned Actions. `bridge/VERSION` is the only version source; CI passes `-PbuildCommit=<commit>` and a local build reports `version+dev`. To publish a release, set `bridge/VERSION` and push the tag `v<version>`: a release job, the only job with write access, refuses a tag that does not match and publishes the tested Linux ARM64 archive with its SHA-256 file. Headless builds do not configure Android or require its SDK:
 
 ```bash
 ./gradlew --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist :bridge:distZip :bridge:distTar
