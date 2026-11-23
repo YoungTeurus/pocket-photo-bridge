@@ -24,9 +24,11 @@ class SetupServerTest {
         var pairingTask: dev.pocketphotobridge.bridge.service.PairingTask? = null
         var build: Any = "0.5.0+0123abc"
         var blockedReason: Any? = null
+        var discardedAtBoot: Any = 0
         override fun status(): Map<String, Any> = mapOf("build" to build, "stage" to if (pairingTask?.pending == true) "PAIRING" else stage, "category" to "READY", "queued" to 2, "prints" to 3,
             "unresolved" to true, "simulation" to true, "adminPassword" to "never-disclose", "log" to "private-token",
-            "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name", "blocked" to (blockedReason != null)) +
+            "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name", "blocked" to (blockedReason != null),
+            "discardedAtBoot" to discardedAtBoot) +
             (blockedReason?.let { mapOf("blockedReason" to it) } ?: emptyMap())
         override fun configuration() = saved
         var events = listOf(
@@ -264,6 +266,27 @@ class SetupServerTest {
         backend.blockedReason = null
         assertFalse(status()["blocked"].asBoolean)
         assertEquals(emptyList<String>(), sentences.values.filter(client.request("/").body::contains))
+    }
+
+    @Test fun setupCountsTheWaitingPhotosThisBootDiscardedAndAlwaysSaysARebootDiscardsThem() = server { client, backend, _ ->
+        client.login()
+        val note = "With Keep waiting photos across power cycles off, every reboot discards photos still waiting for the printer; send them again from the camera."
+        backend.discardedAtBoot = 3
+        assertEquals(3, JsonParser.parseString(client.request("/status").body).asJsonObject["discardedAtBoot"].asInt)
+        var page = client.request("/").body
+        assertTrue(page.contains("Waiting photos discarded at this boot: 3"))
+        assertTrue(page.contains(note))
+        backend.discardedAtBoot = 0
+        page = client.request("/").body
+        assertTrue(page.contains("Waiting photos discarded at this boot: 0"))
+        assertTrue(page.contains(note))
+        for (invalid in listOf(-1, 2_000_000, "3")) {
+            backend.discardedAtBoot = invalid
+            assertNull(JsonParser.parseString(client.request("/status").body).asJsonObject["discardedAtBoot"])
+            page = client.request("/").body
+            assertFalse(page.contains("Waiting photos discarded at this boot"))
+            assertTrue(page.contains(note))
+        }
     }
 
     @Test fun savesConfigOnlyAfterExplicitOptInAndPreservesBlankSecrets() = server { client, backend, _ ->
