@@ -116,9 +116,10 @@ use the authenticated setup page described below.
 
 5. Save the displayed unique `PocketPhoto-...` SSID, Wi-Fi password, and
    administrator password privately. Disconnecting Wi-Fi for setup can end the
-   SSH session; Ethernet is useful during installation. Connect your phone or
+   SSH session; Ethernet is useful during installation. The hotspot uses
+   `10.212.77.0/24`; keep any wired network on a different subnet. Connect your phone or
    Windows computer to that dedicated hotspot, then open
-   `http://192.168.50.1:8080/` and sign in. This HTTP address is available only on
+   `http://10.212.77.1:8080/` and sign in. This HTTP address is available only on
    the setup AP. Ignore the client's warning that this hotspot has no Internet.
 
    Setup responses use `Referrer-Policy: same-origin`: browser form submissions
@@ -132,7 +133,7 @@ and permits private state, NetworkManager profile writes, local DBus, and radio
 sockets. State is root-owned, mode `0700`, under `/var/lib/pocket-photo-bridge`;
 bootstrap/configuration files inside `setup` are private. The application lives
 under `/opt/pocket-photo-bridge/releases`, selected by an atomic `current`
-symlink. The setup listener binds only `192.168.50.1:8080`; Windows binds only
+symlink. The setup listener binds only `10.212.77.1:8080`; Windows binds only
 loopback. Do not deploy this pilot on an unrelated multiuser server.
 
 ## Configure once, then print automatically

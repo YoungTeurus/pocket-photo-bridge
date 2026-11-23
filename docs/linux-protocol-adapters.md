@@ -25,7 +25,8 @@ keyfile byte-array syntax, and WPA2 passwords use keyfile escaping. Keyfiles rem
 secret even if a command fails. NetworkManager itself has administrative access
 to these files and credentials, as required for association.
 
-Setup uses WPA2 AP mode and the explicit `192.168.50.1/24` address. Camera mode uses
+Setup uses WPA2 AP mode and the explicit `10.212.77.1/24` address (kept off
+192.168.50.0/24 and other common home-router defaults). Camera mode uses
 DHCP, `autoconnect=false`, `never-default=true`, ignores automatic DNS, and disables
 IPv6. Setup is stopped before camera activation; camera links close before setup
 activation. Before either activation, an explicit device disconnect clears any
@@ -143,7 +144,7 @@ tool output and injected native backends. The native self-test verifies libc
 mapping in the cloud host without radio access.
 
 On the Orange Pi, verify AP driver support and credentials; the setup listener at
-192.168.50.1; hotspot teardown before camera join; DHCP route discovery with
+10.212.77.1; hotspot teardown before camera join; DHCP route discovery with
 `never-default`; Sony transfer using the selected source; actual pairing and SDP
 SPP channel; printer-off/on reconnect; interrupted receive; printer completion;
 and power-order/reboot retention. A successful cloud self-test or a prior Windows
