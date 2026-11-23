@@ -6,6 +6,7 @@ import dev.pocketphotobridge.bridge.linux.*
 import dev.pocketphotobridge.bridge.setup.*
 import dev.pocketphotobridge.bridge.simulation.SIMULATION_TOKEN
 import java.io.PrintStream
+import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -139,7 +140,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
 
     fun run() {
         val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
-        val address = devices.startSetup(credentials, initialInterface)
+        val address = startSetup(initialInterface)
+        // The setup window counts from the moment the hotspot is up, however many attempts that took.
         policy.beginWindow(monotonicNow())
         server = SetupServer(address, credentials.adminPassword, backend()).also { it.start() }
         diagnostics.emit("SERVICE_SETUP")
@@ -159,6 +161,19 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         finally {
             try { Runtime.getRuntime().removeShutdownHook(shutdown) } catch (_: IllegalStateException) { }
             diagnostics.emit("SERVICE_STOPPED")
+        }
+    }
+
+    /** A slow radio cold start is retried; the unit restarts the process after the limit. */
+    private fun startSetup(wifiInterface: String): InetSocketAddress {
+        val first = devices.now()
+        while (true) {
+            try { return devices.startSetup(credentials, wifiInterface) }
+            catch (failure: LinuxRadioFailure) {
+                // No attempt starts at or after the limit; one already running is allowed to finish.
+                if (!running.get() || devices.now() + SETUP_RETRY_PAUSE_MS - first >= SETUP_RETRY_LIMIT_MS) throw failure
+                devices.pause(SETUP_RETRY_PAUSE_MS)
+            }
         }
     }
 
@@ -208,6 +223,10 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         try { server?.close() } finally { pairing.close(); synchronized(bridgeLock) { bridge.close() } }
     }
     private fun monotonicNow() = System.nanoTime() / 1_000_000
+    companion object {
+        const val SETUP_RETRY_PAUSE_MS = 5_000L
+        const val SETUP_RETRY_LIMIT_MS = 120_000L
+    }
 }
 
 /** Only fixed codes and counts enter disk/web reports. Bootstrap credentials have a separate output path. */
