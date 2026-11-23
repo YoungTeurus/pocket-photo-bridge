@@ -27,6 +27,17 @@ class ServiceDiagnosticsTest {
         assertEquals(3, report.events().count { it.endsWith(" DIAGNOSTIC_REDACTED") })
     }
 
+    @Test fun cameraPresenceEventsAreKeptVerbatim() {
+        val directory = Files.createTempDirectory("presence-service-")
+        val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        report.emit("SERVICE_CAMERA_PRESENT")
+        report.emit("SERVICE_CAMERA_ABSENT")
+        report.emit("SERVICE_CAMERA_WAIT category=COMMAND_FAILED")
+        assertEquals(listOf("0 SERVICE_CAMERA_PRESENT", "0 SERVICE_CAMERA_ABSENT", "0 SERVICE_CAMERA_WAIT category=COMMAND_FAILED"),
+            report.events())
+        assertTrue(report.events().all(ServiceDiagnostics::safeLine))
+    }
+
     @Test fun eachRunStartsWithAHeaderAndEventsCarryWholeSecondsSinceStart() {
         val directory = Files.createTempDirectory("header-service-")
         var millis = 5_000L

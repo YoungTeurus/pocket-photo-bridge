@@ -7,6 +7,8 @@ interface ServiceLoopActions {
     fun enterOperation()
     fun capture(trigger: SelectionTrigger): CaptureStep
     fun printNext(): PrintStep
+    /** The scan result changed: true present, false absent, null the scan failed. */
+    fun cameraPresence(present: Boolean?) {}
 }
 
 /** FAILED: the printer was unreachable, busy or refusing. IDLE: nothing printed and nothing failed, such as an empty queue. */
@@ -29,6 +31,8 @@ class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> L
     private val boot = UUID.randomUUID().toString()
     private var epoch = 0L
     private var present = false
+    /** Unit until the first scan is reported. */
+    private var lastScan: Any? = Unit
     private var recheck = false
     private var printed = false
     private var nextCapture = 0L
@@ -44,6 +48,7 @@ class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> L
             operating = true
         }
         if (!enabled) return
+        if (cameraAvailable != lastScan) { lastScan = cameraAvailable; actions.cameraPresence(cameraAvailable) }
         if (cameraAvailable == false) {
             present = false; recheck = false; printed = false; nextCapture = 0; recheckPause = FIRST_RECHECK_MS
         } else if (cameraAvailable == true) {

@@ -14,8 +14,10 @@ class ServiceLoopTest {
         val printedAt = mutableListOf<Long>()
         val checkedAt = mutableListOf<Long>()
         val triggers = mutableListOf<String>()
+        val presence = mutableListOf<Boolean?>()
         var clock = 0L
         override fun enterOperation() { transitions++ }
+        override fun cameraPresence(present: Boolean?) { presence += present }
         override fun capture(trigger: SelectionTrigger): CaptureStep { captures++; checkedAt += clock; triggers += trigger.id; return captureStep }
         override fun printNext(): PrintStep {
             prints++; printedAt += clock; clock += printTakesMs
@@ -136,5 +138,11 @@ class ServiceLoopTest {
         loop.runUntil(actions, 101_000, camera = true)
         assertEquals(listOf(0L, 101_000), actions.checkedAt)
         assertEquals(1, actions.triggers.distinct().size)
+    }
+    @Test fun cameraPresenceIsReportedOnlyWhenTheScanResultChanges() {
+        val actions = Actions(); val policy = BootModePolicy(0); policy.requestOperation()
+        val loop = loop(policy, actions)
+        for (scan in listOf(true, true, null, null, true, false, false, null, false)) { actions.clock += 1_000; loop.tick(actions.clock, true, scan) }
+        assertEquals(listOf(true, null, true, false, null, false), actions.presence)
     }
 }

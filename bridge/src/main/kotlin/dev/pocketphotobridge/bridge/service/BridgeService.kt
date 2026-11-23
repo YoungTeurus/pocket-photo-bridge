@@ -106,6 +106,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     private var server: SetupServer? = null
     private val loop: ServiceLoop
     private var closed = false
+    private var scanFailure = "IO_ERROR"
 
     init {
         if (devices is SimulatedServiceDevices && configuration.get() == null) {
@@ -125,6 +126,10 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 bridge.capture(trigger)
             }.captureStep
             override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printStep
+            override fun cameraPresence(present: Boolean?) = diagnostics.emit(when (present) {
+                true -> "SERVICE_CAMERA_PRESENT"; false -> "SERVICE_CAMERA_ABSENT"
+                null -> "SERVICE_CAMERA_WAIT category=$scanFailure"
+            })
         })
     }
 
@@ -154,7 +159,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 // A failed scan is unknown, never a stale earlier result.
                 val presence = if (loop.operating && config != null) {
                     try { devices.cameraPresent(config) }
-                    catch (failure: Exception) { diagnostics.emit("SERVICE_CAMERA_WAIT category=${BridgeService.category(failure)}"); null }
+                    catch (failure: Exception) { scanFailure = BridgeService.category(failure); null }
                 } else null
                 loop.tick(monotonicNow(), config?.autoPrintEnabled == true && !pairing.pending, presence)
                 Thread.sleep(1_000)
@@ -306,7 +311,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             dev.pocketphotobridge.sony.Failure.entries.map { it.name } +
             setOf("CAMERA_ACK_PENDING", "QUEUE_FULL", "DUPLICATE_SUPPRESSED", "NATIVE_UNAVAILABLE")
         private val STAGES = setOf("DIAGNOSTIC_REDACTED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT", "LINUX_HARDWARE_VALIDATION_PENDING",
-            "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT",
+            "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT", "SERVICE_CAMERA_PRESENT", "SERVICE_CAMERA_ABSENT",
             "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_PAIRING_STARTED",
             "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_CAMERA_CONNECTING",
             "BRIDGE_IMAGE_PREPARING", "BRIDGE_PRINTER_CONNECTING", "BRIDGE_BOOT_QUEUE_DISCARDED", "BRIDGE_QUEUE_RECONCILED", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
