@@ -264,8 +264,10 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
     private fun dashboard(session: Session): String {
         val status = safeStatus(backend.status())
         val config = backend.configuration()
-        val printers = safePrinters()
-        val devices = if (printers.isEmpty()) "<p>No paired printers found. Enter the Bluetooth address from your printer.</p>"
+        // A hung or missing Bluetooth service must not cost the owner the page and its form tokens.
+        val printers = try { safePrinters() } catch (_: Exception) { null }
+        val devices = if (printers == null) "<p>The paired printer list is unavailable. Enter the printer's Bluetooth address by hand.</p>"
+            else if (printers.isEmpty()) "<p>No paired printers found. Enter the Bluetooth address from your printer.</p>"
             else printers.joinToString("") { printer -> "<li>${escape(printer.name)} — ${escape(printer.address)}</li>" }
         val simulation = if (address.address.isLoopbackAddress && status["simulation"] == true) """
             <section><h2>Simulation controls</h2><p>These controls use synthetic devices and never print paper.</p>
