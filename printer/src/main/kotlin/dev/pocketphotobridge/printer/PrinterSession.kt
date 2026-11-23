@@ -60,8 +60,8 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
                 val code = errorCode(jobReply)
                 // Only a structured rejection is proof that no job was reserved.
                 if (code == null || code >= 0) badResponse()
-                // -8006 is the reference's retryable "busy / not yet ready"; other codes keep their submitted mark.
-                if (code == BUSY_CODE) guard.release(reservation) else guard.resolve(reservation)
+                // No job exists, so a guard may forget the photo; -8006 (busy) and other codes differ only in the failure thrown.
+                guard.release(reservation)
                 report(PrinterDiagnostic(PrinterStage.SUBMIT_REFUSED, code = if (code < -MAX_CODE) MAX_CODE else -code))
                 throw PrinterFailure(if (code == BUSY_CODE) PrinterFailureCode.BUSY else PrinterFailureCode.JOB_REJECTED)
             }
