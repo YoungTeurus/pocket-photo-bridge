@@ -448,9 +448,13 @@ class AutonomousBridgeTest {
         var camera = SimulatedSony(original)
         bridge(state, CameraWifiConnector { camera.connect(it) }, images = preparation).use {
             repeat(16) { index ->
+                assertTrue(it.snapshot().canAccept)
+                assertNull(it.snapshot().blocked)
                 camera = SimulatedSony(original + byteArrayOf(index.toByte(), -1, -39))
                 assertEquals(index + 1, it.capture(SelectionTrigger("$index")).queued)
             }
+            assertFalse(it.snapshot().canAccept)
+            assertEquals(BlockedReason.QUEUE_FULL, it.snapshot().blocked)
             camera = SimulatedSony(original + byteArrayOf(17, -1, -39))
             assertEquals(ServiceSnapshot(ServiceState.QUEUED, 16, "QUEUE_FULL"), it.capture(SelectionTrigger("overflow")))
             assertEquals(0, camera.downloads)

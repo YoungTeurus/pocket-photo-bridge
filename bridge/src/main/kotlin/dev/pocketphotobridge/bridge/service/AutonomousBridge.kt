@@ -17,8 +17,18 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 enum class ServiceState { WAITING_CAMERA, RECEIVING, QUEUED, WAITING_PRINTER, PRINTING, PRINTED, NEEDS_ATTENTION, STATE_ERROR }
-/** [dropped] counts photos forgotten after a printer refusal since the last successful print. */
-data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null, val dropped: Int = 0) {
+/** Why the bridge accepts or prints no photos; one fixed set so setup words each reason itself. */
+enum class BlockedReason { UNRESOLVED_PRINT, QUEUE_FULL, STATE_ERROR }
+/**
+ * [dropped] counts photos forgotten after a printer refusal since the last successful print.
+ * [canAccept] is filled in by [AutonomousBridge.snapshot] only; step outcomes keep the default.
+ */
+data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null, val dropped: Int = 0,
+    val canAccept: Boolean = true) {
+    val blocked: BlockedReason? get() = when {
+        !canAccept -> BlockedReason.QUEUE_FULL
+        else -> null
+    }
     /** The print step failed: the printer was unreachable, busy or refusing. An empty queue or a job needing attention is not a failure. */
     val printAttemptFailed get() = state == ServiceState.WAITING_PRINTER
     val printStep get() = when {
@@ -253,8 +263,9 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     @Synchronized fun snapshot(): ServiceSnapshot {
         try {
             checkState()
-            if (journal.unresolved) return result(ServiceState.NEEDS_ATTENTION, current.category ?: "UNRESOLVED_JOB")
-            return current.copy(queued = queue.size)
+            val base = if (journal.unresolved) result(ServiceState.NEEDS_ATTENTION, current.category ?: "UNRESOLVED_JOB")
+                else current.copy(queued = queue.size)
+            return base.copy(canAccept = queue.canAccept())
         } catch (_: Exception) { return stateError() }
     }
 
