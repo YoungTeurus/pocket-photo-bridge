@@ -2,6 +2,8 @@ package dev.pocketphotobridge.bridge
 
 import com.google.gson.JsonParser
 import dev.pocketphotobridge.bridge.images.JvmPrintImagePreparer
+import dev.pocketphotobridge.bridge.simulation.PrinterFault
+import dev.pocketphotobridge.bridge.simulation.SimulatedPrinter
 import dev.pocketphotobridge.printer.*
 import dev.pocketphotobridge.sony.*
 import org.junit.Assert.*
@@ -172,6 +174,19 @@ class PrintCoordinatorTest {
             printer.busy = false
             assertEquals(BridgeOutcome.PRINTED, coordinator.process(SelectionTrigger("fresh")).outcome)
             assertEquals(1, printer.jobs)
+        }
+    }
+
+    @Test fun busyRefusedSubmissionStaysSuppressedInTheWatchedFlows() = root { directory ->
+        FileBridgeJournal(directory.resolve("state")).use { journal ->
+            val camera = Camera(photo())
+            val refusing = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT)
+            val refused = coordinator(directory, journal, camera, refusing).process(SelectionTrigger("first"))
+            assertEquals(BridgeResult(BridgeOutcome.PRINTER_FAILED, "BUSY"), refused)
+            assertEquals(1, refusing.refusals); assertFalse(journal.unresolved)
+            val ready = SimulatedPrinter()
+            assertEquals(BridgeOutcome.DUPLICATE_SUPPRESSED, coordinator(directory, journal, camera, ready).process(SelectionTrigger("fresh")).outcome)
+            assertEquals(0, ready.submissions)
         }
     }
 
