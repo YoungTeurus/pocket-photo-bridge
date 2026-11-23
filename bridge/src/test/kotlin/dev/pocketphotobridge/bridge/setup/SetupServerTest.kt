@@ -38,7 +38,11 @@ class SetupServerTest {
         override fun acknowledgeCheckedPrinter() { acknowledged++ }
         override fun startOperation() { run++ }
         override fun staySetup() { held++ }
-        override fun printers() = listOf(SetupPrinter("AA:BB:CC:DD:EE:FF", "<script>alert('x')</script>"))
+        var printersFail = false
+        override fun printers(): List<SetupPrinter> {
+            if (printersFail) throw IllegalStateException("bluetoothctl timed out private-token")
+            return listOf(SetupPrinter("AA:BB:CC:DD:EE:FF", "<script>alert('x')</script>"))
+        }
         override fun pairPrinter(address: String) { pairingTask?.let { it.start(address); return }; paired = address }
         override fun simulationAction(action: String) { simulated = action }
     }
@@ -214,6 +218,24 @@ class SetupServerTest {
         assertTrue(status.contains("\"prints\":3"))
         backend.stage = "private-token"
         assertFalse(client.request("/status").body.contains("private-token"))
+    }
+
+    @Test fun aFailingPrinterListStillServesTheDashboardWhoseFormsWork() = server { client, backend, _ ->
+        backend.printersFail = true
+        client.login()
+        val page = client.request("/")
+        assertEquals(200, page.code)
+        assertTrue(page.body.contains("The paired printer list is unavailable. Enter the printer's Bluetooth address by hand."))
+        assertFalse(page.body.contains("private-token"))
+        val csrf = Client.csrf(page.body)
+        val form = mapOf("csrf" to csrf, "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
+            "printerAddress" to "AA:BB:CC:DD:EE:FF", "printerToken" to "0123456789abcdef01234567", "wifiInterface" to "wlan0")
+        assertEquals(303, client.request("/config", form).code)
+        assertEquals("AA:BB:CC:DD:EE:FF", backend.saved!!.printerAddress)
+        assertEquals(303, client.request("/acknowledge", mapOf("csrf" to csrf, "checkedPrinter" to "on")).code)
+        assertEquals(1, backend.acknowledged)
+        assertEquals(303, client.request("/run", mapOf("csrf" to csrf)).code)
+        assertEquals(1, backend.run)
     }
 
     @Test fun savesConfigOnlyAfterExplicitOptInAndPreservesBlankSecrets() = server { client, backend, _ ->
