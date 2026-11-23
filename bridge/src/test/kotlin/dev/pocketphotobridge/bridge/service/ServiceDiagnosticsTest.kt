@@ -106,6 +106,19 @@ class ServiceDiagnosticsTest {
         assertEquals("Pocket Photo Bridge ${BridgeCli.VERSION} | headless service run=1", report.header)
     }
 
+    @Test fun previousRunsKeepTheBuildTheyWereWrittenBy() {
+        val directory = Files.createTempDirectory("build-service-")
+        val headers = listOf("Pocket Photo Bridge 0.5.0+dev | headless service run=1",
+            "Pocket Photo Bridge 0.5.0+1a2b3c4 | headless service run=2 uptime_s=40",
+            "Pocket Photo Bridge 0.5.0+0123456789abcdef0123456789abcdef01234567 | headless service run=3")
+        headers.forEachIndexed { index, header ->
+            Files.writeString(directory.resolve("diagnostics.${headers.size - index}.txt"), "$header\n0 SERVICE_SETUP\n")
+        }
+        Files.writeString(directory.resolve("diagnostics.txt"), "Pocket Photo Bridge 0.5.0+1A2B3C4 | headless service run=4\n0 SERVICE_SETUP\n")
+        val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        assertEquals(headers, report.previousRuns().map { it["header"] })
+    }
+
     @Test fun aStartRemovesTemporaryFilesLeftByAPowerPull() {
         val directory = Files.createTempDirectory("stale-service-")
         Files.writeString(directory.resolve("diagnostic-123.tmp"), "half written")
