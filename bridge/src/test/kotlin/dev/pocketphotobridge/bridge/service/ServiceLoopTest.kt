@@ -9,12 +9,16 @@ class ServiceLoopTest {
         var transitions = 0; var captures = 0; var prints = 0
         var captureStep = CaptureStep.NEW_PHOTO
         var printFails = false
+        var printStep = PrintStep.IDLE
         var printTakesMs = 0L
         val printedAt = mutableListOf<Long>()
         var clock = 0L
         override fun enterOperation() { transitions++ }
         override fun capture(trigger: SelectionTrigger): CaptureStep { captures++; return captureStep }
-        override fun printNext(): Boolean { prints++; printedAt += clock; clock += printTakesMs; return printFails }
+        override fun printNext(): PrintStep {
+            prints++; printedAt += clock; clock += printTakesMs
+            return if (printFails) PrintStep.FAILED else printStep
+        }
     }
     private fun loop(policy: BootModePolicy, actions: Actions) = ServiceLoop(policy, { actions.clock }, actions)
     /** The service ticks about once a second. */

@@ -124,7 +124,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 if (bridge.snapshot().state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR)) return CaptureStep.RETRY
                 bridge.capture(trigger)
             }.captureStep
-            override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printAttemptFailed
+            override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printStep
         })
     }
 

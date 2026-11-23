@@ -20,7 +20,7 @@ class SimulatedServiceDevicesTest {
         val loop = ServiceLoop(BootModePolicy(0).apply { requestOperation() }, { time }, object : ServiceLoopActions {
             override fun enterOperation() {}
             override fun capture(trigger: SelectionTrigger) = bridge.capture(trigger).captureStep
-            override fun printNext(): Boolean { duringPrint(); return bridge.printNext().printAttemptFailed }
+            override fun printNext(): PrintStep { duringPrint(); return bridge.printNext().printStep }
         })
         fun passes(count: Int, stepMs: Long = 1_000) = repeat(count) {
             time += stepMs; loop.tick(time, true, devices.cameraPresent(devices.configuration))
@@ -38,7 +38,8 @@ class SimulatedServiceDevicesTest {
             service.passes(5)
             assertTrue(selected)
         }
-        assertEquals(2, devices.safeCounts()["captured"])
+        // A, B, then B once more after its own print, recognised as known.
+        assertEquals(3, devices.safeCounts()["captured"])
         assertEquals(2, devices.safeCounts()["prints"])
         assertEquals(2, devices.safeCounts()["completed"])
     }

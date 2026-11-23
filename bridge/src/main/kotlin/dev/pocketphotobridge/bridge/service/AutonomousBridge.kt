@@ -21,6 +21,11 @@ enum class ServiceState { WAITING_CAMERA, RECEIVING, QUEUED, WAITING_PRINTER, PR
 data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null, val dropped: Int = 0) {
     /** The print step failed: the printer was unreachable, busy or refusing. An empty queue or a job needing attention is not a failure. */
     val printAttemptFailed get() = state == ServiceState.WAITING_PRINTER
+    val printStep get() = when {
+        printAttemptFailed -> PrintStep.FAILED
+        state == ServiceState.PRINTED -> PrintStep.PRINTED
+        else -> PrintStep.IDLE
+    }
     val captureStep get() = when {
         category == "DUPLICATE_SUPPRESSED" -> CaptureStep.DUPLICATE
         state == ServiceState.QUEUED && category != "QUEUE_FULL" -> CaptureStep.NEW_PHOTO
