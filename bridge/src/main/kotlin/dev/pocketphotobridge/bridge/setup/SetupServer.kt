@@ -384,6 +384,9 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
 
     override fun close() {
         server.stop(0)
+        // A request already in the backend finishes first: an interrupt would close the file channel of its journal write.
+        executor.shutdown()
+        try { executor.awaitTermination(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
         executor.shutdownNow()
         sessions.clear()
         logins.clear()
@@ -391,6 +394,8 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
 
     companion object {
         private const val MAX_BODY = 8192
+        /** Longest wait for requests in progress when the page closes; well within the service's stop wait. */
+        private const val CLOSE_WAIT_MS = 2_000L
         private const val LOGIN_COOKIE = "setupLogin"
         private const val SESSION_COOKIE = "setupSession"
         private val SIMULATION_ACTIONS = listOf("select-photo", "duplicate-photo", "printer-on", "printer-off", "printer-busy", "printer-ready", "interrupted-download", "uncertain-print")

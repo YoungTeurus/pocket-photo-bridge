@@ -111,6 +111,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     private var server: SetupServer? = null
     private val loop: ServiceLoop
     private var closed = false
+    /** Set before the page closes: a request it let through must not reach the bridge reopened or closed after it. */
+    @Volatile private var pageClosed = false
 
     init {
         if (devices is SimulatedServiceDevices && configuration.get() == null) {
@@ -120,7 +122,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         loop = ServiceLoop(policy, ::monotonicNow, object : ServiceLoopActions {
             override fun enterOperation() {
                 // The setup listener closes before Linux switches the exclusive radio.
-                if (!devices.simulation) { server?.close(); server = null }
+                if (!devices.simulation) { pageClosed = true; server?.close(); server = null }
                 devices.stopSetup()
                 // Routine, so not counted; a failure leaves a stand-in that operation reopens once, and the run stays up either way.
                 synchronized(bridgeLock) { reopen(bridge.snapshot().queued, retry = true)?.let { reportReopen(it) } }
@@ -254,7 +256,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
 
     internal fun backend() = object : SetupBackend {
         override fun status(): Map<String, Any> {
-            val snapshot = synchronized(bridgeLock) { bridge.snapshot() }
+            val snapshot = synchronized(bridgeLock) { check(!pageClosed) { "SETUP_REQUIRED" }; bridge.snapshot() }
             return linkedMapOf<String, Any>("build" to BridgeCli.BUILD, "mode" to if (loop.operating) "OPERATION" else "SETUP",
                 "stage" to if (pairing.pending) "PAIRING" else snapshot.state.name, "queued" to snapshot.queued, "simulation" to devices.simulation,
                 "configured" to (configuration.get() != null), "autoPrintEnabled" to (configuration.get()?.autoPrintEnabled == true),
@@ -282,7 +284,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             policy.requestOperation()
         }
         override fun acknowledgeCheckedPrinter() {
-            synchronized(bridgeLock) { bridge.acknowledgeCheckedPrinter() }
+            synchronized(bridgeLock) { check(!pageClosed) { "SETUP_REQUIRED" }; bridge.acknowledgeCheckedPrinter() }
         }
         override fun printers(): List<SetupPrinter> {
             if (pairing.pending) return printerCache.get()
@@ -294,7 +296,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
 
     override fun close() {
         if (closed) return
-        closed = true; running.set(false)
+        closed = true; running.set(false); pageClosed = true
         try { server?.close() } finally { pairing.close(); synchronized(bridgeLock) { bridge.close() } }
     }
     private fun monotonicNow() = System.nanoTime() / 1_000_000
