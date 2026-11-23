@@ -78,6 +78,9 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var retries = 0
     private var dropped = 0
     private val seriesRefusals = mutableSetOf<Long>()
+    /** Photos dropped after a refusal in this selection generation (one camera presence); memory only. */
+    private val droppedPhotos = mutableSetOf<String>()
+    private var generation: String? = null
 
     init {
         var opened: FileBridgeJournal? = null
@@ -118,6 +121,8 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             checkActive()
             val triggerBytes = trigger.id.toByteArray(Charsets.UTF_8)
             if (triggerBytes.isEmpty() || triggerBytes.size > 1024) throw BridgeFailure(BridgeFailureCode.ARGUMENT_ERROR)
+            // A new generation follows an observed absence, so the owner may send a dropped photo again.
+            if (trigger.id != generation) { generation = trigger.id; droppedPhotos.clear() }
             if (!queue.canAccept()) return result(ServiceState.QUEUED, "QUEUE_FULL")
             result(ServiceState.RECEIVING)
             emit("BRIDGE_CAMERA_CONNECTING")
@@ -130,7 +135,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
                     checkActive()
                     images.validateSource(source)
                     val fingerprint = DurableCaptureQueue.fingerprint(source.toPath())
-                    if (queue.contains(fingerprint) || journal.wasSubmitted(fingerprint)) duplicate = true
+                    if (queue.contains(fingerprint) || journal.wasSubmitted(fingerprint) || fingerprint in droppedPhotos) duplicate = true
                     else {
                         emit("BRIDGE_IMAGE_PREPARING")
                         val prepared = images.prepare(source, crop)
@@ -189,6 +194,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
                 // The guard already forgot the refused photo; dropping it after that lets the camera send it again.
                 if (rejected.code == PrinterFailureCode.JOB_REJECTED && refusal != null) {
                     queue.remove(entry)
+                    droppedPhotos += entry.fingerprint
                     dropped++
                     emit("BRIDGE_QUEUE_RECONCILED count=1")
                 }
