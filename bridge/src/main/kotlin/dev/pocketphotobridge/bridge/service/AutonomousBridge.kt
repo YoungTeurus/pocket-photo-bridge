@@ -16,7 +16,15 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 enum class ServiceState { WAITING_CAMERA, RECEIVING, QUEUED, WAITING_PRINTER, PRINTING, PRINTED, NEEDS_ATTENTION, STATE_ERROR }
-data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null)
+data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null) {
+    /** The print step failed: the printer was unreachable, busy or refusing. An empty queue or a job needing attention is not a failure. */
+    val printAttemptFailed get() = state == ServiceState.WAITING_PRINTER
+    val captureStep get() = when {
+        category == "DUPLICATE_SUPPRESSED" -> CaptureStep.DUPLICATE
+        state == ServiceState.QUEUED && category != "QUEUE_FULL" -> CaptureStep.NEW_PHOTO
+        else -> CaptureStep.RETRY
+    }
+}
 
 /** Camera acknowledgement and printer availability are independent durable boundaries. */
 /** Holds the report lines of a repeated print attempt until its outcome shows whether they say anything new. */
@@ -60,7 +68,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var failed = false
     private var current = ServiceSnapshot(ServiceState.WAITING_CAMERA, queue.size)
     private var retries = 0
-    private var lastRefusal: Long? = null
+    private val seriesRefusals = mutableSetOf<Long>()
 
     init {
         var opened: FileBridgeJournal? = null
@@ -174,9 +182,10 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         } catch (failure: Exception) {
             if (failure is InterruptedException) Thread.currentThread().interrupt()
             val outcome = recover(failure, ServiceState.WAITING_PRINTER)
-            // A refusal is news after a busy preflight with the same outcome, but not after the same refusal.
-            val repeated = retrying && outcome == previous && refusal == lastRefusal
-            lastRefusal = refusal
+            // A refusal code is news once per retry series, even between busy preflights with the same outcome.
+            if (!retrying) seriesRefusals.clear()
+            val newRefusal = refusal?.let(seriesRefusals::add) ?: false
+            val repeated = retrying && outcome == previous && !newRefusal
             attempts.release(keep = !repeated)
             retries = if (repeated) retries + 1 else 0
             // Doubling intervals keep a day of retries to a few dozen lines.

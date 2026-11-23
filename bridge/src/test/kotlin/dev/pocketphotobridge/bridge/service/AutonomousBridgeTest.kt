@@ -682,6 +682,45 @@ class AutonomousBridgeTest {
         assertTrue(diagnostics.events().none { "REDACTED" in it })
     }
 
+    @Test fun aPrinterAlternatingBetweenBusyAndRefusingReportsTheRefusalOnce() = root { state ->
+        val diagnostics = diagnostics(state)
+        var busy = true
+        val printer = PrinterConnector { SimulatedPrinter(if (busy) PrinterFault.BUSY else PrinterFault.REFUSE_SUBMIT).connect() }
+        bridge(state, printer = printer, report = diagnostics::emit, attempts = diagnostics).use {
+            it.capture(SelectionTrigger("selected"))
+            repeat(40) { attempt ->
+                busy = attempt % 2 == 0
+                assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext())
+            }
+        }
+        assertEquals(1, diagnostics.events().count { it.endsWith(" PRINTER_SUBMIT_REFUSED code=8006") })
+        assertTrue(diagnostics.events().size < 40)
+    }
+
+    @Test fun thePrintStepFailsOnlyForAnUnreachableBusyOrRefusingPrinterAndOnlyANewPhotoCountsAsNew() = root { state ->
+        var printer = SimulatedPrinter(PrinterFault.OFFLINE)
+        bridge(state, printer = PrinterConnector { printer.connect() }).use {
+            assertFalse(it.printNext().printAttemptFailed)
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("selected")).captureStep)
+            assertTrue(it.printNext().printAttemptFailed)
+            printer = SimulatedPrinter(PrinterFault.BUSY); assertTrue(it.printNext().printAttemptFailed)
+            printer = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT); assertTrue(it.printNext().printAttemptFailed)
+            printer = SimulatedPrinter()
+            val printed = it.printNext()
+            assertEquals(ServiceState.PRINTED, printed.state); assertFalse(printed.printAttemptFailed)
+            assertEquals(CaptureStep.DUPLICATE, it.capture(SelectionTrigger("again")).captureStep)
+        }
+        bridge(state.resolveSibling("attention"), printer = SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT)).use {
+            it.capture(SelectionTrigger("selected"))
+            val outcome = it.printNext()
+            assertEquals(ServiceState.NEEDS_ATTENTION, outcome.state); assertFalse(outcome.printAttemptFailed)
+        }
+        val broken = CameraWifiConnector { throw IOException("camera gone") }
+        bridge(state.resolveSibling("camera"), broken).use {
+            assertEquals(CaptureStep.RETRY, it.capture(SelectionTrigger("selected")).captureStep)
+        }
+    }
+
     @Test fun reconciliationReportsHowManyQueuedPhotosItRemoved() = root { state ->
         val diagnostics = diagnostics(state)
         bridge(state, printer = SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT), report = diagnostics::emit).use {

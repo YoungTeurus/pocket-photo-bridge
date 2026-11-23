@@ -112,7 +112,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             configStore.save(devices.configuration); configuration.set(devices.configuration)
         }
         bridge = openBridge()
-        loop = ServiceLoop(policy, object : ServiceLoopActions {
+        loop = ServiceLoop(policy, ::monotonicNow, object : ServiceLoopActions {
             override fun enterOperation() {
                 // The setup listener closes before Linux switches the exclusive radio.
                 if (!devices.simulation) { server?.close(); server = null }
@@ -120,14 +120,11 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 synchronized(bridgeLock) { bridge.close(); bridge = openBridge() }
                 diagnostics.emit("SERVICE_OPERATION")
             }
-            override fun capture(trigger: SelectionTrigger): Boolean {
-                val result = synchronized(bridgeLock) {
-                    if (bridge.snapshot().state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR)) return false
-                    bridge.capture(trigger)
-                }
-                return result.state == ServiceState.QUEUED && result.category != "QUEUE_FULL" || result.category == "DUPLICATE_SUPPRESSED"
-            }
-            override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.state == ServiceState.WAITING_PRINTER
+            override fun capture(trigger: SelectionTrigger): CaptureStep = synchronized(bridgeLock) {
+                if (bridge.snapshot().state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR)) return CaptureStep.RETRY
+                bridge.capture(trigger)
+            }.captureStep
+            override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printAttemptFailed
         })
     }
 
