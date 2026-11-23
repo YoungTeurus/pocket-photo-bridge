@@ -18,6 +18,13 @@ import java.util.UUID
 /** Identity is displayed only by the authenticated local UI. */
 data class LinuxPrinterDevice(val address: String, val name: String)
 
+/**
+ * The setup hotspot's own address on its /24. Kept off 192.168.50.0/24 and the other
+ * common router, phone-hotspot and NetworkManager defaults so a wired debug LAN never
+ * shares the hotspot subnet; 192.168.122.0/24 is the camera network.
+ */
+const val SETUP_HOTSPOT_ADDRESS = "10.212.77.1"
+
 /** Exclusive single-radio setup/camera modes. All credentials are in temporary root-private NM keyfiles. */
 class LinuxRadioManager internal constructor(private val stateDir: Path, private val wifiInterface: String,
     private val report: (String) -> Unit, private val runner: LinuxCommandRunner, private val profileDir: Path) : AutoCloseable {
@@ -52,7 +59,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
             setupActive = true
             configureUweSetupSecurity()
             reportRadio(report, "LINUX_SETUP_STARTED")
-            return InetAddress.getByAddress(byteArrayOf(192.toByte(), 168.toByte(), 50, 1))
+            return InetAddress.getByName(SETUP_HOTSPOT_ADDRESS)
         } catch (failure: Throwable) {
             // NM already owns an active AP if security adjustment fails. Keep
             // ownership until teardown succeeds; deleting a keyfile is insufficient.
@@ -326,7 +333,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
 
         [ipv4]
         method=${if (hotspot) "shared" else "auto"}
-        ${if (hotspot) "address1=192.168.50.1/24" else ""}
+        ${if (hotspot) "address1=$SETUP_HOTSPOT_ADDRESS/24" else ""}
         never-default=true
         ignore-auto-dns=true
 
