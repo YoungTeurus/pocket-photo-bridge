@@ -318,6 +318,7 @@ class AutonomousBridgeTest {
         val sony = SimulatedSony(photo())
         bridge(state, sony, ready).use {
             assertEquals(ServiceState.NEEDS_ATTENTION, it.snapshot().state)
+            assertEquals(BlockedReason.UNRESOLVED_PRINT, it.snapshot().blocked)
             assertEquals(ServiceState.NEEDS_ATTENTION, it.capture(SelectionTrigger("next")).state)
             assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
             assertEquals(0, sony.downloads)
@@ -407,6 +408,7 @@ class AutonomousBridgeTest {
             Files.delete(imageFiles(state).first())
             assertEquals(ServiceState.STATE_ERROR, it.printNext().state)
             assertEquals(ServiceState.STATE_ERROR, it.snapshot().state)
+            assertEquals(BlockedReason.STATE_ERROR, it.snapshot().blocked)
             assertEquals(0, printer.submissions)
         }
     }
