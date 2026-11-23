@@ -93,8 +93,25 @@ retain photos while the printer is offline or busy and block automatic
 submission after uncertain acceptance. Resolve unknown jobs only after checking
 the physical printer, through authenticated setup; keep duplicate records intact.
 
+Several photos can be sent in one power-on, including choosing the next one
+while the previous one prints. The service scans for the camera network about
+once a second, but not during a transfer or a print. While the camera stays
+visible after a successful transfer it is checked again right after each
+successful print, and otherwise after 60 seconds, doubling up to 300 seconds
+while it keeps offering an already received photo; a newly received photo or the
+camera network going away resets the pause to 60 seconds. Each such check joins
+the camera network and downloads the offered photo again in full; a photo
+already queued or printed is recognised by its content and never printed twice.
+A photo dropped after a printer refusal is not fetched again while the camera
+stays visible; send it again after the camera's network has gone away. A failed
+scan changes nothing until the next successful one. The journal and diagnostics
+record `SERVICE_CAMERA_PRESENT`, `SERVICE_CAMERA_ABSENT` and
+`SERVICE_CAMERA_WAIT category=...` only when the scan result changes. This
+replaces the MVP 4 rule of waiting for the camera network to disappear, a
+deliberate deviation recorded in [the architecture](architecture.md).
+
 Actual Wi-Fi AP support, hotspot-to-camera transitions, Bluetooth coexistence,
-SPP discovery, headless boot, pairing, permissions, photo selection/rearming,
+SPP discovery, headless boot, pairing, permissions, photo selection/re-checks,
 JPEG rendering, printer firmware responses, reconnect, power cuts and battery
 behavior must still be exercised on the Orange Pi and printer. Use a
 board-supported 64-bit Debian/Ubuntu image; Armbian Community images are not
@@ -112,4 +129,4 @@ bash bridge/packaging/package-linux.sh
 bash bridge/packaging/smoke-linux.sh # native architecture selected automatically
 ```
 
-The Linux smoke script checks the portable checksum, extracts into a path with spaces, and checks normal, crop, duplicate, deterministic faults, suite and power-cut recovery in bounded child processes with system Java excluded. It also checks the read-only Linux native bindings and authenticates against the real extracted service HTTP server, verifying redacted status/diagnostics without saving bootstrap output. HTTP controls prove capture retention while the printer is off or busy, completion when available, and duplicate suppression. Safe reports upload as `bridge-verification-linux-x64` and `bridge-verification-linux-arm64`. The existing Android workflow remains separate. Portable bundles include deployment files, documentation, project/mizink MIT notices, JNA licenses, and the bundled Java runtime/module legal notices.
+The Linux smoke script checks the portable checksum, extracts into a path with spaces, and checks normal, crop, duplicate, deterministic faults, suite and power-cut recovery in bounded child processes with system Java excluded. It also checks the read-only Linux native bindings and authenticates against the real extracted service HTTP server, verifying redacted status/diagnostics without saving bootstrap output. HTTP controls prove a second photo selected as soon as the first is queued (no camera absence in between), capture retention while the printer is off or busy, completion when available, and duplicate suppression. Safe reports upload as `bridge-verification-linux-x64` and `bridge-verification-linux-arm64`. The existing Android workflow remains separate. Portable bundles include deployment files, documentation, project/mizink MIT notices, JNA licenses, and the bundled Java runtime/module legal notices.

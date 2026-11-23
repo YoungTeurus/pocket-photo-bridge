@@ -77,6 +77,41 @@ per-photo prompt in normal operation. A single worker receives before printing,
 so a long print can delay the next camera transfer. An uncertain job requires
 checking the printer via setup; it is never automatically resubmitted.
 
+Several photos can be sent in one power-on. Each loop pass scans for the camera
+network once; the result is present, absent or unknown (the scan failed). An
+unknown scan neither checks the camera nor starts a new selection generation;
+the print step still runs and the next successful scan decides. A presence that
+follows an observed absence starts a new generation and is checked at once.
+After a successful transfer the camera usually stays visible, offering its last
+selection; the loop is then in re-check mode. It checks the camera again on the
+next pass after a successful print, because nothing is scanned during a print
+(up to four minutes), and otherwise after a pause counted from the start of the
+pass that ran the previous check: `FIRST_RECHECK_MS` (60 s), doubling after
+every check that finds only a known photo or fails before a photo is
+fingerprinted, up to `MAX_RECHECK_MS` (300 s). An observed absence or a newly
+queued photo resets the pause. Before the first successful transfer of a
+presence, and while the queue is full or a job needs attention (no radio
+connection is made), the check is retried every 5 seconds. Only a newly queued
+photo resets the print back-off. The SHA-256 of the received bytes, checked
+against the queue and the print history before any decoding, stays the only
+duplicate guard, so a repeated selection is downloaded again in full (about
+11-14 MB and a Wi-Fi join per check) but never printed twice. A photo dropped
+after a refusal is also treated as known for the rest of its generation, in
+memory only, so a re-check does not submit it again; the owner sends it again
+after the camera network has gone away. Presence is logged only when it changes:
+`SERVICE_CAMERA_PRESENT`, `SERVICE_CAMERA_ABSENT`, or `SERVICE_CAMERA_WAIT`
+with the scan's failure category. The simulated devices use 2 s and 10 s pauses
+so the packaged smoke test can send a series within its waits.
+
+**Deliberate deviation from the MVP 4 design.** The [MVP 4 design](superpowers/specs/2026-10-12-mvp4-headless-design.md)
+required waiting for the camera network to disappear before rearming. On the
+board the camera keeps its network across a print and often between two
+selections, so a second photo in one power-on was never fetched. The owner
+replaced that rule with the re-check above (issue #20). The 60 s and 300 s
+values are starting points for the first field session, which measures scan
+duration, how long the camera keeps its network after a completed transfer and
+what a second connection does on the camera screen.
+
 The local page uses generated credentials, sessions, CSRF and exact Host/Origin
 checks. Credentials are private persisted configuration, never diagnostic
 content or command arguments. Linux NetworkManager profiles are root-private
