@@ -3,6 +3,7 @@ name: Headless bridge
 on:
   push:
     branches: [main, 'feat/**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -36,36 +37,38 @@ jobs:
           java-version: '17.0.12'
           architecture: ${{ matrix.architecture }}
       - uses: gradle/actions/setup-gradle@41ad77ca97e46ee2e825d5e6b9a95d8169fcc44c # v4.4.2; includes wrapper validation
+      - name: Read the bridge version
+        run: echo "BRIDGE_VERSION=$(<bridge/VERSION)" >> "$GITHUB_ENV"
       - name: Install headless Java desktop and read-only Bluetooth check dependencies
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libfreetype6 fontconfig bluez libbluetooth3
       - name: Test and build JVM distributions without Android SDK
-        run: ./gradlew --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist :bridge:distZip :bridge:distTar
+        run: ./gradlew --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist :bridge:distZip :bridge:distTar -PbuildCommit=${{ github.sha }}
       - name: Build the native portable archive with its Java runtime
         run: bash bridge/packaging/package-linux.sh
       - name: Smoke test the extracted portable service without system Java
-        run: bash bridge/packaging/smoke-linux.sh bridge/build/portable/linux-${{ matrix.label }}/PocketPhotoBridge-0.5.0-linux-${{ matrix.label }}.tar.gz
+        run: bash bridge/packaging/smoke-linux.sh bridge/build/portable/linux-${{ matrix.label }}/PocketPhotoBridge-${{ env.BRIDGE_VERSION }}-linux-${{ matrix.label }}.tar.gz
       - name: Upload Linux portable archive and checksum
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: pocket-photo-bridge-linux-${{ matrix.label }}-0.5.0
+          name: pocket-photo-bridge-linux-${{ matrix.label }}-${{ env.BRIDGE_VERSION }}
           path: |
-            bridge/build/portable/linux-${{ matrix.label }}/PocketPhotoBridge-0.5.0-linux-${{ matrix.label }}.tar.gz
-            bridge/build/portable/linux-${{ matrix.label }}/PocketPhotoBridge-0.5.0-linux-${{ matrix.label }}.tar.gz.sha256
+            bridge/build/portable/linux-${{ matrix.label }}/PocketPhotoBridge-${{ env.BRIDGE_VERSION }}-linux-${{ matrix.label }}.tar.gz
+            bridge/build/portable/linux-${{ matrix.label }}/PocketPhotoBridge-${{ env.BRIDGE_VERSION }}-linux-${{ matrix.label }}.tar.gz.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Create JVM archive checksums
         if: matrix.label == 'x64'
         working-directory: bridge/build/distributions
-        run: sha256sum bridge-0.5.0.zip bridge-0.5.0.tar > bridge-0.5.0.sha256
+        run: sha256sum bridge-${{ env.BRIDGE_VERSION }}.zip bridge-${{ env.BRIDGE_VERSION }}.tar > bridge-${{ env.BRIDGE_VERSION }}.sha256
       - name: Upload architecture-independent JVM distributions
         if: matrix.label == 'x64'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: pocket-photo-bridge-jvm-0.5.0
+          name: pocket-photo-bridge-jvm-${{ env.BRIDGE_VERSION }}
           path: |
-            bridge/build/distributions/bridge-0.5.0.zip
-            bridge/build/distributions/bridge-0.5.0.tar
-            bridge/build/distributions/bridge-0.5.0.sha256
+            bridge/build/distributions/bridge-${{ env.BRIDGE_VERSION }}.zip
+            bridge/build/distributions/bridge-${{ env.BRIDGE_VERSION }}.tar
+            bridge/build/distributions/bridge-${{ env.BRIDGE_VERSION }}.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Upload Linux verification reports
@@ -98,9 +101,11 @@ jobs:
           java-version: '17.0.12'
           architecture: x64
       - uses: gradle/actions/setup-gradle@41ad77ca97e46ee2e825d5e6b9a95d8169fcc44c # v4.4.2; includes wrapper validation
+      - name: Read the bridge version
+        run: '"BRIDGE_VERSION=$((Get-Content -LiteralPath bridge/VERSION -Raw).Trim())" >> $env:GITHUB_ENV'
       - name: Test and build the JVM distribution without Android SDK
         run: |
-          .\gradlew.bat --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist
+          .\gradlew.bat --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist "-PbuildCommit=${{ github.sha }}"
           if ($LASTEXITCODE -ne 0) { throw 'Headless Gradle verification failed.' }
       - name: Build the Windows app image and portable ZIP
         run: ./bridge/packaging/package-windows.ps1
@@ -109,10 +114,10 @@ jobs:
       - name: Upload portable Windows ZIP and checksum
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: pocket-photo-bridge-windows-x64-0.5.0
+          name: pocket-photo-bridge-windows-x64-${{ env.BRIDGE_VERSION }}
           path: |
-            bridge/build/portable/windows-x64/PocketPhotoBridge-0.5.0-windows-x64.zip
-            bridge/build/portable/windows-x64/PocketPhotoBridge-0.5.0-windows-x64.zip.sha256
+            bridge/build/portable/windows-x64/PocketPhotoBridge-${{ env.BRIDGE_VERSION }}-windows-x64.zip
+            bridge/build/portable/windows-x64/PocketPhotoBridge-${{ env.BRIDGE_VERSION }}-windows-x64.zip.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Upload Windows verification reports
@@ -129,3 +134,34 @@ jobs:
             bridge/build/test-results/test/
             bridge/build/reports/smoke/windows/
           retention-days: 14
+
+  release:
+    name: Publish the tested Linux ARM64 archive as a GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The only job with write access; it runs no third-party action.
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Require the tag to be v plus bridge/VERSION
+        run: |
+          version=$(<bridge/VERSION)
+          [[ $GITHUB_REF_NAME == "v$version" ]] || { echo "::error::Tag $GITHUB_REF_NAME does not match bridge version $version."; exit 1; }
+          echo "BRIDGE_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Download the archive and checksum this run tested
+        run: gh run download "$GITHUB_RUN_ID" --name "pocket-photo-bridge-linux-arm64-$BRIDGE_VERSION" --dir release
+      - name: Verify the checksum and publish the release
+        working-directory: release
+        run: |
+          archive="PocketPhotoBridge-$BRIDGE_VERSION-linux-arm64.tar.gz"
+          sha256sum -c "$archive.sha256"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Pocket Photo Bridge $BRIDGE_VERSION" \
+            --notes "Build $BRIDGE_VERSION+$GITHUB_SHA. The .sha256 file detects transfer corruption; the build commit identifies the build." \
+            "$archive" "$archive.sha256"

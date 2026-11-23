@@ -140,6 +140,7 @@ def main():
                     time.sleep(1.0)
 
             initial = status()
+            require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+\+(?:[0-9a-f]{7,40}|dev)", initial.get("build") or ""), "service_build_missing")
             require(initial["mode"] == "SETUP", "first_boot_not_setup")
             require((initial["queued"], initial["prints"], initial["completed"]) == (0, 0, 0), "fresh_service_state_not_empty")
             private_get("/diagnostics")
