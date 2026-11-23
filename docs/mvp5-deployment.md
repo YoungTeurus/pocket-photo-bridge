@@ -181,6 +181,20 @@ only to the service run that began the boot: after a service restart within
 the same boot the page shows no count, and the earlier run's diagnostics keep
 the `BRIDGE_BOOT_QUEUE_DISCARDED` line.
 
+A state error during operation, for example a failed write to a worn SD card,
+does not end printing for the rest of the boot. The service closes the bridge
+and opens it again, which checks the saved state from disk as a start does;
+duplicate prevention and an unknown print's block are kept because they live in
+that state. Each state error gets one such reopen, and a service run gets at
+most three. Each is logged as `SERVICE_STATE_REOPENED reason=OK count=<n>` or,
+when the state still cannot be read, `SERVICE_STATE_REOPENED reason=FAILED
+category=<category> count=<n>`. After a failed reopen or the third one, the
+bridge stays blocked with `STATE_ERROR` and the service keeps running without
+exiting, so systemd does not restart it into a loop through setup. Because the
+page is unreachable during operation, a bridge that stops printing needs a
+restart: `sudo systemctl restart pocket-photo-bridge.service` keeps waiting
+photos, while a reboot with the retention setting off discards them.
+
 After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP
 server stop before the board joins the camera network. Reboot to enter setup
@@ -200,6 +214,12 @@ logged as `SERVICE_SETUP_FAILED category=<category> count=<n>`, where `n` is the
 number of failed attempts so far in that run; it is written after 1, 2, 4, 8 ...
 failures, whenever the category changes, and once more when the hotspot comes up
 or the run gives up. `sudo systemctl stop` stops the service without a restart.
+A stop, including the one every upgrade performs, logs `SERVICE_STOPPED` and
+then takes down the setup hotspot or the camera connection the bridge owns,
+also while the hotspot is still being retried. The service waits at most 30
+seconds for that cleanup, within the unit's 45-second stop timeout; a cleanup
+that fails logs `SERVICE_RADIO_CLEANUP_FAILED`. A stop during a print leaves
+that print unknown, to be checked as described below.
 Setup refuses to save an interface name that is not a Wi-Fi interface on the
 board, including a wired, loopback or USB network name
 (`WIFI_INTERFACE_NOT_FOUND`), and keeps the configuration saved before, because
@@ -279,7 +299,10 @@ network) and NetworkManager's numeric device state and reason read right after
 it. Association and address assignment happen in the same nmcli step, so only
 these numbers tell them apart. Whether NetworkManager still holds the reason at
 that moment on the board's image is not yet confirmed; record it in the field
-protocol. `LINUX_SETUP_STOPPED` appears only when a running hotspot was stopped.
+protocol. An activation that failed, including one nmcli gave up on after its
+wait (exit 3) while NetworkManager may still be bringing it up, is taken down
+with a checked `nmcli connection down`. `LINUX_SETUP_STOPPED` appears only when
+a running hotspot was stopped or a hotspot activation failed.
 The camera transfer logs `SONY_SELECTION count=<items>` and
 `SONY_JPEG_BYTES count=<bytes>`.
 
