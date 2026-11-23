@@ -50,6 +50,23 @@ class ServiceDiagnosticsTest {
         assertEquals(listOf("0 SERVICE_SETUP", "65 SERVICE_OPERATION"), report.events())
     }
 
+    @Test fun heldLinesReachTheConsoleAtOnceAndKeepTheSecondTheyHappened() {
+        val directory = Files.createTempDirectory("held-service-")
+        val output = ByteArrayOutputStream()
+        var millis = 0L
+        val report = ServiceDiagnostics(directory, PrintStream(output, true), { millis }, null)
+        report.hold()
+        millis = 1_000; report.emit("BRIDGE_PRINTER_CONNECTING")
+        assertEquals("BRIDGE_PRINTER_CONNECTING", output.toString().trim())
+        millis = 9_000; report.release(keep = true)
+        assertEquals(listOf("1 BRIDGE_PRINTER_CONNECTING"), report.events())
+        // A repeated attempt leaves the capped run alone but still shows on the console.
+        report.hold()
+        report.emit("PRINTER_PREFLIGHT"); report.release(keep = false)
+        assertEquals(listOf("1 BRIDGE_PRINTER_CONNECTING"), report.events())
+        assertEquals(listOf("BRIDGE_PRINTER_CONNECTING", "PRINTER_PREFLIGHT"), output.toString().trim().lines())
+    }
+
     @Test fun aRestartKeepsTheFiveMostRecentRunsAsPreviousRunsOldestFirst() {
         val directory = Files.createTempDirectory("restart-service-")
         fun start() = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)

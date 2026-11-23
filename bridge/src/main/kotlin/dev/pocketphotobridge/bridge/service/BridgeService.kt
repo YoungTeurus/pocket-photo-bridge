@@ -230,14 +230,15 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
 
     @Synchronized fun events(): List<String> = lines
     private var holder: Thread? = null
-    private val held = ArrayList<String>()
+    /** Each held line with the second it happened. */
+    private val held = ArrayList<Pair<Long, String>>()
     /** Holds only the calling thread's lines, so setup and pairing threads keep reporting. */
     @Synchronized override fun hold() { holder = Thread.currentThread(); held.clear() }
     @Synchronized override fun release(keep: Boolean) {
         if (holder !== Thread.currentThread()) return
         holder = null
         val pending = held.toList(); held.clear()
-        if (keep) pending.forEach(::emit)
+        if (keep) pending.forEach { (at, safe) -> append(at, safe, print = false) }
     }
     /** Oldest first; every line passes the same validator as the current run. */
     fun previousRuns(): List<Map<String, Any>> = (GENERATIONS downTo 1).mapNotNull { n ->
@@ -250,28 +251,39 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
     }
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
     @Synchronized fun emit(message: String) {
-        if (holder === Thread.currentThread()) { if (held.size < 256) { held += message; return }; release(true) }
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
+        val at = (now() - start) / 1000
+        // The journal has no cap, so it shows a held line live; only the capped run waits for the attempt's outcome.
+        if (holder === Thread.currentThread()) {
+            if (held.size < 256) { output.println(safe); held += at to safe; return }
+            release(true)
+        }
+        append(at, safe, print = true)
+    }
+    private fun append(at: Long, safe: String, print: Boolean) {
         // An unchanged state is not re-emitted, so idle hours cannot evict the run; redactions stay counted.
         if (safe != "DIAGNOSTIC_REDACTED" && lines.lastOrNull()?.substringAfter(' ') == safe) return
-        lines = recent(lines + "${(now() - start) / 1000} $safe"); output.println(safe)
+        lines = recent(lines + "$at $safe"); if (print) output.println(safe)
+        // The board usually stops by a power pull; force only failures to spare the SD card.
+        val force = " category=" in safe && NOT_FAILURES.none { " category=$it" in safe }
         try {
             if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve(FILE))) return
             val temp = Files.createTempFile(state, "diagnostic-", ".tmp")
             try {
                 Files.writeString(temp, header + "\n" + lines.joinToString("\n") + "\n")
-                // The board usually stops by a power pull; force only failures to spare the SD card.
-                if (" category=" in safe)
+                if (force)
                     java.nio.channels.FileChannel.open(temp, java.nio.file.StandardOpenOption.WRITE).use { it.force(true) }
                 Files.move(temp, state.resolve(FILE), ATOMIC_MOVE, REPLACE_EXISTING)
                 // The rename is durable only once the directory is synced; Windows cannot open a directory channel.
-                if (" category=" in safe) try {
+                if (force) try {
                     java.nio.channels.FileChannel.open(state, java.nio.file.StandardOpenOption.READ).use { it.force(true) }
                 } catch (_: Exception) { }
             } finally { Files.deleteIfExists(temp) }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
     }
     companion object {
+        /** Categories that name an outcome, not a failure: a re-check finding a known photo, or a transfer kept before its acknowledgement. */
+        private val NOT_FAILURES = setOf("DUPLICATE_SUPPRESSED", "CAMERA_ACK_PENDING")
         private const val FILE = "diagnostics.txt"
         /** Previous runs kept besides the current one. */
         const val GENERATIONS = 5
