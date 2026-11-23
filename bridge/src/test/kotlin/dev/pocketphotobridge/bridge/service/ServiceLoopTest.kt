@@ -12,9 +12,10 @@ class ServiceLoopTest {
         var printStep = PrintStep.IDLE
         var printTakesMs = 0L
         val printedAt = mutableListOf<Long>()
+        val checkedAt = mutableListOf<Long>()
         var clock = 0L
         override fun enterOperation() { transitions++ }
-        override fun capture(trigger: SelectionTrigger): CaptureStep { captures++; return captureStep }
+        override fun capture(trigger: SelectionTrigger): CaptureStep { captures++; checkedAt += clock; return captureStep }
         override fun printNext(): PrintStep {
             prints++; printedAt += clock; clock += printTakesMs
             return if (printFails) PrintStep.FAILED else printStep
@@ -34,7 +35,7 @@ class ServiceLoopTest {
         loop.tick(2_001, true, true)
         assertEquals(1, actions.captures); assertEquals(2, actions.prints)
     }
-    @Test fun cameraEpochRearmsOnlyAfterAbsenceAndInterruptedCaptureRetriesWithBackoff() {
+    @Test fun aNewPresenceIsCheckedAtOnceAndAnInterruptedCaptureRetriesAfterFiveSeconds() {
         val actions = Actions(); val loop = loop(BootModePolicy(0, windowMs = 30_000), actions)
         actions.captureStep = CaptureStep.RETRY
         loop.tick(30_000, true, true); loop.tick(30_001, true, true)
@@ -92,5 +93,24 @@ class ServiceLoopTest {
         loop.runUntil(actions, 30_000, camera = true)
         assertEquals(1, actions.captures)
         assertEquals(listOf(0L, 2_000, 6_000, 14_000, 30_000), actions.printedAt)
+    }
+    @Test fun aStillVisibleCameraIsCheckedAgainAfterAPauseThatDoublesToTheCapAndResetsOnAbsenceOrANewPhoto() {
+        val actions = Actions(); val policy = BootModePolicy(0); policy.requestOperation()
+        val loop = loop(policy, actions)
+        loop.tick(0, true, true)
+        actions.captureStep = CaptureStep.DUPLICATE
+        loop.runUntil(actions, 1_100_000, camera = true)
+        assertEquals(listOf(0L, 60_000, 180_000, 420_000, 720_000, 1_020_000), actions.checkedAt)
+        assertEquals(60_000L, ServiceLoop.FIRST_RECHECK_MS); assertEquals(300_000L, ServiceLoop.MAX_RECHECK_MS)
+        actions.checkedAt.clear()
+        actions.captureStep = CaptureStep.NEW_PHOTO
+        loop.runUntil(actions, 1_320_000, camera = true)
+        actions.captureStep = CaptureStep.DUPLICATE
+        loop.runUntil(actions, 1_500_000, camera = true)
+        assertEquals(listOf(1_320_000L, 1_380_000, 1_500_000), actions.checkedAt)
+        actions.checkedAt.clear()
+        loop.runUntil(actions, 1_501_000)
+        loop.runUntil(actions, 1_700_000, camera = true)
+        assertEquals(listOf(1_502_000L, 1_622_000), actions.checkedAt)
     }
 }
