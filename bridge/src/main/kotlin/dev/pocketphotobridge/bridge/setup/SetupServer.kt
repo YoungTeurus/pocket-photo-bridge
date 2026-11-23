@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import dev.pocketphotobridge.bridge.BridgeFailureCode
 import dev.pocketphotobridge.bridge.linux.LinuxRadioFailureCode
+import dev.pocketphotobridge.bridge.service.BlockedReason
 import dev.pocketphotobridge.bridge.service.ServiceDiagnostics
 import dev.pocketphotobridge.printer.PrinterFailureCode
 import dev.pocketphotobridge.sony.Failure
@@ -277,7 +278,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         """.trimIndent() else ""
         return shell("Bridge setup", """
             <h1>Pocket Photo Bridge</h1><p>Local setup is open. Authenticated interactions keep this setup window open.</p>
-            <section><h2>Status</h2><dl>${status.entries.joinToString("") { "<dt>${escape(it.key)}</dt><dd>${escape(it.value.toString())}</dd>" }}</dl></section>
+            <section><h2>Status</h2>${BLOCKED_SENTENCES[status["blockedReason"]]?.let { "<p><strong>${escape(it)}</strong></p>" } ?: ""}<dl>${status.entries.joinToString("") { "<dt>${escape(it.key)}</dt><dd>${escape(it.value.toString())}</dd>" }}</dl></section>
             <section><h2>Camera and printer</h2><form action="/config" method="post">${csrfField(session)}
             <label>Camera Wi-Fi name (SSID)<input name="cameraSsid" value="${escape(config?.cameraSsid.orEmpty())}" required maxlength="32" autocomplete="off"></label>
             <label>Camera Wi-Fi password<input type="password" name="cameraPassword" autocomplete="new-password" maxlength="64" placeholder="${if (config == null) "Enter camera password" else "Leave blank to keep saved password"}"></label>
@@ -313,6 +314,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
             val value = raw[key]
             if (value is String && value in STATUS_VALUES) put(key, value)
         }
+        (raw["blockedReason"] as? String)?.takeIf(BLOCKED_SENTENCES::containsKey)?.let { put("blockedReason", it) }
         for (key in listOf("queued", "pending", "completed", "captured", "printed", "prints", "queueCount", "queuedCount", "submittedCount", "unknownCount", "retainedBytes")) {
             val value = raw[key]
             if (value is Int && value in 0..1_000_000) put(key, value)
@@ -387,6 +389,12 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         private const val LOGIN_COOKIE = "setupLogin"
         private const val SESSION_COOKIE = "setupSession"
         private val SIMULATION_ACTIONS = listOf("select-photo", "duplicate-photo", "printer-on", "printer-off", "printer-busy", "printer-ready", "interrupted-download", "uncertain-print")
+        /** What the owner reads for each reason; the reason travels only as its fixed code. */
+        private val BLOCKED_SENTENCES = mapOf(
+            BlockedReason.UNRESOLVED_PRINT to "The bridge is not accepting or printing photos because the last print may or may not have come out. Check the printer and its paper output, then acknowledge below.",
+            BlockedReason.QUEUE_FULL to "The bridge is not accepting new photos because the waiting queue is full. Switch the printer on and start operation so the waiting photos print, then send new photos.",
+            BlockedReason.STATE_ERROR to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then restart the bridge; do not delete its state files.",
+        ).mapKeys { it.key.name }
         private val SERVICE_STATES = setOf("WAITING_CAMERA", "RECEIVING", "QUEUED", "WAITING_PRINTER", "PRINTING", "PRINTED", "NEEDS_ATTENTION", "STATE_ERROR", "PAIRING")
         /** The one value that is neither numeric nor an enum: version, plus sign, hexadecimal commit or dev. */
         private val BUILD = Regex(dev.pocketphotobridge.bridge.BridgeCli.BUILD_PATTERN)
