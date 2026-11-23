@@ -145,11 +145,15 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
    diagnostics so the failing run is kept as well (the state directory is
    readable only by root, so the pattern is expanded there):
    `sudo sh -c 'cd /var/lib/pocket-photo-bridge && tar -cf - diagnostics*.txt' > ~/diagnostics.tar`,
-   then record the last `SERVICE_FAILED` category.
+   then record the last `SERVICE_FAILED` category. For every cut also record
+   any `BRIDGE_STATE_ERROR` or `SERVICE_STATE_REOPENED` line of the runs around
+   it (issue #23): the session does not damage the state on purpose, so these
+   lines are the only field evidence of the reopen.
 7. **Retention.** With retention off, read the queue count with one photo
    waiting (printer off), reboot, and read it again from setup: expected 1, then
-   0 with `BRIDGE_BOOT_QUEUE_DISCARDED count=1`. The "retention on" half is not
-   applicable (issue #18, decision 4).
+   0 with `BRIDGE_BOOT_QUEUE_DISCARDED count=1`, and the setup page shows
+   "Waiting photos discarded at this boot: 1" (issue #22). The "retention on"
+   half is not applicable (issue #18, decision 4).
 8. **Receive fidelity.** The bridge keeps a received original only while its
    photo waits: as
    `/var/lib/pocket-photo-bridge/service/images/<fingerprint>.original.jpg`,
@@ -176,9 +180,33 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
     the bridge, the hotspot is gone from the phone, and the last lines of
     `sudo tail -n 3 /var/lib/pocket-photo-bridge/diagnostics.txt` contain
     `SERVICE_STOPPED`, followed in setup by `LINUX_SETUP_STOPPED`, with no
-    `SERVICE_RADIO_CLEANUP_FAILED`. Record whether a bridge connection was still
-    listed (not the network names) and the last two diagnostic lines, then
-    start the service again.
+    `SERVICE_RADIO_CLEANUP_FAILED`. Also expected:
+    `systemctl show -p ActiveState,Result pocket-photo-bridge.service` answers
+    `ActiveState=inactive` and `Result=success`, not a failed unit. Record
+    whether a bridge connection was still listed (not the network names), the
+    two `systemctl show` values, the seconds the stop took and the last two
+    diagnostic lines, then start the service again.
+12. **The setup page says why and refuses a wrong interface** (issues #21 and
+    #22). No extra equipment is needed.
+    - Save the configuration without changing the Wi-Fi interface. Expected:
+      saved. This is the first run of the interface check on the board's real
+      radio; record the result, and over the serial console record which of
+      `phy80211` and `wireless` exists in `/sys/class/net/<interface>/`.
+    - Enter the interface name `wlan9` and save. Expected: the save is refused
+      with `WIFI_INTERFACE_NOT_FOUND` and the page still shows the interface
+      saved before.
+    - After the power cut during the upload to the printer (step 6) the stage
+      is `NEEDS_ATTENTION`. Expected: the status section shows the sentence
+      about a print that may or may not have come out, and it disappears after
+      **I checked the printer**. Record both.
+    - Bluetooth not answering (derived from source, never run): over the serial
+      console run `sudo systemctl kill -s STOP bluetooth.service`, then reload
+      the setup page. Expected: the page opens after the command timeout with
+      the line that the paired-printer list is unavailable, and saving still
+      works. Record the seconds the page took (issue #30) and whether the line
+      appeared, then run `sudo systemctl kill -s CONT bluetooth.service` and
+      reload: the list is back. If the stopped Bluetooth service does not make
+      the list fail, record "not provoked".
 
 Also record, for the conditional work: whether any power cut damaged the
 persistent state (setup `stage` is `STATE_ERROR`); whether the printer still
