@@ -3,10 +3,9 @@
 The JVM service uses the existing Sony `SonyTransferSession` and Xiaomi
 `PrinterSession`. The Linux layer supplies Wi-Fi attachment, source-bound HTTP
 and a classic RFCOMM byte stream. It does not contain a second camera or printer
-protocol implementation. Earlier 0.5.0 builds brought up the setup AP and
-printed two single photos on the Orange Pi, one after the printer was switched
-on; [the Linux field protocol](linux-field-protocol.md) records those results
-and what is not yet validated.
+protocol implementation. Earlier 0.5.0 builds printed two single photos on the
+Orange Pi; [the Linux field protocol](linux-field-protocol.md) records what is
+and is not validated.
 
 ## NetworkManager and private credentials
 

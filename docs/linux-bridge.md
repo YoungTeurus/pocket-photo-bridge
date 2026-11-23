@@ -117,17 +117,9 @@ record `SERVICE_CAMERA_PRESENT`, `SERVICE_CAMERA_ABSENT` and
 replaces the MVP 4 rule of waiting for the camera network to disappear, a
 deliberate deviation recorded in [the architecture](architecture.md).
 
-On the Orange Pi, earlier 0.5.0 builds (pull request #9) passed the setup AP,
-authenticated setup, installation and upgrade with state preserved, cold boots
-into operation, and two single-photo prints, one after waiting for the printer
-to be switched on. Photo series and re-checks, refused jobs, power cuts during
-receive or printing, the queue count across a reboot (not independently
-observed), SD-card hash comparison, print quality, memory and temperature,
-long-session Bluetooth coexistence and battery behavior are not yet validated.
-Both builds predate later changes such as the `10.212.77.1` hotspot address,
-run headers and the re-check of a still-visible camera. See
-[the Linux field protocol](linux-field-protocol.md) for the recorded results
-and the next session's programme. Use a
+Earlier 0.5.0 builds printed two single photos on the Orange Pi;
+[the Linux field protocol](linux-field-protocol.md) records what is and is not
+validated there, and the next session's programme. Use a
 board-supported 64-bit Debian/Ubuntu image; Armbian Community images are not
 certified by this project. Linux ARM64 CI executes the extracted native bundle's
 real JVM simulations and authenticated HTTP server on an ARM64 hosted runner;

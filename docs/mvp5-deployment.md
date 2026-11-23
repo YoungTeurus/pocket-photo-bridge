@@ -6,12 +6,9 @@ Keep the complete extracted folder together, including `runtime`, `lib`/`app`,
 `licenses`, and `deploy`. Android and the existing `WindowsLive.cmd` manual
 hardware workflow remain available.
 
-Linux radio support is a pilot. On the Orange Pi Zero 2W, earlier 0.5.0 builds
-passed the setup AP, authenticated setup, cold boots into operation and two
-single-photo prints, one after waiting for the printer; photo series, refused
-jobs, power cuts, print quality and the queue across a reboot are not yet
-validated there. [The Linux field protocol](linux-field-protocol.md) records
-the results and the next session. The Windows simulation proves controller and
+Linux radio support is a pilot. Earlier 0.5.0 builds printed two single photos
+on the Orange Pi Zero 2W; [the Linux field protocol](linux-field-protocol.md)
+records what is and is not validated there. The Windows simulation proves controller and
 setup behavior using synthetic devices; it cannot access radios or print paper. Use a board-supported 64-bit Debian/Ubuntu image.
 An Armbian Community image is not certified for this bridge; an image's name or
 successful boot does not establish working Wi-Fi AP/Bluetooth support.
