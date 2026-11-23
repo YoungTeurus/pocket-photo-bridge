@@ -55,8 +55,9 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         try {
             writeProfile(profile, profileText(setupUuid, ssid, password, hotspot = true))
             nm("connection", "load", profile.toString())
-            nm("connection", "up", "uuid", setupUuid, "ifname", wifiInterface)
+            // Owned before "up": an activation that timed out may still come up, so the failure path takes it down.
             setupActive = true
+            nm("connection", "up", "uuid", setupUuid, "ifname", wifiInterface)
             configureUweSetupSecurity()
             reportRadio(report, "LINUX_SETUP_STARTED")
             return InetAddress.getByName(SETUP_HOTSPOT_ADDRESS)
@@ -93,8 +94,8 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         try {
             writeProfile(profile, profileText(cameraUuid, ssid, password, hotspot = false))
             nm("connection", "load", profile.toString())
-            activateCamera()
             cameraActive = true
+            activateCamera()
             // Joined; address and route are verified next, so a later failure means "joined but unusable".
             reportRadio(report, "LINUX_CAMERA_ACTIVATED")
             val candidate = cameraCandidate()
