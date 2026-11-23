@@ -210,8 +210,9 @@ printer do not push earlier events out. While a photo waits, a failed print atte
 (printer off, busy, or refusing the job) is retried after 2, 4, 8 ... seconds, at
 most every 30 seconds; a new photo or a successful print starts again at 2 seconds.
 A job the printer refuses is logged as `PRINTER_SUBMIT_REFUSED code=N`; a busy
-refusal (`code=8006`) keeps the photo queued. Photos removed from the queue
-because they were already submitted are logged as `BRIDGE_QUEUE_RECONCILED count=N`. The run that was in place before the
+refusal (`code=8006`) keeps the photo queued; any other code drops the photo,
+so send it again from the camera to print it. Photos removed from the queue
+because they were already submitted or were refused this way are logged as `BRIDGE_QUEUE_RECONCILED count=N`. The run that was in place before the
 upgrade to run headers is kept as a previous run without a run counter.
 
 A failed camera or printer step names its own category, for example
