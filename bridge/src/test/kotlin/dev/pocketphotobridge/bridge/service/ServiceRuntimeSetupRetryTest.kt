@@ -9,11 +9,13 @@ import dev.pocketphotobridge.bridge.setup.SetupCredentials
 import dev.pocketphotobridge.bridge.setup.SetupPrinter
 import dev.pocketphotobridge.printer.PrinterTransport
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -25,6 +27,8 @@ class ServiceRuntimeSetupRetryTest {
         val starts = mutableListOf<Long>()
         val pauses = mutableListOf<Long>()
         var report: (String) -> Unit = { }
+        var interfaces = emptySet<String>()
+        override fun wifiInterfaceExists(name: String) = name in interfaces
         override fun startSetup(credentials: SetupCredentials, wifiInterface: String): InetSocketAddress {
             starts += clock; clock += attemptMs
             if (starts.size <= failures) { report("LINUX_SETUP_STOPPED"); throw LinuxRadioFailure(LinuxRadioFailureCode.COMMAND_FAILED) }
@@ -98,5 +102,28 @@ class ServiceRuntimeSetupRetryTest {
             "35 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=8", "75 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=16",
             "100 SERVICE_SETUP_FAILED category=COMMAND_FAILED count=20", "100 SERVICE_SETUP"),
             run.events.take(8))
+    }
+
+    @Test fun setupAsksTheDeviceLayerWhetherASavedWifiInterfaceExists() {
+        val root = Files.createTempDirectory("setup-interface-")
+        try {
+            val state = root.resolve("state")
+            BridgeService.privateRoot(state)
+            val output = PrintStream(ByteArrayOutputStream())
+            val radio = SlowRadio(failures = 0, attemptMs = 0)
+            ServiceRuntime(state, radio, ServiceDiagnostics(state, output), output).use {
+                assertFalse(it.backend().wifiInterfaceExists("wlan9"))
+                radio.interfaces = setOf("wlan9")
+                assertTrue(it.backend().wifiInterfaceExists("wlan9"))
+            }
+        } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test fun onLinuxOnlyAWirelessInterfaceCountsAsAWifiInterface() {
+        assumeTrue(System.getProperty("os.name").startsWith("Linux"))
+        val devices = LinuxServiceDevices(Path.of("never-opened")) { }
+        // Loopback exists on every Linux host and is not a Wi-Fi interface.
+        assertFalse(devices.wifiInterfaceExists("lo"))
+        assertFalse(devices.wifiInterfaceExists("wlx-not-present"))
     }
 }

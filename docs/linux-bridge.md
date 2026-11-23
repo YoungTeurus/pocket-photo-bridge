@@ -83,7 +83,7 @@ serves `http://10.212.77.1:8080/`. The hotspot and HTTP listener stop before
 joining the camera network. Reboot to enter setup again. A hotspot that fails to
 start is retried in the process every 5 seconds for two minutes; the unit then
 restarts the service every 30 seconds without a start limit, and setup refuses
-a Wi-Fi interface the board does not have (see the deployment instructions,
+an interface name that is not a Wi-Fi interface on the board (see the deployment instructions,
 which describe the diagnostics). The state root is
 `/var/lib/pocket-photo-bridge`, root-owned and private. Upgrades retain the queue,
 configuration, bootstrap secrets, and print-history records within the current

@@ -200,8 +200,9 @@ logged as `SERVICE_SETUP_FAILED category=<category> count=<n>`, where `n` is the
 number of failed attempts so far in that run; it is written after 1, 2, 4, 8 ...
 failures, whenever the category changes, and once more when the hotspot comes up
 or the run gives up. `sudo systemctl stop` stops the service without a restart.
-Setup refuses to save a Wi-Fi interface the board does not have
-(`WIFI_INTERFACE_NOT_FOUND`) and keeps the configuration saved before, because
+Setup refuses to save an interface name that is not a Wi-Fi interface on the
+board, including a wired, loopback or USB network name
+(`WIFI_INTERFACE_NOT_FOUND`), and keeps the configuration saved before, because
 the hotspot itself starts on the saved interface.
 
 For normal use, power on the bridge and printer in either order, then use the

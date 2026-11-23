@@ -110,6 +110,8 @@ class LinuxServiceDevices(private val state: Path, private val report: (String) 
     override fun printers() = radio().pairedPrinters().map { SetupPrinter(it.address, it.name) }
     override fun pairPrinter(address: String) = radio().pairPrinter(address)
     // The configuration pattern admits no path separators, so the name stays one entry under /sys/class/net.
-    override fun wifiInterfaceExists(name: String) = Files.isDirectory(Path.of("/sys/class/net", name))
+    // Only a wireless device has phy80211 (cfg80211) or wireless (WEXT); loopback, wired or USB names never pass.
+    override fun wifiInterfaceExists(name: String) =
+        listOf("phy80211", "wireless").any { Files.isDirectory(Path.of("/sys/class/net", name, it)) }
     override fun close() { manager?.close() }
 }
