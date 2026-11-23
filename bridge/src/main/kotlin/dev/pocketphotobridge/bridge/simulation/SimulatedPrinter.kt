@@ -30,8 +30,11 @@ class SimulationClock {
     }
 }
 
-/** Parses actual encrypted protocol traffic, but never connects to radios or prints. */
-/** [refusalCode] is the negative error code a [PrinterFault.REFUSE_SUBMIT] printer answers print_job with. */
+/**
+ * Parses actual encrypted protocol traffic, but never connects to radios or prints.
+ *
+ * @param refusalCode the negative error code a [PrinterFault.REFUSE_SUBMIT] printer answers print_job with.
+ */
 class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE, private val refusalCode: Long = PrinterSession.BUSY_CODE,
     private val crash: () -> Unit = { throw SimulatedPowerLoss() }) : PrinterConnector {
     var submissions: Int = 0
