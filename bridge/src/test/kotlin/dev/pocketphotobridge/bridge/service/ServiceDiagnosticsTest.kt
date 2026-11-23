@@ -141,6 +141,19 @@ class ServiceDiagnosticsTest {
         assertEquals(accepted.map { "0 $it" }, Files.readAllLines(directory.resolve("diagnostics.txt")).drop(1))
     }
 
+    @Test fun aStateReopenIsKeptWithItsOutcomeCountAndCategoryOnly() {
+        val directory = Files.createTempDirectory("reopen-service-")
+        val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        val accepted = listOf("SERVICE_STATE_REOPENED reason=OK count=1",
+            "SERVICE_STATE_REOPENED reason=FAILED category=PERSISTENCE_ERROR count=2",
+            "SERVICE_STATE_REOPENED reason=FAILED category=INSTANCE_RUNNING count=3")
+        val rejected = listOf("SERVICE_STATE_REOPENED reason=FAILED category=/var/lib/pocket-photo-bridge/service count=1",
+            "SERVICE_STATE_REOPENED reason=No space left on device")
+        (accepted + rejected).forEach(report::emit)
+        assertEquals(accepted.map { "0 $it" } + rejected.map { "0 DIAGNOSTIC_REDACTED" },
+            Files.readAllLines(directory.resolve("diagnostics.txt")).drop(1))
+    }
+
     @Test fun radioStageEventsKeepOnlyBoundedNetworkManagerNumbers() {
         val directory = Files.createTempDirectory("radio-service-")
         val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
