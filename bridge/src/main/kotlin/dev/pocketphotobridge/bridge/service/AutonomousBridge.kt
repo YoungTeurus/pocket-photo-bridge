@@ -26,6 +26,8 @@ enum class BlockedReason { UNRESOLVED_PRINT, QUEUE_FULL, STATE_ERROR }
 data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null, val dropped: Int = 0,
     val canAccept: Boolean = true) {
     val blocked: BlockedReason? get() = when {
+        state == ServiceState.STATE_ERROR -> BlockedReason.STATE_ERROR
+        state == ServiceState.NEEDS_ATTENTION -> BlockedReason.UNRESOLVED_PRINT
         !canAccept -> BlockedReason.QUEUE_FULL
         else -> null
     }
