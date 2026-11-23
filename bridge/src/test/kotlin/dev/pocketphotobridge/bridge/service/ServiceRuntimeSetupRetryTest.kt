@@ -74,4 +74,17 @@ class ServiceRuntimeSetupRetryTest {
         assertEquals(listOf(0L, 6_000L, 12_000L), radio.starts)
         assertEquals(listOf(5_000L, 5_000L), radio.pauses)
     }
+
+    @Test fun anAttemptStillRunningAtTwoMinutesFinishesAndThenTheServiceGivesUp() {
+        val radio = SlowRadio(failures = 100, attemptMs = 50_000)
+        val run = run(radio)
+        // The third attempt starts at 110 s, runs past 120 s and is the last.
+        assertEquals(listOf(0L, 55_000L, 110_000L), radio.starts)
+        assertEquals(LinuxRadioFailureCode.COMMAND_FAILED, (run.failure as LinuxRadioFailure).code)
+        assertFalse(run.events.any { it.endsWith(" SERVICE_SETUP") })
+        // An attempt ending at 118 s would let the next one start at 123 s, past the limit, so none starts.
+        val late = SlowRadio(failures = 100, attemptMs = 36_000)
+        assertTrue(run(late).failure is LinuxRadioFailure)
+        assertEquals(listOf(0L, 41_000L, 82_000L), late.starts)
+    }
 }
