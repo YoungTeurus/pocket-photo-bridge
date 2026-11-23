@@ -122,7 +122,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 // The setup listener closes before Linux switches the exclusive radio.
                 if (!devices.simulation) { server?.close(); server = null }
                 devices.stopSetup()
-                synchronized(bridgeLock) { bridge.close(); bridge = openBridge() }
+                // Not counted as a reopen; a failure leaves the stand-in, so the run stays up instead of looping through setup.
+                synchronized(bridgeLock) { reopen(bridge.snapshot().queued)?.let { reportReopen(it) } }
                 diagnostics.emit("SERVICE_OPERATION")
             }
             override fun capture(trigger: SelectionTrigger) = step { it.capture(trigger) }.captureStep
@@ -149,19 +150,26 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     private fun step(action: (ServiceBridge) -> ServiceSnapshot): ServiceSnapshot = synchronized(bridgeLock) {
         val outcome = action(bridge)
         if (outcome.state != ServiceState.STATE_ERROR || bridge is StateErrorBridge || reopens >= MAX_STATE_REOPENS) return outcome
+        // A stop's interrupt can surface as a state error; the stop is not storage damage and must not wait on a reopen.
+        if (!running.get() || Thread.currentThread().isInterrupted) return outcome
         reopens++
-        try { bridge.close() } catch (_: Exception) { }
-        bridge = try {
-            openBridge().also { reopened ->
-                if (reopened.snapshot().state == ServiceState.STATE_ERROR) { reopened.close(); throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR) }
-                diagnostics.emit("SERVICE_STATE_REOPENED reason=OK count=$reopens")
-            }
-        } catch (failure: Exception) {
-            diagnostics.emit("SERVICE_STATE_REOPENED reason=FAILED category=${BridgeService.category(failure)} count=$reopens")
-            StateErrorBridge(outcome.queued)
-        }
+        val failure = reopen(outcome.queued)
+        if (failure == null) diagnostics.emit("SERVICE_STATE_REOPENED reason=OK count=$reopens") else reportReopen(failure)
         outcome
     }
+
+    /** Closes the bridge and opens it again from disk, under [bridgeLock]; a failure leaves the stand-in and is returned. */
+    private fun reopen(queued: Int): Exception? {
+        try { bridge.close() } catch (_: Exception) { }
+        return try {
+            bridge = openBridge().also { reopened ->
+                if (reopened.snapshot().state == ServiceState.STATE_ERROR) { reopened.close(); throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR) }
+            }
+            null
+        } catch (failure: Exception) { bridge = StateErrorBridge(queued); failure }
+    }
+    private fun reportReopen(failure: Exception) =
+        diagnostics.emit("SERVICE_STATE_REOPENED reason=FAILED category=${BridgeService.category(failure)} count=$reopens")
 
     fun run() {
         worker = Thread.currentThread()
@@ -194,9 +202,12 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             if (setupInterface != null || !running.get()) diagnostics.emit("SERVICE_STOPPED")
             // The bounded command runner refuses an interrupted thread, so the radio cleanup runs with the flag clear.
             val interrupted = Thread.interrupted()
-            try { devices.close() } catch (_: Exception) { diagnostics.emit("SERVICE_RADIO_CLEANUP_FAILED") }
-            stopped.countDown()
-            if (interrupted) Thread.currentThread().interrupt()
+            // The page and a pairing in progress go first: pairing holds the radio, which the cleanup needs.
+            try { close() } finally {
+                try { devices.close() } catch (_: Exception) { diagnostics.emit("SERVICE_RADIO_CLEANUP_FAILED") }
+                stopped.countDown()
+                if (interrupted) Thread.currentThread().interrupt()
+            }
         }
     }
 
