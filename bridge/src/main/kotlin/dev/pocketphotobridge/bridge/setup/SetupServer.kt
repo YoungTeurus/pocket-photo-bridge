@@ -403,7 +403,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         private val BLOCKED_SENTENCES = mapOf(
             BlockedReason.UNRESOLVED_PRINT to "The bridge is not accepting or printing photos because the last print may or may not have come out. Check the printer and its paper output, then acknowledge below.",
             BlockedReason.QUEUE_FULL to "The bridge is not accepting new photos because the waiting queue is full. Switch the printer on and start operation so the waiting photos print, then send new photos.",
-            BlockedReason.STATE_ERROR to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then restart the bridge; do not delete its state files.",
+            BlockedReason.STATE_ERROR to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then choose Start operation: the bridge reads its state again. If photos still do not print, restart the bridge; with Keep waiting photos across power cycles off, a restart discards waiting photos. Do not delete its state files.",
         ).mapKeys { it.key.name }
         private val SERVICE_STATES = setOf("WAITING_CAMERA", "RECEIVING", "QUEUED", "WAITING_PRINTER", "PRINTING", "PRINTED", "NEEDS_ATTENTION", "STATE_ERROR", "PAIRING")
         /** The one value that is neither numeric nor an enum: version, plus sign, hexadecimal commit or dev. */
