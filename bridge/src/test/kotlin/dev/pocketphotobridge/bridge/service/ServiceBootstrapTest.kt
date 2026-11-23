@@ -20,6 +20,7 @@ class ServiceBootstrapTest {
         assertEquals(first, second)
         assertTrue(first.contains("Setup SSID: PocketPhoto-"))
         assertTrue(first.contains("Setup administrator password: "))
+        assertTrue(first.lines().contains("Setup URL: http://10.212.77.1:8080/"))
         // Neither a current run nor a rotated previous run.
         Files.list(state).use { files -> assertTrue(files.noneMatch { it.fileName.toString().startsWith("diagnostics") }) }
         assertFalse(Files.exists(state.resolve("print-journal")))
