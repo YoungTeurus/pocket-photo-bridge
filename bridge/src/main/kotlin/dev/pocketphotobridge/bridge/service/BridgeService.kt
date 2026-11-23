@@ -122,7 +122,12 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         loop = ServiceLoop(policy, ::monotonicNow, object : ServiceLoopActions {
             override fun enterOperation() {
                 // The setup listener closes before Linux switches the exclusive radio.
-                if (!devices.simulation) { pageClosed = true; server?.close(); server = null }
+                if (!devices.simulation) {
+                    // Under the lock, so no pairing or save starts after it; one that slipped in after the tick's check is cancelled.
+                    synchronized(bridgeLock) { pageClosed = true }
+                    server?.close(); server = null
+                    pairing.close()
+                }
                 devices.stopSetup()
                 // Routine, so not counted; a failure leaves a stand-in that operation reopens once, and the run stays up either way.
                 synchronized(bridgeLock) { reopen(bridge.snapshot().queued, retry = true)?.let { reportReopen(it) } }
@@ -276,8 +281,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         override fun diagnostics() = status() + mapOf("header" to diagnostics.header, "events" to diagnostics.events(),
             "previousRuns" to diagnostics.previousRuns())
         override fun staySetup() { if (!loop.operating) policy.holdSetup() }
-        override fun saveConfig(config: ServiceConfiguration) {
-            check(!loop.operating) { "SETUP_REQUIRED" }
+        override fun saveConfig(config: ServiceConfiguration) = synchronized(bridgeLock) {
+            check(!pageClosed && !loop.operating) { "SETUP_REQUIRED" }
             configStore.save(config); configuration.set(config)
             diagnostics.emit("SERVICE_CONFIG_SAVED")
         }
@@ -294,7 +299,9 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             if (pairing.pending) return printerCache.get()
             return devices.printers().also { printerCache.set(it) }
         }
-        override fun pairPrinter(address: String) { check(!loop.operating); pairing.start(address) }
+        override fun pairPrinter(address: String) = synchronized(bridgeLock) {
+            check(!pageClosed && !loop.operating) { "SETUP_REQUIRED" }; pairing.start(address)
+        }
         override fun simulationAction(action: String) { check(devices.simulation); devices.simulationAction(action) }
     }
 

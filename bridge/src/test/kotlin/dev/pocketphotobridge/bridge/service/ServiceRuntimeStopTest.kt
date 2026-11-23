@@ -49,7 +49,9 @@ class ServiceRuntimeStopTest {
             try { Thread.sleep(120_000) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
             throw LinuxRadioFailure(LinuxRadioFailureCode.CANCELLED)
         }
-        @Synchronized override fun stopSetup() { if (holdStopSetup) holdUntilInterrupted() }
+        /** Runs when the switch into operation takes the hotspot down, after the page closed and before operation began. */
+        @Volatile var onStopSetup: () -> Unit = { }
+        @Synchronized override fun stopSetup() { onStopSetup(); if (holdStopSetup) holdUntilInterrupted() }
         override fun cameraPresent(configuration: ServiceConfiguration) = false
         override fun camera(configuration: ServiceConfiguration, trigger: SelectionTrigger): CameraLink = throw UnsupportedOperationException()
         override fun printer(configuration: ServiceConfiguration): PrinterTransport = throw UnsupportedOperationException()
@@ -126,6 +128,26 @@ class ServiceRuntimeStopTest {
                 assertFalse(diagnostics.events().any { "BRIDGE_STATE_ERROR" in it })
             }
             operating
+        }
+        assertEquals(listOf("SETUP_REQUIRED", "SETUP_REQUIRED"), late)
+    }
+
+    @Test fun onceTheSwitchIntoOperationHasClosedThePageALatePairingOrSaveIsRefused() {
+        val radio = Radio()
+        var started = false
+        val late = mutableListOf<String?>()
+        stopWhen(radio) { runtime, diagnostics ->
+            if (!started && setupServed(diagnostics)) {
+                started = true
+                radio.onStopSetup = {
+                    // Requests the closing page let through, arriving while the radio switches.
+                    late += (runCatching { runtime.backend().pairPrinter("02:00:00:00:00:01") }.exceptionOrNull() as? IllegalStateException)?.message
+                    late += (runCatching { runtime.backend().saveConfig(SimulatedServiceDevices().configuration) }.exceptionOrNull() as? IllegalStateException)?.message
+                }
+                runtime.backend().saveConfig(SimulatedServiceDevices().configuration)
+                runtime.backend().startOperation()
+            }
+            diagnostics.events().any { it.endsWith(" SERVICE_OPERATION") }
         }
         assertEquals(listOf("SETUP_REQUIRED", "SETUP_REQUIRED"), late)
     }
