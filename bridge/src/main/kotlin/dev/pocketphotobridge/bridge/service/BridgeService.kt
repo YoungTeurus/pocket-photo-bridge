@@ -168,10 +168,11 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             return linkedMapOf<String, Any>("build" to BridgeCli.BUILD, "mode" to if (loop.operating) "OPERATION" else "SETUP",
                 "stage" to if (pairing.pending) "PAIRING" else snapshot.state.name, "queued" to snapshot.queued, "simulation" to devices.simulation,
                 "configured" to (configuration.get() != null), "autoPrintEnabled" to (configuration.get()?.autoPrintEnabled == true),
-                "blocked" to (snapshot.blocked != null), "discardedAtBoot" to snapshot.discardedAtBoot)
+                "blocked" to (snapshot.blocked != null))
                 .apply {
                     (snapshot.category ?: pairing.failure)?.let { put("category", it) }
                     snapshot.blocked?.let { put("blockedReason", it.name) }
+                    snapshot.discardedAtBoot?.let { put("discardedAtBoot", it) }
                     putAll(devices.safeCounts())
                 }
         }

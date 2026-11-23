@@ -42,7 +42,8 @@ class ServiceRuntimeStatusTest {
             val unresolved = status()
             assertEquals(true, unresolved["blocked"])
             assertEquals("UNRESOLVED_PRINT", unresolved["blockedReason"])
-            assertEquals(1, unresolved["discardedAtBoot"])
+            // This runtime started later in the same boot: it shows no count rather than a wrong zero.
+            assertFalse("discardedAtBoot" in unresolved)
         } finally { root.toFile().deleteRecursively() }
     }
 }

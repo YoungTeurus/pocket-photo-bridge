@@ -165,11 +165,11 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
         } catch (_: Exception) { /* No live record references these bytes anymore. */ }
     }
 
-    /** Waiting photos discarded at the start of the current boot, kept in the boot marker across service restarts. */
-    var discardedThisBoot = 0
+    /** Waiting photos discarded when this queue began the boot; null when the boot was begun earlier (a service restart within it) or never. */
+    var discardedThisBoot: Int? = null
         private set
 
-    /** The queue owner records a boot only after its discard commit has reached disk. Returns the photos discarded by this call. */
+    /** The queue owner records a boot only after its discard commit has reached disk. */
     fun beginBoot(bootId: String, keepWaiting: Boolean, wasSubmitted: (String) -> Boolean): Int {
         checkOpen()
         if (!BOOT_ID.matches(bootId)) persistence()
@@ -179,21 +179,15 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
             secure(bootFile)
             val text = Files.newInputStream(bootFile, NOFOLLOW_LINKS).use { it.readNBytes(257) }.toString(Charsets.UTF_8)
             val lines = text.split('\n')
-            // Version 1, from before the count was kept, has no count line.
-            val counted = lines[0] == "PPB-BOOT 2"
-            if (lines.size != (if (counted) 5 else 4) || !counted && lines[0] != "PPB-BOOT 1" || !BOOT_ID.matches(lines[1]) ||
-                counted && !BOOT_COUNT.matches(lines[2]) || lines.last() != "") persistence()
-            val payload = lines.dropLast(2).joinToString("") { it + "\n" }
-            if (lines[lines.size - 2] != "checksum=${hash(payload.toByteArray(Charsets.UTF_8))}") persistence()
-            if (lines[1] == bootId) {
-                discardedThisBoot = if (counted) lines[2].removePrefix("discarded=").toInt() else 0
-                return 0
-            }
+            if (lines.size != 4 || lines[0] != "PPB-BOOT 1" || !BOOT_ID.matches(lines[1]) || lines[3] != "") persistence()
+            val payload = "${lines[0]}\n${lines[1]}\n"
+            if (lines[2] != "checksum=${hash(payload.toByteArray(Charsets.UTF_8))}") persistence()
+            if (lines[1] == bootId) return 0
         }
         // A pre-feature queue has no boot marker. Adopt it without treating an upgrade as a power cycle.
         val discarded = if (keepWaiting || !previousBootKnown) emptyList() else records.filterNot { wasSubmitted(it.fingerprint) }
         discarded.forEach(::remove)
-        val payload = "PPB-BOOT 2\n$bootId\ndiscarded=${discarded.size}\n"
+        val payload = "PPB-BOOT 1\n$bootId\n"
         val bytes = (payload + "checksum=${hash(payload.toByteArray(Charsets.UTF_8))}\n").toByteArray(Charsets.UTF_8)
         val temporary = Files.createTempFile(root, "boot-", ".tmp")
         try {
@@ -332,7 +326,6 @@ internal class DurableCaptureQueue(directory: Path) : AutoCloseable {
         private const val MAX_QUEUE_BYTES = 256L * 1024 * 1024
         private const val MAX_ORIGINAL_BYTES = 64L * 1024 * 1024
         private val DIGEST = Regex("[0-9a-f]{64}")
-        private val BOOT_COUNT = Regex("discarded=(?:0|[1-9][0-9]{0,5})")
         private val BOOT_ID = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
         private val IMAGE_FILE = Regex("(?:[0-9a-f]{64}\\.(?:original|print)\\.jpg|capture-[A-Za-z0-9-]+\\.tmp)")
         private val DIRECTORY_PERMISSION = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------"))
