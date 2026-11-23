@@ -112,10 +112,9 @@ internal class LinuxBluetoothAdapter(private val backend: LinuxSocketBackend,
             if (ready == 0) continue
             if (ready and LinuxPoll.INVALID != 0) disconnected()
             if (connecting && ready and (events or LinuxPoll.ERROR or LinuxPoll.HANGUP) != 0 && !handle.call { backend.connectSucceeded(it) }) disconnected()
-            if (ready and LinuxPoll.ERROR != 0) disconnected()
-            // Bytes queued before a hang-up are read first; the following receive returns 0 and reports EOF.
+            // Bytes queued before a hang-up or reset are read first; the following receive returns 0 or fails and ends the stream.
             if (!connecting && events and ready and LinuxPoll.READ != 0) return
-            if (ready and LinuxPoll.HANGUP != 0) disconnected()
+            if (ready and (LinuxPoll.ERROR or LinuxPoll.HANGUP) != 0) disconnected()
             if (ready and events != 0) return
         }
     }

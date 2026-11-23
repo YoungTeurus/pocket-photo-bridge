@@ -163,7 +163,7 @@ class PrinterSessionTest {
         fails(PrinterFailureCode.PROTOCOL_ERROR) { session(printer).print(jpeg(), printer.guard) }
         assertTrue(printer.guard.unresolved)
     }
-    @Test fun finishedReplyDeliveredWithHangupResolvesJob() {
+    @Test fun finishedReplyBeforeEndOfStreamResolvesJob() {
         val printer = CameraIndependentPrinter(finalReplyThenEof = FinalReplyThenEof.COMPLETE)
         val events = mutableListOf<PrinterDiagnostic>()
         session(printer, events).print(jpeg(), printer.guard)
