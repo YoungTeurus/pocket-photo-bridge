@@ -391,6 +391,8 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         lines = recent(lines + "$at $safe"); if (print) output.println(safe)
         // The board usually stops by a power pull; force only failures to spare the SD card.
         val force = " category=" in safe && NOT_FAILURES.none { " category=$it" in safe }
+        // A file channel closes on a pending interrupt, as a stop leaves on the worker and pairing threads; it is restored after.
+        val interrupted = Thread.interrupted()
         try {
             if (!Files.isDirectory(state) || Files.isSymbolicLink(state.resolve(FILE))) return
             val temp = Files.createTempFile(state, "diagnostic-", ".tmp")
@@ -405,6 +407,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 } catch (_: Exception) { }
             } finally { Files.deleteIfExists(temp) }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
+        finally { if (interrupted) Thread.currentThread().interrupt() }
     }
     companion object {
         /** Categories that name an outcome, not a failure: a re-check finding a known photo, or a transfer kept before its acknowledgement. */
