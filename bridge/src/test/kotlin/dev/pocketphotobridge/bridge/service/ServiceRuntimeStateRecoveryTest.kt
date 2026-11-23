@@ -176,13 +176,30 @@ class ServiceRuntimeStateRecoveryTest {
         assertEquals(1, devices.sim.safeCounts()["prints"])
     }
 
-    @Test fun aStateDamagedBeforeTheSwitchIntoOperationLeavesAStableStateErrorAndTheServiceKeepsRunning() {
+    @Test fun aStateDamagedBeforeTheSwitchIntoOperationGetsOneMoreReopenThenAStableStateErrorAndTheServiceKeepsRunning() {
         val devices = Faulty()
         operate(devices, beforeOperation = { Files.delete(it.resolve("service/print-journal/journal.state")) }) { service ->
-            eventually { service.lines("SERVICE_OPERATION").isNotEmpty() }
-            assertEquals(listOf("SERVICE_STATE_REOPENED reason=FAILED category=PERSISTENCE_ERROR count=0"),
-                service.lines("SERVICE_STATE_REOPENED"))
+            eventually { service.lines("SERVICE_STATE_REOPENED").size == 2 }
+            Thread.sleep(3_000)
+            assertEquals(listOf("SERVICE_STATE_REOPENED reason=FAILED category=PERSISTENCE_ERROR count=0",
+                "SERVICE_STATE_REOPENED reason=FAILED category=PERSISTENCE_ERROR count=1"), service.lines("SERVICE_STATE_REOPENED"))
             assertStableStateError(service)
+        }
+    }
+
+    @Test fun aStateUnreadableOnlyAtTheSwitchIntoOperationIsHealedByOneCountedReopenAndPrintingResumes() {
+        val devices = Faulty()
+        lateinit var journal: Path
+        val aside = { journal.resolveSibling("journal.aside") }
+        devices.sim.simulationAction("printer-on")
+        devices.sim.simulationAction("select-photo")
+        // The journal is unreadable while the switch opens the state again, and readable once that has failed.
+        operate(devices, beforeOperation = { journal = it.resolve("service/print-journal/journal.state"); Files.move(journal, aside()) },
+            onLine = { if (it.startsWith("SERVICE_STATE_REOPENED reason=FAILED") && Files.exists(aside())) Files.move(aside(), journal) }) { service ->
+            eventually { devices.sim.safeCounts()["completed"] == 1 }
+            assertEquals(listOf("SERVICE_STATE_REOPENED reason=FAILED category=PERSISTENCE_ERROR count=0",
+                "SERVICE_STATE_REOPENED reason=OK count=1"), service.lines("SERVICE_STATE_REOPENED"))
+            assertEquals(false, service.runtime.backend().status()["blocked"])
         }
     }
 
