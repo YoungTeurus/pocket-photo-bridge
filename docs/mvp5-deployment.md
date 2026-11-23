@@ -233,8 +233,8 @@ bridge connection active is not yet verified on the board; field session 1
 checks it. A stop during a print leaves
 that print unknown, to be checked as described below.
 Setup refuses to save an interface name that is not a Wi-Fi interface on the
-board, including a wired, loopback or USB network name
-(`WIFI_INTERFACE_NOT_FOUND`), and keeps the configuration saved before, because
+board, such as a wired port, the loopback device or a USB network link
+(`WIFI_INTERFACE_NOT_FOUND`; a USB Wi-Fi adapter is a Wi-Fi interface and is accepted), and keeps the configuration saved before, because
 the hotspot itself starts on the saved interface.
 
 For normal use, power on the bridge and printer in either order, then use the
@@ -383,8 +383,8 @@ upgrade over the setup hotspot without internet should also work, but this has
 not yet been verified on the board. Over the hotspot:
 
 1. Sign in to the setup page and keep interacting with it, or choose
-   **Keep setup open**; otherwise the hotspot stops 60 seconds after boot and
-   takes the SSH session with it.
+   **Keep setup open**; otherwise the hotspot stops 60 seconds after it came
+   up and takes the SSH session with it.
 2. Copy the archive and run the installer over SSH as above. Expect the SSH
    session to drop when the installer stops the service, because stopping it
    takes the hotspot down (not yet verified on the board); the installer's last

@@ -19,6 +19,8 @@ ExecStart=/opt/pocket-photo-bridge/current/bin/bridge --service --state-dir=/var
 # The process already retries the hotspot for two minutes; systemctl stop is never restarted.
 Restart=on-failure
 RestartSec=30
+# A JVM that handled SIGTERM ends with status 143; that is a clean stop, not a failed unit.
+SuccessExitStatus=143
 TimeoutStopSec=45
 KillSignal=SIGTERM
 NoNewPrivileges=true
