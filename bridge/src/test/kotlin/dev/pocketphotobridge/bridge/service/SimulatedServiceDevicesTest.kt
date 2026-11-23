@@ -167,4 +167,17 @@ class SimulatedServiceDevicesTest {
             assertEquals(1, devices.safeCounts()["prints"])
         }
     }
+    @Test fun theSimulatedDevicesSupplyShortReCheckPausesAndTheLinuxDevicesTheRealOnes() {
+        val simulated = SimulatedServiceDevices()
+        assertEquals(2_000L, simulated.firstRecheckMs); assertEquals(10_000L, simulated.maxRecheckMs)
+        val linux = dev.pocketphotobridge.bridge.service.LinuxServiceDevices(Files.createTempDirectory("linux-devices-")) { }
+        assertEquals(60_000L, linux.firstRecheckMs); assertEquals(300_000L, linux.maxRecheckMs)
+    }
+    @Test fun hoursOfReChecksDoNotExhaustTheOwnersSimulationActions() {
+        val devices = SimulatedServiceDevices()
+        devices.simulationAction("select-photo")
+        repeat(300) { devices.camera(devices.configuration, SelectionTrigger("check-$it")).close() }
+        devices.simulationAction("printer-on")
+        assertEquals(0, devices.safeCounts()["captured"])
+    }
 }

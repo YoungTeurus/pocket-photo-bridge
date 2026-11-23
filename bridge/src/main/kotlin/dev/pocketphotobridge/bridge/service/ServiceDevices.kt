@@ -42,7 +42,9 @@ class SimulatedServiceDevices : ServiceDevices {
     private var index = -1
     private var interrupted = false
     private val printers = mutableListOf(SimulatedPrinter(PrinterFault.OFFLINE))
-    private val cameras = mutableListOf<SimulatedSony>()
+    // Re-checks connect without an owner action, so only the latest camera is kept beside a running total.
+    private var camera: SimulatedSony? = null
+    private var earlierTransfers = 0
 
     override fun startSetup(credentials: SetupCredentials, wifiInterface: String) = InetSocketAddress("127.0.0.1", 8080)
     override fun stopSetup() { }
@@ -52,7 +54,8 @@ class SimulatedServiceDevices : ServiceDevices {
         if (!selected) throw BridgeFailure(BridgeFailureCode.CAMERA_OFFLINE)
         val device = SimulatedSony(fixtures[index.coerceAtLeast(0)], if (interrupted) SonyFault.INTERRUPTED else SonyFault.NONE)
         val broken = interrupted; interrupted = false
-        cameras += device
+        earlierTransfers += camera?.completedTransfers ?: 0
+        camera = device
         val link = device.connect(trigger)
         return CameraLink(link.endpoint, link.transport) {
             link.close()
@@ -63,6 +66,7 @@ class SimulatedServiceDevices : ServiceDevices {
     override fun printers() = listOf(SetupPrinter(configuration.printerAddress, "Synthetic Xiaomi (no physical printer)"))
     override fun pairPrinter(address: String) { require(address == configuration.printerAddress) }
     @Synchronized override fun simulationAction(action: String) {
+        if (printers.size >= 256) throw BridgeFailure(BridgeFailureCode.IO_ERROR)
         when (action) {
             "select-photo" -> { index = (index + 1) % fixtures.size; selected = true; interrupted = false }
             "duplicate-photo" -> { if (index < 0) index = 0; selected = true; interrupted = false }
@@ -73,10 +77,9 @@ class SimulatedServiceDevices : ServiceDevices {
             "uncertain-print" -> printers += SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT)
             else -> throw BridgeFailure(BridgeFailureCode.ARGUMENT_ERROR)
         }
-        if (printers.size > 256 || cameras.size > 256) throw BridgeFailure(BridgeFailureCode.IO_ERROR)
     }
     @Synchronized override fun safeCounts(): Map<String, Any> = mapOf("prints" to printers.sumOf { it.submissions },
-        "completed" to printers.sumOf { it.completedJobs }, "captured" to cameras.sumOf { it.completedTransfers })
+        "completed" to printers.sumOf { it.completedJobs }, "captured" to earlierTransfers + (camera?.completedTransfers ?: 0))
     override fun now() = clock.now()
     override fun pause(ms: Long) = clock.pause(ms)
     override fun close() { }
