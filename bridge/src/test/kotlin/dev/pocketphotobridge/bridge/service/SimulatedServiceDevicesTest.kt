@@ -8,6 +8,23 @@ import org.junit.Test
 import java.nio.file.Files
 
 class SimulatedServiceDevicesTest {
+    private fun open(devices: SimulatedServiceDevices, images: PrintImagePreparer = JvmPrintImagePreparer()) =
+        AutonomousBridge(Files.createTempDirectory("service-series-"), CameraWifiConnector { devices.camera(devices.configuration, it) },
+            PrinterConnector { devices.printer(devices.configuration) }, images, { SIMULATION_TOKEN },
+            now = devices.clock::now, pause = devices.clock::pause)
+
+    @Test fun aSelectionIsVisibleOnTheNextScanAndStaysOfferedAfterItsTransfer() {
+        val devices = SimulatedServiceDevices()
+        devices.simulationAction("select-photo")
+        assertTrue(devices.cameraPresent(devices.configuration))
+        open(devices).use { bridge ->
+            assertEquals(CaptureStep.NEW_PHOTO, bridge.capture(SelectionTrigger("first")).captureStep)
+            assertTrue(devices.cameraPresent(devices.configuration))
+            assertEquals(CaptureStep.DUPLICATE, bridge.capture(SelectionTrigger("first")).captureStep)
+        }
+        assertEquals(2, devices.safeCounts()["captured"])
+    }
+
     @Test fun printerPowerOrderAndRepeatedSelectionExerciseRealWireProtocols() {
         val devices = SimulatedServiceDevices()
         val config = devices.configuration
