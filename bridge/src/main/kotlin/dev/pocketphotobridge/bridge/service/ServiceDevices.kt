@@ -21,11 +21,17 @@ interface ServiceDevices : AutoCloseable {
     fun safeCounts(): Map<String, Any> = emptyMap()
     fun now(): Long = System.nanoTime() / 1_000_000
     fun pause(ms: Long) { Thread.sleep(ms) }
+    /** First and longest pause before a still-visible camera is checked again. */
+    val firstRecheckMs: Long get() = ServiceLoop.FIRST_RECHECK_MS
+    val maxRecheckMs: Long get() = ServiceLoop.MAX_RECHECK_MS
 }
 
 /** Fake wire devices only. This class has no native/radio or process calls. */
 class SimulatedServiceDevices : ServiceDevices {
     override val simulation = true
+    // Short enough for the packaged smoke test's 15-second waits.
+    override val firstRecheckMs = 2_000L
+    override val maxRecheckMs = 10_000L
     val clock = SimulationClock()
     val configuration = ServiceConfiguration("SIMULATED_CAMERA", "simulation-password",
         "02:00:00:00:00:01", SIMULATION_TOKEN, autoPrintEnabled = true)

@@ -130,7 +130,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 true -> "SERVICE_CAMERA_PRESENT"; false -> "SERVICE_CAMERA_ABSENT"
                 null -> "SERVICE_CAMERA_WAIT category=$scanFailure"
             })
-        })
+        }, devices.firstRecheckMs, devices.maxRecheckMs)
     }
 
     private fun requiredConfiguration() = configuration.get() ?: throw BridgeFailure(BridgeFailureCode.ARGUMENT_ERROR)

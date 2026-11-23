@@ -25,7 +25,8 @@ enum class CaptureStep { RETRY, BLOCKED, DUPLICATE, NEW_PHOTO }
  * successful transfer (re-check mode) it is checked again on the next pass after a successful print, and
  * otherwise after a pause that doubles while it offers only known photos. Content dedupe makes a repeat harmless.
  */
-class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> Long, private val actions: ServiceLoopActions) {
+class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> Long, private val actions: ServiceLoopActions,
+    private val firstRecheckMs: Long = FIRST_RECHECK_MS, private val maxRecheckMs: Long = MAX_RECHECK_MS) {
     @Volatile var operating: Boolean = false
         private set
     private val boot = UUID.randomUUID().toString()
@@ -38,7 +39,7 @@ class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> L
     private var nextCapture = 0L
     private var nextPrint = 0L
     private var printPause = 2_000L
-    private var recheckPause = FIRST_RECHECK_MS
+    private var recheckPause = firstRecheckMs
 
     /** [cameraAvailable] is null when the scan failed: unknown, so neither a check nor a rearm; the print step still runs. */
     fun tick(now: Long, enabled: Boolean, cameraAvailable: Boolean?) {
@@ -50,7 +51,7 @@ class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> L
         if (!enabled) return
         if (cameraAvailable != lastScan) { lastScan = cameraAvailable; actions.cameraPresence(cameraAvailable) }
         if (cameraAvailable == false) {
-            present = false; recheck = false; printed = false; nextCapture = 0; recheckPause = FIRST_RECHECK_MS
+            present = false; recheck = false; printed = false; nextCapture = 0; recheckPause = firstRecheckMs
         } else if (cameraAvailable == true) {
             if (!present) { epoch = Math.addExact(epoch, 1); present = true }
             // A print is a blind window: whatever the camera offered meanwhile is fetched right after it.
@@ -59,10 +60,10 @@ class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> L
                 val step = actions.capture(SelectionTrigger("$boot:$epoch"))
                 when (step) {
                     // A new photo is worth an immediate attempt and a fresh back-off; a duplicate changes nothing.
-                    CaptureStep.NEW_PHOTO -> { recheck = true; recheckPause = FIRST_RECHECK_MS; nextPrint = now; printPause = 2_000 }
-                    CaptureStep.DUPLICATE -> { recheck = true; recheckPause = minOf(recheckPause * 2, MAX_RECHECK_MS) }
+                    CaptureStep.NEW_PHOTO -> { recheck = true; recheckPause = firstRecheckMs; nextPrint = now; printPause = 2_000 }
+                    CaptureStep.DUPLICATE -> { recheck = true; recheckPause = minOf(recheckPause * 2, maxRecheckMs) }
                     // A failed check of a camera that already gave its photo costs like finding that photo again.
-                    CaptureStep.RETRY -> if (recheck) recheckPause = minOf(recheckPause * 2, MAX_RECHECK_MS)
+                    CaptureStep.RETRY -> if (recheck) recheckPause = minOf(recheckPause * 2, maxRecheckMs)
                     CaptureStep.BLOCKED -> { }
                 }
                 // Counted from this pass's start, so a long transfer or print does not stretch the pause.
