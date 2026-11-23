@@ -6,11 +6,13 @@ Keep the complete extracted folder together, including `runtime`, `lib`/`app`,
 `licenses`, and `deploy`. Android and the existing `WindowsLive.cmd` manual
 hardware workflow remain available.
 
-Linux radio support is a pilot awaiting Orange Pi hardware validation. The
-Windows simulation proves controller and setup behavior using synthetic devices;
-it cannot access radios or print paper. Wi-Fi AP support, board drivers, BlueZ
-pairing, discovered SPP channels, reconnect, and physical printing still need
-testing on the target board. Use a board-supported 64-bit Debian/Ubuntu image.
+Linux radio support is a pilot. On the Orange Pi Zero 2W, earlier 0.5.0 builds
+passed the setup AP, authenticated setup, cold boots into operation and two
+single-photo prints, one after waiting for the printer; photo series, refused
+jobs, power cuts, print quality and the queue across a reboot are not yet
+validated there. [The Linux field protocol](linux-field-protocol.md) records
+the results and the next session. The Windows simulation proves controller and
+setup behavior using synthetic devices; it cannot access radios or print paper. Use a board-supported 64-bit Debian/Ubuntu image.
 An Armbian Community image is not certified for this bridge; an image's name or
 successful boot does not establish working Wi-Fi AP/Bluetooth support.
 
@@ -168,14 +170,18 @@ after it finishes. A failed pairing reports a fixed category in diagnostics.
 After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP
 server stop before the board joins the camera network. Reboot to enter setup
-again. A single radio alternates between these modes; the setup page is
+again. With **Keep waiting photos across power cycles** off, that reboot
+discards photos still waiting for the printer before setup opens. A single radio alternates between these modes; the setup page is
 unreachable while the bridge is connected to the camera.
 
 For normal use, power on the bridge and printer in either order, then use the
 RX100 VII's selected-photo transfer for one JPEG. The bridge durably stores the
 validated original before acknowledging the camera, prepares the print, and
-prints automatically. Printer off/busy keeps the captured image queued. The
-same JPEG bytes are automatically printed once, including after restart.
+prints automatically. Printer off/busy keeps the captured image queued: within
+the same boot, including a service restart, it prints once the printer is
+available. After a reboot or power cut with the retention setting off, photos
+not yet submitted are discarded; send them again from the camera. The same JPEG
+bytes are never printed twice automatically, also across reboots.
 There is no per-photo approval in normal operation. Leave queued state intact
 when restarting, upgrading, or diagnosing the bridge.
 
@@ -185,6 +191,15 @@ If the printer may have accepted a job but completion was lost, the bridge
 shows an unknown print and blocks automatic submissions. Check the physical
 printer and its paper output. Reboot the bridge, join setup, sign in, and use
 the page's **I checked the printer** acknowledgement only after that check.
+
+Rebooting into setup discards photos still waiting for the printer when
+**Keep waiting photos across power cycles** is off; the unknown print's record
+itself is kept. The discard happens when the service starts, before setup is
+reachable, so switching the setting on in that setup session protects only
+later boots: check it in setup and save; it applies from the next device boot.
+With shell access over Ethernet or a serial console,
+`sudo systemctl restart pocket-photo-bridge.service` opens the setup window
+within the same boot and keeps waiting photos.
 The acknowledgement retains duplicate-prevention records; it does not reprint
 the ambiguous photo. Keep the photo/queue state rather than deleting files to
 clear the warning. Deliberate reprints are outside this milestone.
@@ -250,7 +265,7 @@ sudo systemctl status pocket-photo-bridge.service --no-pager
 
 ### Physical Linux probes without printing
 
-Hardware-validation builds also provide two explicit commands using the saved
+Current builds provide two explicit commands using the saved
 configuration. Stop the service first: both probes acquire its persistent queue
 and print-journal locks and fail if another owner is active. Preserve all state.
 
@@ -271,8 +286,9 @@ transport actions. The existing native ABI check remains a separate test.
 The receive probe disconnects the current Wi-Fi, including an SSH connection on
 that radio. Arrange independent access or a tested timed network recovery before
 starting it. Do not start the normal service with queued photos until automatic
-printing is intended. Queued photos remain available to the normal service after
-restart, and existing duplicate/uncertainty records are retained.
+printing is intended. A queued probe photo is printed by the next service start
+in the same boot; a reboot with the retention setting off discards it. Existing
+duplicate/uncertainty records are always retained.
 
 To redisplay your existing bootstrap credentials locally, first stop the service
 so it no longer owns the state, run the command in a private terminal, then
