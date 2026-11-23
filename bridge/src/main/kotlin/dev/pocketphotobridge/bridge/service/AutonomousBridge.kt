@@ -22,13 +22,15 @@ enum class BlockedReason { UNRESOLVED_PRINT, QUEUE_FULL, STATE_ERROR }
 /**
  * [dropped] counts photos forgotten after a printer refusal since the last successful print.
  * [canAccept] and [discardedAtBoot] are filled in by [AutonomousBridge.snapshot] only; step outcomes keep the defaults.
+ * [blocked] is the one definition of a blocked bridge; the capture step uses it too.
  */
 data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null, val dropped: Int = 0,
     val canAccept: Boolean = true, val discardedAtBoot: Int = 0) {
     val blocked: BlockedReason? get() = when {
         state == ServiceState.STATE_ERROR -> BlockedReason.STATE_ERROR
         state == ServiceState.NEEDS_ATTENTION -> BlockedReason.UNRESOLVED_PRINT
-        !canAccept -> BlockedReason.QUEUE_FULL
+        // Only the queue check before the radio blocks; a queue that overflows after the download is a failed check.
+        !canAccept || state == ServiceState.QUEUED && category == "QUEUE_FULL" -> BlockedReason.QUEUE_FULL
         else -> null
     }
     /** The print step failed: the printer was unreachable, busy or refusing. An empty queue or a job needing attention is not a failure. */
@@ -40,8 +42,7 @@ data class ServiceSnapshot(val state: ServiceState, val queued: Int, val categor
     }
     val captureStep get() = when {
         category == "DUPLICATE_SUPPRESSED" -> CaptureStep.DUPLICATE
-        // Only the queue check before the radio blocks; a queue that overflows after the download is a failed check.
-        state == ServiceState.QUEUED && category == "QUEUE_FULL" || state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR) -> CaptureStep.BLOCKED
+        blocked != null -> CaptureStep.BLOCKED
         state == ServiceState.QUEUED -> CaptureStep.NEW_PHOTO
         else -> CaptureStep.RETRY
     }

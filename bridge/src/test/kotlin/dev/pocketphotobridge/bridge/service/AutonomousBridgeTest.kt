@@ -22,6 +22,9 @@ class AutonomousBridgeTest {
         assertEquals(CaptureStep.BLOCKED, ServiceSnapshot(ServiceState.QUEUED, 16, "QUEUE_FULL").captureStep)
         // The photo was downloaded and prepared before the queue refused it, so this costs like a failed check.
         assertEquals(CaptureStep.RETRY, ServiceSnapshot(ServiceState.WAITING_CAMERA, 15, "QUEUE_FULL").captureStep)
+        // A capture outcome and a snapshot give the same blocked reason.
+        assertEquals(BlockedReason.QUEUE_FULL, ServiceSnapshot(ServiceState.QUEUED, 16, "QUEUE_FULL").blocked)
+        assertNull(ServiceSnapshot(ServiceState.WAITING_CAMERA, 15, "QUEUE_FULL").blocked)
     }
     private fun photo() = javaClass.getResourceAsStream("/simulation/sony-selected.jpg")!!.use { it.readBytes() }
     private fun root(test: (Path) -> Unit) {
