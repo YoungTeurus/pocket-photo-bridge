@@ -272,7 +272,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             val base = if (journal.unresolved) result(ServiceState.NEEDS_ATTENTION, current.category ?: "UNRESOLVED_JOB")
                 else current.copy(queued = queue.size)
             return base.copy(canAccept = queue.canAccept(), discardedAtBoot = discardedAtBoot)
-        } catch (_: Exception) { return stateError() }
+        } catch (_: Exception) { return stateError().copy(discardedAtBoot = discardedAtBoot) }
     }
 
     @Synchronized fun acknowledgeCheckedPrinter(): ServiceSnapshot {

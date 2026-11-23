@@ -421,6 +421,20 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun aStateErrorKeepsTheCountOfWaitingPhotosThisBootDiscarded() = root { state ->
+        bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE)).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            it.capture(SelectionTrigger("first"))
+        }
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000002", false)
+            it.capture(SelectionTrigger("again"))
+            Files.delete(imageFiles(state).first())
+            assertEquals(BlockedReason.STATE_ERROR, it.snapshot().blocked)
+            assertEquals(1, it.snapshot().discardedAtBoot)
+        }
+    }
+
     @Test fun liveJournalCorruptionFailsClosedBeforeDeviceTraffic() = root { state ->
         val printer = SimulatedPrinter()
         bridge(state, printer = printer).use {
