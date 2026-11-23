@@ -72,6 +72,8 @@ class ServiceRuntimeStopTest {
             // The stop returns only after the cleanup, which ran with the interrupt flag clear.
             assertEquals("RAN", radio.cleanup)
             assertTrue(diagnostics.events().any { it.endsWith(" SERVICE_STOPPED") })
+            // The file is the only record that outlives the process; a pending interrupt must not keep the line out of it.
+            assertTrue(Files.readAllLines(state.resolve("diagnostics.txt")).any { it.endsWith(" SERVICE_STOPPED") })
             service.join(60_000)
             assertFalse(service.isAlive)
             assertNull(failure)

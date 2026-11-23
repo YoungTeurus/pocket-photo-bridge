@@ -204,6 +204,7 @@ class ServiceRuntimeStateRecoveryTest {
             service.service.join(60_000)
             assertEquals(emptyList<String>(), service.lines("SERVICE_STATE_REOPENED"))
             assertTrue(service.lines("SERVICE_STOPPED").isNotEmpty())
+            assertTrue(Files.readAllLines(service.state.resolve("diagnostics.txt")).any { it.endsWith(" SERVICE_STOPPED") })
         }
     }
 }

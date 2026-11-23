@@ -27,6 +27,17 @@ class ServiceDiagnosticsTest {
         assertEquals(3, report.events().count { it.endsWith(" DIAGNOSTIC_REDACTED") })
     }
 
+    @Test fun aFailureEmittedOnAnInterruptedThreadStillReachesTheFileAndTheInterruptStaysPending() {
+        val directory = Files.createTempDirectory("interrupted-service-")
+        val output = ByteArrayOutputStream()
+        val report = ServiceDiagnostics(directory, PrintStream(output), { 0 }, null)
+        // A stop interrupts the pairing thread, whose cancelled line is the last one the run writes.
+        Thread.currentThread().interrupt()
+        try { report.emit("SERVICE_PAIRING_FAILED category=CANCELLED") } finally { assertTrue(Thread.interrupted()) }
+        assertEquals(listOf("0 SERVICE_PAIRING_FAILED category=CANCELLED"), Files.readAllLines(directory.resolve("diagnostics.txt")).drop(1))
+        assertFalse(output.toString().contains("SERVICE_REPORT_WRITE_FAILED"))
+    }
+
     @Test fun cameraPresenceEventsAreKeptVerbatim() {
         val directory = Files.createTempDirectory("presence-service-")
         val report = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
