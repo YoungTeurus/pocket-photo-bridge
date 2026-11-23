@@ -86,6 +86,28 @@ class ServiceDiagnosticsTest {
         assertEquals((3..7).map(::header), latest.previousRuns().map { it["header"] })
     }
 
+    @Test fun endlessHotspotRetriesKeepTheRunBeforeTheOutageAndTheLatestRetryRun() {
+        val directory = Files.createTempDirectory("retry-runs-")
+        fun start() = ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null)
+        fun header(run: Int) = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=$run"
+        start().emit("SERVICE_FAILED category=IO_ERROR")
+        repeat(8) {
+            start().apply {
+                emit("LINUX_HARDWARE_VALIDATION_PENDING")
+                emit("SERVICE_SETUP_FAILED category=COMMAND_FAILED count=24")
+                emit("SERVICE_FAILED category=COMMAND_FAILED")
+            }
+        }
+        val latest = start()
+        assertEquals(header(10), latest.header)
+        assertEquals(listOf(header(1), header(9)), latest.previousRuns().map { it["header"] })
+        assertEquals(listOf("0 SERVICE_FAILED category=IO_ERROR"), latest.previousRuns().first()["events"])
+        // A run that reached setup is rotated as usual, so the outage it ended stays too.
+        latest.emit("SERVICE_SETUP_FAILED category=COMMAND_FAILED count=3")
+        latest.emit("SERVICE_SETUP")
+        assertEquals(listOf(header(1), header(9), header(10)), start().previousRuns().map { it["header"] })
+    }
+
     @Test fun handWrittenSecretsInAnOldRunNeverReachTheNextRun() {
         val directory = Files.createTempDirectory("tampered-service-")
         val header = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=4"

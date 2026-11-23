@@ -285,7 +285,9 @@ The camera transfer logs `SONY_SELECTION count=<items>` and
 
 At start the previous run moves to `diagnostics.1.txt` and older runs shift up
 to `diagnostics.5.txt`; anything older is dropped. A probe, reboot, crash restart
-or service restart therefore no longer erases the service's history. The
+or service restart therefore no longer erases the service's history. Runs that
+only failed to start the hotspot replace each other in `diagnostics.1.txt`, so a
+long outage keeps the latest of them and the runs before the outage. The
 download keeps the current run in `events` and adds `previousRuns`, oldest
 first, each with its `header` and `events`. Every line is checked again when it
 is served; a line that is not a known event is left out. Do not send the

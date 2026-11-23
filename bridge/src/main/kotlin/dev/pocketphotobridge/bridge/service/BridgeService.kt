@@ -259,10 +259,14 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
                 // A power pull between write and rename leaves these behind.
                 Files.newDirectoryStream(state, "diagnostic-*.tmp").use { stale ->
                     stale.forEach { if (Files.isRegularFile(it, NOFOLLOW_LINKS)) Files.deleteIfExists(it) } }
-                Files.deleteIfExists(generation(GENERATIONS))
-                for (n in GENERATIONS - 1 downTo 1)
-                    if (Files.exists(generation(n), NOFOLLOW_LINKS)) Files.move(generation(n), generation(n + 1), ATOMIC_MOVE)
-                if (Files.exists(state.resolve(FILE), NOFOLLOW_LINKS)) Files.move(state.resolve(FILE), generation(1), ATOMIC_MOVE)
+                // Endless hotspot retries would rotate out the run before the outage; back-to-back retry-only runs share generation 1.
+                if (!(retryOnly(state.resolve(FILE)) && retryOnly(generation(1)))) {
+                    Files.deleteIfExists(generation(GENERATIONS))
+                    for (n in GENERATIONS - 1 downTo 1)
+                        if (Files.exists(generation(n), NOFOLLOW_LINKS)) Files.move(generation(n), generation(n + 1), ATOMIC_MOVE)
+                }
+                if (Files.exists(state.resolve(FILE), NOFOLLOW_LINKS))
+                    Files.move(state.resolve(FILE), generation(1), ATOMIC_MOVE, REPLACE_EXISTING)
             }
         } catch (_: Exception) { output.println("SERVICE_REPORT_WRITE_FAILED") }
         val run = (previousRuns().maxOfOrNull { HEADER.matchEntire(it["header"] as String)!!.groupValues[1].toIntOrNull() ?: 0 } ?: 0) + 1
@@ -291,6 +295,12 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         } catch (_: Exception) { null }
     }
     private fun generation(n: Int) = state.resolve("diagnostics.$n.txt")
+    /** A run that only failed to start the hotspot and holds nothing else worth keeping. */
+    private fun retryOnly(file: Path): Boolean {
+        if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return false
+        val stages = Files.readAllLines(file).drop(1).map { it.substringAfter(' ').substringBefore(' ') }
+        return "SERVICE_SETUP_FAILED" in stages && stages.all { it in RETRY_STAGES }
+    }
     @Synchronized fun emit(message: String) {
         val safe = if (safeEvent(message)) message else "DIAGNOSTIC_REDACTED"
         val at = (now() - start) / 1000
@@ -326,6 +336,8 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
         /** Categories that name an outcome, not a failure: a re-check finding a known photo, or a transfer kept before its acknowledgement. */
         private val NOT_FAILURES = setOf("DUPLICATE_SUPPRESSED", "CAMERA_ACK_PENDING")
         private const val FILE = "diagnostics.txt"
+        private val RETRY_STAGES = setOf("LINUX_HARDWARE_VALIDATION_PENDING", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
+            "SERVICE_SETUP_FAILED", "SERVICE_FAILED")
         /** Previous runs kept besides the current one. */
         const val GENERATIONS = 5
         /** Per-run cap in file bytes: six capped runs stay within the 64 KiB export even with Gson's escaped '='. */
