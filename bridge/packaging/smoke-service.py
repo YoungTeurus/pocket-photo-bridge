@@ -115,8 +115,11 @@ def main():
                     require(response.status == 200, "service_control_failed")
                     require(len(response.read(65537)) <= 65536, "service_control_response_oversized")
 
-            def wait_counts(name, queued, prints, completed):
-                deadline = time.monotonic() + 15
+            # A printer that comes back waits for the service's longest print back-off (30 s) plus a print.
+            PRINTER_RETURN_SECONDS = 45
+
+            def wait_counts(name, queued, prints, completed, seconds=15):
+                deadline = time.monotonic() + seconds
                 while time.monotonic() < deadline:
                     value = status()
                     require(value["prints"] <= prints and value["completed"] <= completed, name + "_unexpected_submission")
@@ -153,7 +156,7 @@ def main():
             wait_counts("printer_off_retention", queued=1, prints=0, completed=0)
             stable_counts("printer_off_retention", queued=1, prints=0, completed=0, seconds=0.5)
             post("/simulate", action="printer-on")
-            wait_counts("printer_on_completion", queued=0, prints=1, completed=1)
+            wait_counts("printer_on_completion", queued=0, prints=1, completed=1, seconds=PRINTER_RETURN_SECONDS)
             post("/simulate", action="duplicate-photo")
             stable_counts("duplicate_suppression", queued=0, prints=1, completed=1, seconds=3)
             post("/simulate", action="printer-busy")
@@ -161,7 +164,7 @@ def main():
             wait_counts("printer_busy_retention", queued=1, prints=1, completed=1)
             stable_counts("printer_busy_retention", queued=1, prints=1, completed=1, seconds=0.5)
             post("/simulate", action="printer-ready")
-            wait_counts("printer_ready_completion", queued=0, prints=2, completed=2)
+            wait_counts("printer_ready_completion", queued=0, prints=2, completed=2, seconds=PRINTER_RETURN_SECONDS)
             private_get("/diagnostics")
             require(process.poll() is None, "service_exited_during_http_smoke")
             process.terminate()

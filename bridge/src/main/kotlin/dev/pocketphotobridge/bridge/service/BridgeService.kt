@@ -127,7 +127,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 }
                 return result.state == ServiceState.QUEUED && result.category != "QUEUE_FULL" || result.category == "DUPLICATE_SUPPRESSED"
             }
-            override fun printNext() { synchronized(bridgeLock) { bridge.printNext() } }
+            override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.state == ServiceState.WAITING_PRINTER
         })
     }
 
