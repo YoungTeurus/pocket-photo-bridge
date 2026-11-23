@@ -175,9 +175,13 @@ below), `QUEUE_FULL` (the waiting queue is full; start operation with the printe
 on so they print, then send new photos) or `STATE_ERROR` (the saved state
 cannot be read; download the diagnostics, then restart the bridge without
 deleting its state files). The page also shows how many waiting photos were
-discarded at this boot (`discardedAtBoot`; a service restart within the same
-boot shows 0 again) and always notes that with the retention setting off a
-reboot discards waiting photos.
+discarded at this boot (`discardedAtBoot`; the count is kept in the queue's
+boot marker, so a service restart within the same boot shows it again) and
+always notes that with the retention setting off a reboot discards waiting
+photos. Earlier releases cannot read this boot marker: after installing an
+older build, it reports a state error until
+`/var/lib/pocket-photo-bridge/service/boot.state` is removed; that file alone
+may go, because without it the next start keeps the waiting photos.
 
 After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP

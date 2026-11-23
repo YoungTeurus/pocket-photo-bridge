@@ -99,6 +99,36 @@ class AutonomousBridgeTest {
             assertEquals(0, printer.submissions)
             assertEquals(ServiceSnapshot(ServiceState.QUEUED, 1), it.capture(SelectionTrigger("first")))
         }
+        // A service restart within the boot (systemd, or Run reopening the bridge) still reports this boot's count.
+        bridge(state).use {
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+            assertEquals(1, it.snapshot().discardedAtBoot)
+        }
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000003", false)
+            assertEquals(1, it.snapshot().discardedAtBoot)
+        }
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000004", false)
+            assertEquals(0, it.snapshot().discardedAtBoot)
+        }
+    }
+
+    @Test fun aBootMarkerWithoutACountFromTheEarlierReleaseIsStillTheSameBoot() = root { state ->
+        bridge(state).use {
+            it.beginBoot("00000000-0000-4000-8000-000000000001", false)
+            it.capture(SelectionTrigger("first"))
+        }
+        val payload = "PPB-BOOT 1\n00000000-0000-4000-8000-000000000001\n"
+        Files.writeString(state.resolve("boot.state"), payload + "checksum=${DurableCaptureQueue.hash(payload.toByteArray())}\n")
+        bridge(state).use {
+            assertEquals(1, it.beginBoot("00000000-0000-4000-8000-000000000001", false).queued)
+            assertEquals(0, it.snapshot().discardedAtBoot)
+        }
+        bridge(state).use {
+            assertEquals(0, it.beginBoot("00000000-0000-4000-8000-000000000002", false).queued)
+            assertEquals(1, it.snapshot().discardedAtBoot)
+        }
     }
 
     @Test fun firstUpgradeAdoptsCurrentBootWithoutDiscardingLegacyQueue() = root { state ->

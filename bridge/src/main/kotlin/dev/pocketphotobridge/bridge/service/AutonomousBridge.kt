@@ -95,8 +95,6 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var lastCapture: ServiceSnapshot? = null
     private var captureRepeats = 0
     private var dropped = 0
-    /** Waiting photos discarded when this bridge began the boot; memory only, so a service restart within the boot reports 0. */
-    private var discardedAtBoot = 0
     private val seriesRefusals = mutableSetOf<Long>()
     /** Photos dropped after a refusal in this selection generation (one camera presence); memory only. */
     private val droppedPhotos = mutableSetOf<String>()
@@ -126,7 +124,6 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             checkState()
             val count = queue.beginBoot(bootId, keepQueueAcrossBoots, journal::wasSubmitted)
             if (count > 0) emit("BRIDGE_BOOT_QUEUE_DISCARDED count=$count")
-            discardedAtBoot += count
             return result(baseState())
         } catch (_: Exception) { return stateError() }
     }
@@ -271,8 +268,8 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             checkState()
             val base = if (journal.unresolved) result(ServiceState.NEEDS_ATTENTION, current.category ?: "UNRESOLVED_JOB")
                 else current.copy(queued = queue.size)
-            return base.copy(canAccept = queue.canAccept(), discardedAtBoot = discardedAtBoot)
-        } catch (_: Exception) { return stateError().copy(discardedAtBoot = discardedAtBoot) }
+            return base.copy(canAccept = queue.canAccept(), discardedAtBoot = queue.discardedThisBoot)
+        } catch (_: Exception) { return stateError().copy(discardedAtBoot = queue.discardedThisBoot) }
     }
 
     @Synchronized fun acknowledgeCheckedPrinter(): ServiceSnapshot {
