@@ -13,6 +13,8 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -162,30 +164,48 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     }
 
     fun run() {
-        val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
-        val address = startSetup(initialInterface)
-        setupInterface = initialInterface
-        // The setup window counts from the moment the hotspot is up, however many attempts that took.
-        policy.beginWindow(monotonicNow())
-        server = SetupServer(address, credentials.adminPassword, backend()).also { it.start() }
-        diagnostics.emit("SERVICE_SETUP")
-        output.println("Setup page: http://${address.address.hostAddress}:${address.port}/")
-        output.println("Use the administrator password shown during installation or by --make-bootstrap in a private local terminal.")
-        val worker = Thread.currentThread()
-        val shutdown = Thread({ running.set(false); worker.interrupt() }, "bridge-shutdown")
+        worker = Thread.currentThread()
+        // Registered before the hotspot retries, so a stop at any point cleans up the radio.
+        val shutdown = Thread(::stop, "bridge-shutdown")
         Runtime.getRuntime().addShutdownHook(shutdown)
         try {
-            while (running.get() && !worker.isInterrupted) {
+            val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
+            val address = startSetup(initialInterface)
+            setupInterface = initialInterface
+            // The setup window counts from the moment the hotspot is up, however many attempts that took.
+            policy.beginWindow(monotonicNow())
+            server = SetupServer(address, credentials.adminPassword, backend()).also { it.start() }
+            diagnostics.emit("SERVICE_SETUP")
+            output.println("Setup page: http://${address.address.hostAddress}:${address.port}/")
+            output.println("Use the administrator password shown during installation or by --make-bootstrap in a private local terminal.")
+            while (running.get() && !Thread.currentThread().isInterrupted) {
                 val config = configuration.get()
                 // Enabled implies a saved configuration, so the scan always has one.
                 loop.tick(monotonicNow(), config?.autoPrintEnabled == true && !pairing.pending) { devices.cameraPresent(requireNotNull(config)) }
                 Thread.sleep(1_000)
             }
-        } catch (_: InterruptedException) { worker.interrupt() }
-        finally {
+        } catch (_: InterruptedException) {
+        } catch (failure: Exception) {
+            // A radio step refused because of the stop is part of the stop, not a failure.
+            if (running.get()) throw failure
+        } finally {
             try { Runtime.getRuntime().removeShutdownHook(shutdown) } catch (_: IllegalStateException) { }
-            diagnostics.emit("SERVICE_STOPPED")
+            // A hotspot that never came up and was not stopped ends as a failure, which the caller reports.
+            if (setupInterface != null || !running.get()) diagnostics.emit("SERVICE_STOPPED")
+            // The bounded command runner refuses an interrupted thread, so the radio cleanup runs with the flag clear.
+            val interrupted = Thread.interrupted()
+            try { devices.close() } catch (_: Exception) { diagnostics.emit("SERVICE_RADIO_CLEANUP_FAILED") }
+            stopped.countDown()
+            if (interrupted) Thread.currentThread().interrupt()
         }
+    }
+
+    @Volatile private var worker: Thread? = null
+    private val stopped = CountDownLatch(1)
+    /** What a termination signal does: the JVM halts when this returns, so it waits, bounded, for the recorded stop and radio cleanup. */
+    internal fun stop() {
+        running.set(false); worker?.interrupt()
+        stopped.await(STOP_WAIT_MS, TimeUnit.MILLISECONDS)
     }
 
     /** The interface the setup hotspot is up on. Serving the page proves it, so a save keeps it even if the system check says no. */
@@ -270,6 +290,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         const val SETUP_RETRY_LIMIT_MS = 120_000L
         /** Reopens after a runtime state error per process run, one per occurrence. */
         const val MAX_STATE_REOPENS = 3
+        /** Longest wait for the stop's radio cleanup; below the unit's TimeoutStopSec=45 so the exit is clean, not killed. */
+        const val STOP_WAIT_MS = 30_000L
     }
 }
 
