@@ -14,17 +14,21 @@ class PrinterSessionTest {
     private class Guard : PrintJobGuard {
         override var unresolved = false
         var reservations = 0
+        val outcomes = mutableListOf<String>()
         override fun reserve(): String {
             if (unresolved) throw PrinterFailure(PrinterFailureCode.UNRESOLVED_JOB)
             unresolved = true; reservations++; return "synthetic-reservation"
         }
-        override fun resolve(reservation: String) { unresolved = false }
+        override fun resolve(reservation: String) { unresolved = false; outcomes += "resolve" }
+        override fun release(reservation: String) { unresolved = false; outcomes += "release" }
         override fun acknowledgeCheckedPrinter() { unresolved = false }
     }
+    /** How the final job_info reply arrives when the printer hangs up right after it. */
+    private enum class FinalReplyThenEof { COMPLETE, TRUNCATED, OTHER_REQUEST }
     private inner class CameraIndependentPrinter(
         val guard: Guard = Guard(),
         val processing: Boolean = false,
-        val rejection: Boolean = false,
+        val rejectionCode: Long? = null,
         val lostMethod: String? = null,
         val neverFinished: Boolean = false,
         val wrongJob: Boolean = false,
@@ -33,13 +37,15 @@ class PrinterSessionTest {
         val processingAfterStart: Boolean = false,
         val finishAfter: Int = 1,
         val malformedError: Boolean = false,
-        val nullError: Boolean = false
+        val nullError: Boolean = false,
+        val finalReplyThenEof: FinalReplyThenEof? = null
     ) : PrinterTransport {
         val methods = mutableListOf<String>()
         val fileFrames = mutableListOf<PrinterFrame>()
         private val incoming = ArrayDeque<ByteArray>()
         private val cipher = PrinterCipher(token)
         private var jobChecks = 0
+        private var endOfStream = false
         override fun write(bytes: ByteArray) {
             val frame = PrinterProtocol.decode(bytes)
             if (frame.channel == 2) {
@@ -65,17 +71,26 @@ class PrinterSessionTest {
             }
             val reply = when {
                 malformedError && method == "print_job" -> "{\"id\":$id,\"error\":\"unknown\"}"
-                rejection && method == "print_job" -> "{\"id\":$id,\"error\":{\"code\":-8006}}"
+                rejectionCode != null && method == "print_job" -> "{\"id\":$id,\"error\":{\"code\":$rejectionCode}}"
                 nullError -> "{\"id\":$id,\"error\":null,\"result\":$result}"
                 else -> "{\"id\":$id,\"result\":$result}"
             }
             fun response(json: String) = PrinterProtocol.encode(PrinterFrame(1, id.toLong(),
                 if (wrongKey) ByteArray(json.length) { 23 } else cipher.crypt(json.toByteArray()), interactive = 7))
             if (unrelatedReply) incoming += response("{\"id\":0,\"result\":{}}")
+            if (method == "job_info" && finalReplyThenEof != null) {
+                endOfStream = true
+                incoming += when (finalReplyThenEof) {
+                    FinalReplyThenEof.COMPLETE -> response(reply)
+                    FinalReplyThenEof.TRUNCATED -> response(reply).let { it.copyOf(it.size / 2) }
+                    FinalReplyThenEof.OTHER_REQUEST -> response(reply.replaceFirst("\"id\":$id", "\"id\":${id + 100}"))
+                }
+                return
+            }
             incoming += response(reply)
         }
         override fun read(timeoutMs: Long): ByteArray = incoming.removeFirstOrNull()
-            ?: throw PrinterFailure(PrinterFailureCode.TIMEOUT)
+            ?: throw PrinterFailure(if (endOfStream) PrinterFailureCode.DISCONNECTED else PrinterFailureCode.TIMEOUT)
         override fun close() { cipher.close() }
     }
     private fun session(printer: CameraIndependentPrinter, events: MutableList<PrinterDiagnostic> = mutableListOf()): PrinterSession {
@@ -120,11 +135,31 @@ class PrinterSessionTest {
         assertFalse(printer.guard.unresolved)
     }
     @Test fun knownJobRejectionReleasesGuardWithoutRetry() {
-        val printer = CameraIndependentPrinter(rejection = true)
+        val printer = CameraIndependentPrinter(rejectionCode = -8006)
         fails(PrinterFailureCode.BUSY) { session(printer).print(jpeg(), printer.guard) }
         assertFalse(printer.guard.unresolved)
         assertEquals(1, printer.methods.count { it == "print_job" })
         assertTrue(printer.fileFrames.isEmpty())
+    }
+    @Test fun everyRefusalReleasesTheReservationWhileDoubtfulRepliesDoNot() {
+        val busy = CameraIndependentPrinter(rejectionCode = -8006)
+        val busyEvents = mutableListOf<PrinterDiagnostic>()
+        fails(PrinterFailureCode.BUSY) { session(busy, busyEvents).print(jpeg(), busy.guard) }
+        assertEquals(listOf("release"), busy.guard.outcomes)
+        assertEquals("PRINTER_SUBMIT_REFUSED code=8006", busyEvents.single { it.stage == PrinterStage.SUBMIT_REFUSED }.safeText())
+        val other = CameraIndependentPrinter(rejectionCode = -8100)
+        val otherEvents = mutableListOf<PrinterDiagnostic>()
+        fails(PrinterFailureCode.JOB_REJECTED) { session(other, otherEvents).print(jpeg(), other.guard) }
+        assertEquals(listOf("release"), other.guard.outcomes)
+        assertEquals("PRINTER_SUBMIT_REFUSED code=8100", otherEvents.single { it.stage == PrinterStage.SUBMIT_REFUSED }.safeText())
+        for (doubtful in listOf(CameraIndependentPrinter(malformedError = true), CameraIndependentPrinter(lostMethod = "print_job"),
+                CameraIndependentPrinter(rejectionCode = 0))) {
+            val events = mutableListOf<PrinterDiagnostic>()
+            try { session(doubtful, events).print(jpeg(), doubtful.guard); fail("Expected a doubtful reply") } catch (_: PrinterFailure) { }
+            assertTrue(doubtful.guard.unresolved)
+            assertEquals(emptyList<String>(), doubtful.guard.outcomes)
+            assertTrue(events.none { it.stage == PrinterStage.SUBMIT_REFUSED })
+        }
     }
     @Test fun lostReservationReplyLeavesUnknownOutcomeAndNeverRetries() {
         val printer = CameraIndependentPrinter(lostMethod = "print_job")
@@ -149,6 +184,29 @@ class PrinterSessionTest {
         val printer = CameraIndependentPrinter(wrongJob = true)
         fails(PrinterFailureCode.PROTOCOL_ERROR) { session(printer).print(jpeg(), printer.guard) }
         assertTrue(printer.guard.unresolved)
+    }
+    @Test fun finishedReplyBeforeEndOfStreamResolvesJob() {
+        val printer = CameraIndependentPrinter(finalReplyThenEof = FinalReplyThenEof.COMPLETE)
+        val events = mutableListOf<PrinterDiagnostic>()
+        session(printer, events).print(jpeg(), printer.guard)
+        assertFalse(printer.guard.unresolved)
+        assertTrue(events.any { it.stage == PrinterStage.PRINT_FINISHED })
+        assertFalse(events.any { it.stage == PrinterStage.OUTCOME_UNKNOWN })
+    }
+    @Test fun truncatedFinishedReplyAtEndOfStreamKeepsReservation() {
+        val printer = CameraIndependentPrinter(finalReplyThenEof = FinalReplyThenEof.TRUNCATED)
+        val events = mutableListOf<PrinterDiagnostic>()
+        fails(PrinterFailureCode.DISCONNECTED) { session(printer, events).print(jpeg(), printer.guard) }
+        assertTrue(printer.guard.unresolved)
+        assertTrue(events.any { it.stage == PrinterStage.OUTCOME_UNKNOWN })
+    }
+    @Test fun finishedReplyForAnotherRequestOrJobAtEndOfStreamKeepsReservation() {
+        val otherRequest = CameraIndependentPrinter(finalReplyThenEof = FinalReplyThenEof.OTHER_REQUEST)
+        fails(PrinterFailureCode.DISCONNECTED) { session(otherRequest).print(jpeg(), otherRequest.guard) }
+        assertTrue(otherRequest.guard.unresolved)
+        val otherJob = CameraIndependentPrinter(wrongJob = true, finalReplyThenEof = FinalReplyThenEof.COMPLETE)
+        fails(PrinterFailureCode.PROTOCOL_ERROR) { session(otherJob).print(jpeg(), otherJob.guard) }
+        assertTrue(otherJob.guard.unresolved)
     }
     @Test fun unresolvedReservationBlocksAllNewPrintTraffic() {
         val printer = CameraIndependentPrinter().apply { guard.unresolved = true }

@@ -2,18 +2,27 @@ package dev.pocketphotobridge.bridge.service
 
 import dev.pocketphotobridge.bridge.*
 import dev.pocketphotobridge.bridge.images.JvmPrintImagePreparer
+import dev.pocketphotobridge.bridge.linux.LinuxRadioFailure
+import dev.pocketphotobridge.bridge.linux.LinuxRadioFailureCode
 import dev.pocketphotobridge.bridge.simulation.*
 import dev.pocketphotobridge.printer.*
 import dev.pocketphotobridge.sony.*
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 
 class AutonomousBridgeTest {
+    @Test fun onlyAQueueFoundFullBeforeTheRadioBlocksTheCheck() {
+        assertEquals(CaptureStep.BLOCKED, ServiceSnapshot(ServiceState.QUEUED, 16, "QUEUE_FULL").captureStep)
+        // The photo was downloaded and prepared before the queue refused it, so this costs like a failed check.
+        assertEquals(CaptureStep.RETRY, ServiceSnapshot(ServiceState.WAITING_CAMERA, 15, "QUEUE_FULL").captureStep)
+    }
     private fun photo() = javaClass.getResourceAsStream("/simulation/sony-selected.jpg")!!.use { it.readBytes() }
     private fun root(test: (Path) -> Unit) {
         val directory = Files.createTempDirectory("autonomous-test-")
@@ -21,12 +30,20 @@ class AutonomousBridgeTest {
     }
     private fun bridge(state: Path, camera: CameraWifiConnector = SimulatedSony(photo()),
         printer: PrinterConnector = SimulatedPrinter(), images: PrintImagePreparer = JvmPrintImagePreparer(),
-        report: (String) -> Unit = {}): AutonomousBridge {
+        report: (String) -> Unit = {}, attempts: AttemptLog = AttemptLog.NONE): AutonomousBridge {
         val clock = SimulationClock()
         return AutonomousBridge(state, camera, printer, images, { SIMULATION_TOKEN },
-            report = report, now = clock::now, pause = clock::pause)
+            report = report, now = clock::now, pause = clock::pause, attempts = attempts)
     }
     private class PowerCut : Error()
+    private fun diagnostics(state: Path) = ServiceDiagnostics(state.parent, PrintStream(ByteArrayOutputStream()))
+    private fun assertRunKeepsHeaderAndCapture(diagnostics: ServiceDiagnostics, state: Path) {
+        val file = Files.readAllLines(state.parent.resolve("diagnostics.txt"))
+        assertTrue(file.first().matches(Regex("Pocket Photo Bridge \\S+ \\| headless service run=1( uptime_s=[0-9]+)?")))
+        assertEquals(file.first(), diagnostics.header)
+        assertTrue(file.any { it.endsWith(" BRIDGE_QUEUED queued=1") })
+        assertTrue(diagnostics.events().any { it.endsWith(" BRIDGE_QUEUED queued=1") })
+    }
     private fun imageFiles(root: Path): List<Path> = Files.list(root.resolve("images")).use { it.toList() }
 
     @Test fun captureIsDurableBeforeCameraAcknowledgementAndPrintsAfterRestart() = root { state ->
@@ -207,6 +224,73 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun busyRefusalOfTheJobKeepsThePhotoUntilAReadyPrinterPrintsItOnce() = root { state ->
+        val refusing = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT)
+        val logs = mutableListOf<String>()
+        bridge(state, printer = refusing, report = logs::add).use {
+            it.capture(SelectionTrigger("selected"))
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext())
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.snapshot())
+            assertEquals(1, refusing.refusals); assertEquals(0, refusing.submissions)
+        }
+        assertEquals(1, logs.count { it == "PRINTER_SUBMIT_REFUSED code=8006" })
+        assertEquals(2, imageFiles(state).size)
+        val ready = SimulatedPrinter()
+        bridge(state, printer = ready).use {
+            assertEquals(1, it.snapshot().queued)
+            assertEquals(ServiceState.PRINTED, it.printNext().state)
+            assertEquals("DUPLICATE_SUPPRESSED", it.capture(SelectionTrigger("again")).category)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0), it.printNext())
+            assertEquals(1, ready.submissions); assertEquals(1, ready.completedJobs)
+        }
+    }
+
+    @Test fun aRefusalWithAnotherCodeDropsThePhotoSoSendingItAgainPrintsItOnce() = root { state ->
+        var printer = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT, refusalCode = -8100)
+        val logs = mutableListOf<String>()
+        val camera = CameraWifiConnector { SimulatedSony(photo()).connect(it) }
+        bridge(state, camera, PrinterConnector { printer.connect() }, report = logs::add).use {
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("selected")).captureStep)
+            val refused = it.printNext()
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 0, "JOB_REJECTED", dropped = 1), refused)
+            assertTrue(refused.printAttemptFailed)
+            assertEquals(refused, it.snapshot())
+            assertTrue(imageFiles(state).isEmpty())
+            assertEquals(1, printer.refusals); assertEquals(0, printer.submissions)
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("again")).captureStep)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 0, "JOB_REJECTED", dropped = 2), it.printNext())
+            printer = SimulatedPrinter()
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("third")).captureStep)
+            assertEquals(ServiceSnapshot(ServiceState.PRINTED, 0), it.printNext())
+            assertEquals(CaptureStep.DUPLICATE, it.capture(SelectionTrigger("fourth")).captureStep)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0), it.printNext())
+            assertEquals(1, printer.submissions); assertEquals(1, printer.completedJobs)
+        }
+        assertEquals(2, logs.count { it == "PRINTER_SUBMIT_REFUSED code=8100" })
+        assertEquals(2, logs.count { it == "BRIDGE_QUEUE_RECONCILED count=1" })
+    }
+
+    @Test fun radioFailuresKeepTheirOwnCategoryInsteadOfIoError() = root { state ->
+        val logs = mutableListOf<String>()
+        val camera = CameraWifiConnector { throw LinuxRadioFailure(LinuxRadioFailureCode.CAMERA_ROUTE_UNSAFE) }
+        bridge(state, camera, report = logs::add).use {
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0, "CAMERA_ROUTE_UNSAFE"), it.capture(SelectionTrigger("selected")))
+        }
+        assertTrue("BRIDGE_WAITING_CAMERA queued=0 category=CAMERA_ROUTE_UNSAFE" in logs)
+        bridge(state).use { it.capture(SelectionTrigger("selected")) }
+        // The Linux printer-off state: no serial-port channel found.
+        bridge(state, printer = PrinterConnector { throw LinuxRadioFailure(LinuxRadioFailureCode.SPP_UNAVAILABLE) }).use {
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "SPP_UNAVAILABLE"), it.printNext())
+        }
+    }
+
+    @Test fun sonyStagesCarryTheSelectedCountAndReceivedBytes() = root { state ->
+        val logs = mutableListOf<String>()
+        bridge(state, report = logs::add).use { it.capture(SelectionTrigger("selected")) }
+        assertTrue("SONY_SELECTION count=1" in logs)
+        assertTrue("SONY_JPEG_BYTES count=${photo().size}" in logs)
+    }
+
     @Test fun interruptedAndInvalidPhotosAreNeverQueuedOrAcknowledged() = root { state ->
         val interrupted = SimulatedSony(photo(), SonyFault.INTERRUPTED)
         bridge(state, interrupted).use {
@@ -337,6 +421,22 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun theFingerprintIsTakenBeforeDecodingSoADuplicateIsNeverDecodedAndANewPhotoOnce() = root { state ->
+        val real = JvmPrintImagePreparer()
+        var checks = 0; var preparations = 0
+        val counting = object : PrintImagePreparer {
+            override fun validateSource(source: File) { checks++; real.validateSource(source) }
+            override fun prepare(source: File, crop: Boolean) = real.prepare(source, crop).also { preparations++ }
+        }
+        bridge(state, images = counting).use {
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("first")).captureStep)
+            // One decode prepares the photo; the one check left is of the prepared output.
+            assertEquals(listOf(1, 1), listOf(preparations, checks))
+            assertEquals(CaptureStep.DUPLICATE, it.capture(SelectionTrigger("again")).captureStep)
+            assertEquals(listOf(1, 1), listOf(preparations, checks))
+        }
+    }
+
     @Test fun queueCapacityStopsCaptureBeforeAcknowledgement() = root { state ->
         val original = photo()
         val prepared = javaClass.getResourceAsStream("/simulation/portrait-standard.jpg")!!.use { it.readBytes() }
@@ -449,6 +549,44 @@ class AutonomousBridgeTest {
         }
     }
 
+    /** Forwards to [device] and stops the process at the first frame [stop] picks, before or after sending it. */
+    private fun stoppingPrinter(device: SimulatedPrinter, after: Boolean, stop: (PrinterFrame, String) -> Boolean) = PrinterConnector {
+        val transport = device.connect()
+        object : PrinterTransport {
+            private val cipher = PrinterCipher(SIMULATION_TOKEN)
+            override fun write(bytes: ByteArray) {
+                val frame = PrinterProtocol.decode(bytes)
+                val stopping = stop(frame, if (frame.channel == 1) cipher.crypt(frame.body).toString(Charsets.UTF_8) else "")
+                if (stopping && !after) throw PowerCut()
+                transport.write(bytes)
+                if (stopping) throw PowerCut()
+            }
+            override fun read(timeoutMs: Long) = transport.read(timeoutMs)
+            override fun close() { try { transport.close() } finally { cipher.close() } }
+        }
+    }
+
+    @Test fun processStopDuringUploadOrAfterConfirmationNeedsAttentionAndKeepsThePhoto() {
+        val stops = listOf<Pair<Boolean, (PrinterFrame, String) -> Boolean>>(
+            false to { frame, _ -> frame.channel == 2 },
+            true to { _, request -> "confirm_job" in request })
+        for ((after, stop) in stops) root { state ->
+            val device = SimulatedPrinter()
+            bridge(state, printer = stoppingPrinter(device, after, stop)).use {
+                it.capture(SelectionTrigger("first"))
+                try { it.printNext(); fail("Expected a process stop") } catch (_: PowerCut) { }
+                assertEquals(1, device.submissions)
+            }
+            val ready = SimulatedPrinter()
+            bridge(state, printer = ready).use {
+                assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
+                assertEquals(1, it.snapshot().queued)
+                assertEquals(0, ready.submissions)
+                assertTrue(ready.methods.isEmpty())
+            }
+        }
+    }
+
     @Test fun checkAcknowledgementRemovesOnlySubmittedPhotoAndPreservesOtherQueuedCapture() = root { state ->
         var camera = SimulatedSony(photo())
         val second = javaClass.getResourceAsStream("/simulation/sony-selected-next.jpg")!!.use { it.readBytes() }
@@ -508,6 +646,173 @@ class AutonomousBridgeTest {
         }
     }
 
+    /** The service loop's cadence: a failed camera scan every second, a print step every two. */
+    private fun anHourOfServiceLoop(diagnostics: ServiceDiagnostics, bridge: AutonomousBridge) = repeat(3_600) { second ->
+        diagnostics.emit("SERVICE_CAMERA_WAIT category=COMMAND_FAILED")
+        if (second % 2 == 0) bridge.printNext()
+    }
+
+    @Test fun anHourOfIdlePrintStepsKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, report = diagnostics::emit).use {
+            it.capture(SelectionTrigger("selected"))
+            assertEquals(ServiceState.PRINTED, it.printNext().state)
+            repeat(1_800) { _ -> it.printNext() }
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+    }
+
+    @Test fun anHourOfRetryingAnOfflinePrinterKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, printer = SimulatedPrinter(PrinterFault.OFFLINE), report = diagnostics::emit, attempts = diagnostics).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            repeat(1_800) { _ -> assertEquals(ServiceState.WAITING_PRINTER, it.printNext().state) }
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        val waiting = diagnostics.events().filter { " BRIDGE_WAITING_PRINTER " in it }
+        assertTrue(waiting.size in 2..30)
+        val count = waiting.last().substringAfter(" count=", "").toInt()
+        assertTrue(count in 900..1_799)
+    }
+
+    @Test fun anHourOfRadioStepsToAnOfflinePrinterInTheServiceLoopKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        val offline = SimulatedPrinter(PrinterFault.OFFLINE)
+        // The board's connector reports its radio steps through the same diagnostics before it fails.
+        val radio = PrinterConnector {
+            diagnostics.emit("LINUX_SPP_DISCOVERY_START")
+            diagnostics.emit("LINUX_BLUETOOTH_CONNECT reason=PENDING native_error=115")
+            diagnostics.emit("LINUX_BLUETOOTH_SO_ERROR reason=FAILED native_error=112")
+            offline.connect()
+        }
+        bridge(state, printer = radio, report = diagnostics::emit, attempts = diagnostics).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            anHourOfServiceLoop(diagnostics, it)
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertTrue(diagnostics.events().size < 100)
+    }
+
+    @Test fun anHourOfABusyPrinterInTheServiceLoopKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, printer = SimulatedPrinter(PrinterFault.BUSY), report = diagnostics::emit, attempts = diagnostics).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            anHourOfServiceLoop(diagnostics, it)
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertTrue(diagnostics.events().size < 100)
+    }
+
+    @Test fun anHourOfFailedCameraScansKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, report = diagnostics::emit, attempts = diagnostics).use {
+            assertEquals(ServiceState.QUEUED, it.capture(SelectionTrigger("selected")).state)
+            assertEquals(ServiceState.PRINTED, it.printNext().state)
+            anHourOfServiceLoop(diagnostics, it)
+        }
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertTrue(diagnostics.events().size < 100)
+    }
+
+    /** The service loop for an hour while the camera stays on its send screen, so every re-check offers the same photo. */
+    private fun anHourWithAVisibleCamera(diagnostics: ServiceDiagnostics, bridge: AutonomousBridge) {
+        var clock = 0L
+        val loop = ServiceLoop(BootModePolicy(0).apply { requestOperation() }, { clock }, object : ServiceLoopActions {
+            override fun enterOperation() {}
+            override fun capture(trigger: SelectionTrigger) = bridge.capture(trigger).captureStep
+            override fun printNext() = bridge.printNext().printStep
+            override fun cameraPresence(scan: Result<Boolean>) = diagnostics.emit("SERVICE_CAMERA_PRESENT")
+        })
+        repeat(3_600) { _ -> clock += 1_000; loop.tick(clock, true) { true } }
+    }
+
+    @Test fun anHourOfRecheckingAVisibleCameraAfterAPrintKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        val camera = SimulatedSony(photo())
+        bridge(state, camera = camera, report = diagnostics::emit, attempts = diagnostics).use { anHourWithAVisibleCamera(diagnostics, it) }
+        assertTrue(camera.completedTransfers > 5)
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        assertEquals(1, diagnostics.events().count { " category=DUPLICATE_SUPPRESSED" in it && "count=" !in it })
+        assertTrue(diagnostics.events().size < 60)
+    }
+
+    @Test fun anHourOfRecheckingAVisibleCameraWithTheQueuedPhotosPrinterOffKeepsTheRunHeaderAndCapture() = root { state ->
+        val diagnostics = diagnostics(state)
+        val camera = SimulatedSony(photo())
+        bridge(state, camera = camera, printer = SimulatedPrinter(PrinterFault.OFFLINE), report = diagnostics::emit,
+            attempts = diagnostics).use { anHourWithAVisibleCamera(diagnostics, it) }
+        assertTrue(camera.completedTransfers > 5)
+        assertRunKeepsHeaderAndCapture(diagnostics, state)
+        // Re-checks in between do not restart the retry series: its count keeps doubling.
+        val count = diagnostics.events().last { " BRIDGE_WAITING_PRINTER " in it }.substringAfter(" count=", "").toInt()
+        assertTrue(count >= 64)
+        assertTrue(diagnostics.events().size < 80)
+    }
+
+    @Test fun aRefusalAfterABusyPreflightIsReportedOnceAndItsRepeatsCollapse() = root { state ->
+        val diagnostics = diagnostics(state)
+        var printer = SimulatedPrinter(PrinterFault.BUSY)
+        bridge(state, printer = PrinterConnector { printer.connect() }, report = diagnostics::emit, attempts = diagnostics).use {
+            it.capture(SelectionTrigger("selected"))
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext())
+            printer = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT)
+            repeat(20) { _ -> assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext()) }
+            assertEquals(20, printer.refusals)
+        }
+        assertEquals(1, diagnostics.events().count { it.endsWith(" PRINTER_SUBMIT_REFUSED code=8006") })
+        assertTrue(diagnostics.events().none { "REDACTED" in it })
+    }
+
+    @Test fun aPrinterAlternatingBetweenBusyAndRefusingReportsTheRefusalOnce() = root { state ->
+        val diagnostics = diagnostics(state)
+        var busy = true
+        val printer = PrinterConnector { SimulatedPrinter(if (busy) PrinterFault.BUSY else PrinterFault.REFUSE_SUBMIT).connect() }
+        bridge(state, printer = printer, report = diagnostics::emit, attempts = diagnostics).use {
+            it.capture(SelectionTrigger("selected"))
+            repeat(40) { attempt ->
+                busy = attempt % 2 == 0
+                assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 1, "BUSY"), it.printNext())
+            }
+        }
+        assertEquals(1, diagnostics.events().count { it.endsWith(" PRINTER_SUBMIT_REFUSED code=8006") })
+        assertTrue(diagnostics.events().size < 40)
+    }
+
+    @Test fun thePrintStepFailsOnlyForAnUnreachableBusyOrRefusingPrinterAndOnlyANewPhotoCountsAsNew() = root { state ->
+        var printer = SimulatedPrinter(PrinterFault.OFFLINE)
+        bridge(state, printer = PrinterConnector { printer.connect() }).use {
+            assertFalse(it.printNext().printAttemptFailed)
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("selected")).captureStep)
+            assertTrue(it.printNext().printAttemptFailed)
+            printer = SimulatedPrinter(PrinterFault.BUSY); assertTrue(it.printNext().printAttemptFailed)
+            printer = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT); assertTrue(it.printNext().printAttemptFailed)
+            printer = SimulatedPrinter()
+            val printed = it.printNext()
+            assertEquals(ServiceState.PRINTED, printed.state); assertFalse(printed.printAttemptFailed)
+            assertEquals(CaptureStep.DUPLICATE, it.capture(SelectionTrigger("again")).captureStep)
+        }
+        bridge(state.resolveSibling("attention"), printer = SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT)).use {
+            it.capture(SelectionTrigger("selected"))
+            val outcome = it.printNext()
+            assertEquals(ServiceState.NEEDS_ATTENTION, outcome.state); assertFalse(outcome.printAttemptFailed)
+            assertEquals(CaptureStep.BLOCKED, it.capture(SelectionTrigger("next")).captureStep)
+        }
+        val broken = CameraWifiConnector { throw IOException("camera gone") }
+        bridge(state.resolveSibling("camera"), broken).use {
+            assertEquals(CaptureStep.RETRY, it.capture(SelectionTrigger("selected")).captureStep)
+        }
+    }
+
+    @Test fun reconciliationReportsHowManyQueuedPhotosItRemoved() = root { state ->
+        val diagnostics = diagnostics(state)
+        bridge(state, printer = SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT), report = diagnostics::emit).use {
+            it.capture(SelectionTrigger("first"))
+            assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0), it.acknowledgeCheckedPrinter())
+        }
+        assertEquals(1, diagnostics.events().count { it.endsWith(" BRIDGE_QUEUE_RECONCILED count=1") })
+    }
+
     @Test fun diagnosticsUseOnlyFixedCategoriesAndCollapsePrintingPolls() = root { state ->
         val logs = mutableListOf<String>()
         val camera = CameraWifiConnector { throw IOException("private camera password and address") }
@@ -519,7 +824,7 @@ class AutonomousBridgeTest {
             assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
         }
         assertEquals(1, logs.count { it == "PRINTER_PRINTING" })
-        assertTrue(logs.all { Regex("[A-Z_]+(?: queued=[0-9]+)?(?: category=[A-Z_]+)?").matches(it) })
+        assertTrue(logs.all { Regex("[A-Z_]+(?: queued=[0-9]+)?(?: category=[A-Z_]+)?(?: count=[0-9]+)?").matches(it) })
         assertFalse(logs.joinToString("\n").contains("private"))
     }
 }

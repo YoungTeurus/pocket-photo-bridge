@@ -10,10 +10,11 @@ import java.io.IOException
 data class PrinterStatus(val phase: String, val battery: Int?)
 enum class PrinterStage { STATUS_READY, PREFLIGHT, JOB_RESERVED, UPLOAD, JOB_CONFIRMED, PRINTING, PRINT_FINISHED, OUTCOME_UNKNOWN,
     QUERY_STATUS, STATUS_PARSED, QUERY_DEVICE_INFO, RESET_DATA, SUBMIT_JOB, CONFIRM_JOB, QUERY_JOB,
-    RX_BYTES, RX_FRAME, REPLY_MATCHED, REPLY_IGNORED, REJECTED }
+    RX_BYTES, RX_FRAME, REPLY_MATCHED, REPLY_IGNORED, REJECTED, SUBMIT_REFUSED }
+/** [code] is the magnitude of a printer error code, at most [PrinterSession.MAX_CODE]. */
 data class PrinterDiagnostic(val stage: PrinterStage, val count: Long? = null,
-    val frame: PrinterFrameMetadata? = null, val reason: PrinterFailureReason? = null) {
-    fun safeText() = "PRINTER_${stage.name}" + (count?.let { " count=$it" } ?: "") +
+    val frame: PrinterFrameMetadata? = null, val reason: PrinterFailureReason? = null, val code: Long? = null) {
+    fun safeText() = "PRINTER_${stage.name}" + (count?.let { " count=$it" } ?: "") + (code?.let { " code=$it" } ?: "") +
         (frame?.let { " ${it.safeText()}" } ?: "") + (reason?.let { " reason=${it.name}" } ?: "")
 }
 
@@ -59,8 +60,10 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
                 val code = errorCode(jobReply)
                 // Only a structured rejection is proof that no job was reserved.
                 if (code == null || code >= 0) badResponse()
-                guard.resolve(reservation)
-                throw PrinterFailure(if (code == -8006L) PrinterFailureCode.BUSY else PrinterFailureCode.JOB_REJECTED)
+                // No job exists, so a guard may forget the photo; -8006 (busy) and other codes differ only in the failure thrown.
+                guard.release(reservation)
+                report(PrinterDiagnostic(PrinterStage.SUBMIT_REFUSED, code = if (code < -MAX_CODE) MAX_CODE else -code))
+                throw PrinterFailure(if (code == BUSY_CODE) PrinterFailureCode.BUSY else PrinterFailureCode.JOB_REJECTED)
             }
             val job = result(jobReply)
             if (!job.isJsonObject) badResponse()
@@ -186,7 +189,7 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
     }
 
     private fun result(reply: JsonObject): JsonElement {
-        if (hasError(reply)) throw PrinterFailure(if (errorCode(reply) == -8006L) PrinterFailureCode.BUSY else PrinterFailureCode.PRINTER_FAULT)
+        if (hasError(reply)) throw PrinterFailure(if (errorCode(reply) == BUSY_CODE) PrinterFailureCode.BUSY else PrinterFailureCode.PRINTER_FAULT)
         return reply["result"] ?: badResponse(PrinterFailureReason.RPC_RESULT_MISSING)
     }
     private fun errorCode(reply: JsonObject): Long? = reply["error"]?.takeIf { it.isJsonObject }
@@ -231,6 +234,10 @@ class PrinterSession(private val transport: PrinterTransport, token: String,
     companion object {
         private val PHASES = setOf("init", "smart_sheet", "decoding", "pre_heat", "load_paper", "printing", "idle")
         const val MAX_JPEG_BYTES = 4 * 1024 * 1024
+        /** Printer "busy / not yet ready" (mi-portable-photo-printer@85335b6, ERR_BUSY). */
+        const val BUSY_CODE = -8006L
+        /** Larger error-code magnitudes are reported as this bound. */
+        const val MAX_CODE = 99_999_999L
         private fun validateJpeg(bytes: ByteArray) {
             if (bytes.size !in 16..MAX_JPEG_BYTES || bytes[0] != (-1).toByte() || bytes[1] != (-40).toByte() ||
                 bytes[bytes.lastIndex - 1] != (-1).toByte() || bytes.last() != (-39).toByte())

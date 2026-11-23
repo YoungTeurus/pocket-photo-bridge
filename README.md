@@ -10,8 +10,15 @@ print automatically after a one-time setup opt-in. A dedicated setup Wi-Fi mode
 provides a local configuration/status page. Try the same service and page with
 fake wire devices on Windows before the board arrives. Downloadable packages
 include Java; you compile nothing. Follow [the Windows simulation and Linux
-installation guide](docs/mvp5-deployment.md). Linux radio/printing validation is
-pending physical Orange Pi testing.
+installation guide](docs/mvp5-deployment.md). Download the Orange Pi (Linux
+ARM64) package and its SHA-256 file from
+[Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases); they
+stay available after CI artifacts expire. Each build names its source commit as
+`version+commit` in the first line of `bridge --help`, the bundle's `BUILD` file,
+the diagnostics header and the setup page's `build` field. Earlier 0.5.0 builds
+printed two single photos on the Orange Pi;
+[the Linux field protocol](docs/linux-field-protocol.md) records what is and is
+not validated there.
 
 ## Roadmap
 
@@ -19,7 +26,7 @@ pending physical Orange Pi testing.
 - **MVP 2 — Android → Xiaomi:** select an Android-paired printer, diagnose Classic SPP, prepare a test chart/local image/Sony JPEG, and confirm one copy. Physical printing and the Sony photo handoff passed; encrypted status and printing require an existing device-specific token. Other firmware and remaining hardware checks are unverified.
 - **MVP 3 — Battery-powered Linux bridge:** evaluate Raspberry Pi Zero 2 W and a small enclosure that can sit on the printer.
 - **MVP 4 — Headless bridge with Windows simulation:** deterministic protocol scenarios and a portable Windows manual flow, physically validated with 0.4.3.
-- **MVP 5 — Autonomous Linux service:** persistent photo queue, dedicated authenticated setup hotspot, NetworkManager / BlueZ adapters, Windows service simulation, and portable Linux ARM64 runtime. Linux hardware validation is pending.
+- **MVP 5 — Autonomous Linux service:** persistent photo queue, dedicated authenticated setup hotspot, NetworkManager / BlueZ adapters, Windows service simulation, and portable Linux ARM64 runtime. Earlier builds printed two single photos on the Orange Pi; the [field protocol](docs/linux-field-protocol.md) records what is and is not validated.
 
 ## Important constraints
 
@@ -63,18 +70,18 @@ The first tablet experiment on Android API 36 confirmed image preparation and an
 
 The **headless bridge 0.5.0** is separate from the unchanged **Android 0.2.2** application. Synthetic Sony SOAP/HTTP selection and Xiaomi encrypted byte-stream devices exercise the real protocol sessions through the same `PrintCoordinator`. The suite covers normal printing, connection failures, missing/partial selections, busy/offline printer, lost completion, duplicates, restart and checked-printer recovery. A separate-process power-cut experiment proves the persisted unknown-outcome gate. Simulation consumes no physical paper and uses only project-generated photos and a public synthetic fixture key.
 
-For **real Windows camera/printer testing**, launch **WindowsLive.cmd** from the same portable folder. This adds manual Sony Wi-Fi association, paired Xiaomi Bluetooth Classic/SPP selection, hidden token input, receive-only/status-only probes and a one-copy print requiring the word PRINT. The user confirmed Windows Sony receive/save with 0.4.1 and the complete camera-to-printer flow with 0.4.3 on the tested setup. Version 0.4.2 rotates landscape photos to portrait paper after EXIF correction and adds Bluetooth provider compatibility and native error diagnostics. See [the real-device procedure and hardware result](docs/windows-live.md). Linux adapters added in 0.5.0 await physical validation.
+For **real Windows camera/printer testing**, launch **WindowsLive.cmd** from the same portable folder. This adds manual Sony Wi-Fi association, paired Xiaomi Bluetooth Classic/SPP selection, hidden token input, receive-only/status-only probes and a one-copy print requiring the word PRINT. The user confirmed Windows Sony receive/save with 0.4.1 and the complete camera-to-printer flow with 0.4.3 on the tested setup. Version 0.4.2 rotates landscape photos to portrait paper after EXIF correction and adds Bluetooth provider compatibility and native error diagnostics. See [the real-device procedure and hardware result](docs/windows-live.md). Earlier 0.5.0 builds printed two single photos on the Orange Pi; [the Linux field protocol](docs/linux-field-protocol.md) records what is and is not validated.
 
 Version **0.4.3** fixes native error capture: the 0.4.2 printer report stopped at connect with an incorrectly zero-valued error. The adapter now reads JNA's saved per-thread error immediately, so an in-progress connect/read/write remains retryable within its existing deadline. The packaged Windows native check also verifies a real failed-socket error without a radio or print. The subsequent user retest captured normal pending code 10035, completed the connection, uploaded the prepared photo and reached `PRINTER_PRINT_FINISHED` / `BRIDGE_PRINTED`.
 
 1. Open [Actions → Headless bridge](https://github.com/YoungTeurus/pocket-photo-bridge/actions/workflows/bridge.yml) and a successful run for this implementation.
 2. Download `pocket-photo-bridge-windows-x64-0.5.0` and extract GitHub's outer ZIP.
 3. Extract the inner `PocketPhotoBridge-0.5.0-windows-x64.zip`, keep its complete folder together, then double-click **PocketPhotoBridge.exe** for the protocol suite or **WindowsServiceSimulation.cmd** for the automatic service and setup page.
-4. Expect `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=14`. Send back `%LOCALAPPDATA%\PocketPhotoBridge\simulation\diagnostics.txt` if a check fails; it contains fixed stages/counts and no identities, tokens, fingerprints or photo bytes.
+4. Expect `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=15`. Send back `%LOCALAPPDATA%\PocketPhotoBridge\simulation\diagnostics.txt` if a check fails; it contains fixed stages/counts and no identities, tokens, fingerprints or photo bytes.
 
-The package contains the EXE **and a bundled Java runtime**, including Java desktop imaging. Explicit `--simulate`, `--simulate-all`, `--simulate-failure=<scenario>` and `--help` commands also work in PowerShell. Repeating an ordinary simulation on the same state suppresses its already-consumed selection. Manual acknowledgement clears uncertainty only and never replays its photo. A known rejected submission is conservatively suppressed too; intentional reprinting is outside this milestone.
+The package contains the EXE **and a bundled Java runtime**, including Java desktop imaging. Explicit `--simulate`, `--simulate-all`, `--simulate-failure=<scenario>` and `--help` commands also work in PowerShell. Repeating an ordinary simulation on the same state suppresses its already-consumed selection. Manual acknowledgement clears uncertainty only and never replays its photo. A known rejected submission is conservatively suppressed too; intentional reprinting is outside this milestone. The autonomous Linux service differs: a job the printer refuses as busy (`-8006`) keeps its photo queued and is retried, and a job refused with any other code drops its photo so it can be sent again from the camera after the bridge has seen the camera's network go away; the Windows and simulation flows still suppress both.
 
-Follow [the Windows download/run/diagnostics guide](docs/windows-simulation.md). The [Linux/ARM64 guide](docs/linux-bridge.md) describes the bundled-runtime service, NetworkManager/BlueZ adapters, private configuration and enabled systemd deployment. Use `--service` after installation and setup; legacy `--hardware` still refuses to run. Windows/Linux simulations and ARM64 CI do not validate Orange Pi Wi-Fi/Bluetooth, autonomous physical printing or power-loss behavior on its storage.
+Follow [the Windows download/run/diagnostics guide](docs/windows-simulation.md). The [Linux/ARM64 guide](docs/linux-bridge.md) describes the bundled-runtime service, NetworkManager/BlueZ adapters, private configuration and enabled systemd deployment. Use `--service` after installation and setup; legacy `--hardware` still refuses to run. Windows/Linux simulations and ARM64 CI do not validate Orange Pi Wi-Fi/Bluetooth, autonomous physical printing or power-loss behavior on its storage; the board results are recorded in [the Linux field protocol](docs/linux-field-protocol.md).
 
 The [architecture proposal](docs/superpowers/specs/2026-10-12-mvp4-headless-design.md) and [implementation plan](docs/superpowers/plans/2026-10-12-mvp4-headless.md) were documented before implementation. The existing Android Actions workflow and Android/protocol sources remain unchanged.
 

@@ -56,9 +56,9 @@ Without `--state-dir`, ordinary simulation state is stored in `%LOCALAPPDATA%\Po
 | `64` | Invalid command or unsupported `--hardware` mode |
 | `71` | Deliberate simulated power cut after durable reservation and printer acceptance |
 
-Fault names are `missing-ssid`, `camera-offline`, `camera-timeout`, `no-selected-jpeg`, `interrupted-transfer`, `printer-offline`, `printer-busy`, `dropped-after-submit`, `uncertain-completion`, `duplicate-trigger`, `duplicate-photo`, `restart`, `manual-recovery` and `power-cut`. The duplicate/restart/recovery scenarios assert their expected policy and return `0`. Simulated timeouts advance virtual time.
+Fault names are `missing-ssid`, `camera-offline`, `camera-timeout`, `no-selected-jpeg`, `interrupted-transfer`, `printer-offline`, `printer-busy`, `dropped-after-submit`, `uncertain-completion`, `duplicate-trigger`, `duplicate-photo`, `restart`, `manual-recovery`, `power-cut` and `refused-submit`. The duplicate/restart/recovery scenarios assert their expected policy and return `0`. Simulated timeouts advance virtual time.
 
-The suite checks 14 scenarios. `power-cut` is a separate process-level experiment because it deliberately halts its JVM. Use a fresh synthetic state directory for each individual fault experiment; repeating a consumed fault generation is suppressed. The global uncertainty gate and event/photo tombstones also retain a submitted photo after a known rejection. A same-photo intentional reprint is not implemented.
+The suite checks 15 scenarios. `power-cut` is a separate process-level experiment because it deliberately halts its JVM. Use a fresh synthetic state directory for each individual fault experiment; repeating a consumed fault generation is suppressed. The global uncertainty gate and event/photo tombstones also retain a submitted photo after a known rejection, including a busy (`-8006`) refusal, which `refused-submit` exercises. Only the autonomous Linux service retries a `-8006` refusal and drops a photo refused with any other code so it can be sent again. A same-photo intentional reprint is not implemented.
 
 ## Inspect crash recovery
 
@@ -79,7 +79,7 @@ Acknowledgement clears the global uncertainty gate only. It retains consumed eve
 
 ## What to send back
 
-After the run, send the contents of `diagnostics.txt` from `%LOCALAPPDATA%\PocketPhotoBridge\simulation`, or from the directory explicitly passed with `--state-dir`. For PowerShell, also give `$LASTEXITCODE` and say whether the EXE opened and stayed visible. A clean suite should end with `SIMULATION_SUITE_PASS checks=14`. If launching fails before a report is created, provide the fixed error shown by the launcher or Windows and the application version; no screenshot is needed. Do not send the journal snapshot, personal photos, tokens or configuration.
+After the run, send the contents of `diagnostics.txt` from `%LOCALAPPDATA%\PocketPhotoBridge\simulation`, or from the directory explicitly passed with `--state-dir`. For PowerShell, also give `$LASTEXITCODE` and say whether the EXE opened and stayed visible. A clean suite should end with `SIMULATION_SUITE_PASS checks=15`. If launching fails before a report is created, provide the fixed error shown by the launcher or Windows and the application version; no screenshot is needed. Do not send the journal snapshot, personal photos, tokens or configuration.
 
 ## Troubleshooting and verification
 

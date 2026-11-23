@@ -8,7 +8,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'The portable EXE smoke test requires Windows.' }
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-if (-not $ZipPath) { $ZipPath = Join-Path $repository 'bridge/build/portable/windows-x64/PocketPhotoBridge-0.5.0-windows-x64.zip' }
+$version = (Get-Content -LiteralPath (Join-Path $repository 'bridge/VERSION') -Raw).Trim()
+# The commit being built: CI passes the same GITHUB_SHA to Gradle as -PbuildCommit; other builds report dev.
+$build = "$version+$(if ($env:GITHUB_SHA) { $env:GITHUB_SHA } else { 'dev' })"
+if (-not $ZipPath) { $ZipPath = Join-Path $repository "bridge/build/portable/windows-x64/PocketPhotoBridge-$version-windows-x64.zip" }
 $ZipPath = [IO.Path]::GetFullPath($ZipPath)
 $work = Join-Path $repository 'bridge/build/portable/Windows smoke extraction with spaces'
 $reports = Join-Path $repository 'bridge/build/reports/smoke/windows'
@@ -104,7 +107,7 @@ $normalState = Get-StateDirectory normal
 Invoke-SmokeCase -Name normal -ExpectedExit 0 -CommandArguments @('--simulate', "--state-dir=$normalState") -ExpectedPatterns @($onePrint)
 Invoke-SmokeCase -Name duplicate -ExpectedExit 0 -CommandArguments @('--simulate', "--state-dir=$normalState") -ExpectedPatterns @($zeroPrints)
 Invoke-SmokeCase -Name crop -ExpectedExit 0 -CommandArguments @('--simulate', '--crop', "--state-dir=$(Get-StateDirectory crop)") -ExpectedPatterns @($onePrint)
-foreach ($scenario in @('missing-ssid', 'camera-offline', 'camera-timeout', 'no-selected-jpeg', 'interrupted-transfer', 'printer-offline', 'printer-busy')) {
+foreach ($scenario in @('missing-ssid', 'camera-offline', 'camera-timeout', 'no-selected-jpeg', 'interrupted-transfer', 'printer-offline', 'printer-busy', 'refused-submit')) {
     Invoke-SmokeCase -Name $scenario -ExpectedExit 2 -CommandArguments @("--simulate-failure=$scenario", "--state-dir=$(Get-StateDirectory $scenario)") -ExpectedPatterns @($zeroPrints)
 }
 foreach ($scenario in @('dropped-after-submit', 'uncertain-completion')) {
@@ -121,7 +124,7 @@ Invoke-SmokeCase -Name after-power-cut -ExpectedExit 3 -CommandArguments @('--si
 Invoke-SmokeCase -Name acknowledge -ExpectedExit 0 -CommandArguments @('--acknowledge-checked-printer', '--confirm', "--state-dir=$crashState") -ExpectedPatterns @($zeroPrints)
 Invoke-SmokeCase -Name after-acknowledge -ExpectedExit 0 -CommandArguments @('--simulate', "--state-dir=$crashState") -ExpectedPatterns @($zeroPrints)
 
-$serviceSummary = & python (Join-Path $repository 'bridge/packaging/smoke-service.py') $launcher (Get-StateDirectory service-http)
+$serviceSummary = & python (Join-Path $repository 'bridge/packaging/smoke-service.py') $launcher (Get-StateDirectory service-http) $build
 if ($LASTEXITCODE -ne 0) { throw 'The extracted service HTTP smoke failed.' }
 if ($serviceSummary -notmatch '^PACKAGED_SERVICE_HTTP_SMOKE_PASS bundled_runtime=true authenticated=true credentials_redacted=true orchestration=true$') {
     throw 'The extracted service HTTP smoke did not produce its expected result.'

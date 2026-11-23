@@ -17,7 +17,7 @@ import javax.imageio.plugins.jpeg.JPEGHuffmanTable
 
 /** Public synthetic fixture key. Never use this for an actual printer. */
 const val SIMULATION_TOKEN = "000102030405060708090a0b"
-enum class PrinterFault { NONE, OFFLINE, BUSY, DROP_AFTER_SUBMIT, NEVER_FINISH, POWER_CUT }
+enum class PrinterFault { NONE, OFFLINE, BUSY, DROP_AFTER_SUBMIT, NEVER_FINISH, POWER_CUT, REFUSE_SUBMIT }
 class SimulatedPowerLoss : Error("SIMULATED_POWER_LOSS")
 
 class SimulationClock {
@@ -30,14 +30,21 @@ class SimulationClock {
     }
 }
 
-/** Parses actual encrypted protocol traffic, but never connects to radios or prints. */
-class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE,
+/**
+ * Parses actual encrypted protocol traffic, but never connects to radios or prints.
+ *
+ * @param refusalCode the negative error code a [PrinterFault.REFUSE_SUBMIT] printer answers print_job with.
+ */
+class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE, private val refusalCode: Long = PrinterSession.BUSY_CODE,
     private val crash: () -> Unit = { throw SimulatedPowerLoss() }) : PrinterConnector {
     var submissions: Int = 0
         private set
     var completedJobs: Int = 0
         private set
     var uploadedFrames: Int = 0
+        private set
+    /** print_job requests answered with [refusalCode]; they create no job. */
+    var refusals: Int = 0
         private set
     private var uploaded: ByteArray? = null
     val uploadedJpeg: ByteArray? get() = uploaded?.copyOf()
@@ -122,6 +129,11 @@ class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE,
                         number(values["job_type"]) == 0L)
                     val size = number(values["file_size"])
                     requireProtocol(size in 16..PrinterSession.MAX_JPEG_BYTES.toLong())
+                    if (fault == PrinterFault.REFUSE_SUBMIT) {
+                        cleaned = false
+                        refusals++
+                        return enqueue(id, "{\"id\":$id,\"error\":{\"code\":$refusalCode}}")
+                    }
                     job = Job(nextJobId++, size.toInt())
                     cleaned = false
                     submissions++

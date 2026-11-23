@@ -33,15 +33,15 @@ The first physical printer test passed separately from software verification. Th
 
 The new `:bridge` JVM application depends on the existing `:sony` and `:printer` modules. `CameraWifiConnector`, `CameraLink`, `PrinterConnector` and `PrintImagePreparer` isolate platform work. `PrintCoordinator` receives and validates the selected JPEG, prepares it and submits one guarded print for a supplied selection generation. Default adapters simulate the devices; version 0.4.1 adds explicit Windows live adapters. At MVP 4, Linux radio/event-source adapters were not implemented; the MVP 5 section below describes their addition. Android does not depend on this module or its Java desktop classes.
 
-`FileBridgeJournal` holds a lifetime cross-process lock and writes checksummed, forced, atomically replaced snapshots. It consumes event digests before reception and persists the photo digest plus a reservation before `print_job`. Both digests survive resolution and manual acknowledgement, covering a crash between the finished reply and coordinator return. Unknown outcomes block new device actions; damaged/missing prior state fails closed. This guarantees at most one automatic submission for consumed events/submitted byte-identical JPEGs, with no exactly-once physical-output claim. Conservative suppression includes known rejected submissions; a future intentional-reprint flow needs separate review.
+`FileBridgeJournal` holds a lifetime cross-process lock and writes checksummed, forced, atomically replaced snapshots. It consumes event digests before reception and persists the photo digest plus a reservation before `print_job`. Both digests survive resolution and manual acknowledgement, covering a crash between the finished reply and coordinator return. Unknown outcomes block new device actions; damaged/missing prior state fails closed. This guarantees at most one automatic submission for consumed events/submitted byte-identical JPEGs, with no exactly-once physical-output claim. In the Windows and simulation flows, conservative suppression includes known rejected submissions; a future intentional-reprint flow needs separate review. The autonomous Linux service's guard instead withdraws a busy (`-8006`) refusal: one durable update clears the reservation and the photo digest, so the queued photo is retried at the service loop's back-off (2 s doubling to 30 s after each failed attempt). Any other negative code is withdrawn the same way, and then the service drops the photo and its files from the queue (reported as `BRIDGE_QUEUE_RECONCILED count=1`), so the camera can send it again; the snapshot's `dropped` counts such drops since the last successful print, and the refusal counts as a failed attempt for the back-off. `reconcile()` reports every queue removal as `BRIDGE_QUEUE_RECONCILED count=N`.
 
 `JvmPrintImagePreparer` uses sampled Java ImageIO decoding, all EXIF rotation/mirror cases, FIT/CROP placement and standard Huffman normalization. From 0.4.2, it applies EXIF first, then turns a remaining landscape image 90° clockwise to use portrait paper; portrait results are not turned again. Sources are JPEG-only, at most 64 MiB; headers, dimensions/pixels and decoded raster size are bounded. Output remains RGB white 1040×1560 baseline JPEG90 with Annex K tables and at most 4 MiB. Received originals are not rewritten. This desktop policy does not change Android image preparation.
 
-`SimulatedSony` supplies descriptor/SCPD/PushRoot/DIDL and JPEG responses through the real receiver. `SimulatedPrinter` parses encrypted commands/chunks, validates the reassembled JPEG independently and returns fragmented version-1/type-6 replies with method notifications. A virtual clock exercises timeouts immediately. `SimulationRunner` verifies outcomes and submission counts for 14 scenarios; extracted-distribution smoke additionally halts one JVM after submission, then verifies another JVM blocks it. All fixture photos/keys are synthetic, and the simulation opens no real network/radio or cloud service.
+`SimulatedSony` supplies descriptor/SCPD/PushRoot/DIDL and JPEG responses through the real receiver. `SimulatedPrinter` parses encrypted commands/chunks, validates the reassembled JPEG independently and returns fragmented version-1/type-6 replies with method notifications. A virtual clock exercises timeouts immediately. `SimulationRunner` verifies outcomes and submission counts for 15 scenarios; extracted-distribution smoke additionally halts one JVM after submission, then verifies another JVM blocks it. All fixture photos/keys are synthetic, and the simulation opens no real network/radio or cloud service.
 
-The CLI runs directly through a Windows EXE with a bundled runtime, or through the Linux JVM distribution on Java 17. GitHub Actions tests Linux x64, Windows x64 and ARM64, alongside the existing Android checks. See [Windows instructions](windows-simulation.md), [future Linux deployment and hardware checklist](linux-bridge.md), [the design](superpowers/specs/2026-10-12-mvp4-headless-design.md) and [the plan](superpowers/plans/2026-10-12-mvp4-headless.md). Physical Orange Pi routing, pairing, event detection, coexistence and printer output remain pending hardware arrival.
+The CLI runs directly through a Windows EXE with a bundled runtime, or through the Linux JVM distribution on Java 17. GitHub Actions tests Linux x64, Windows x64 and ARM64, alongside the existing Android checks. See [Windows instructions](windows-simulation.md), [Linux deployment guide](linux-bridge.md), [the design](superpowers/specs/2026-10-12-mvp4-headless-design.md) and [the plan](superpowers/plans/2026-10-12-mvp4-headless.md). Earlier 0.5.0 builds printed two single photos on the Orange Pi; [the Linux field protocol](linux-field-protocol.md) records what is and is not validated.
 
-`WindowsLive` is an explicit interactive mode with separate physical-job state. Its Windows adapters discover a selected camera link and bind bounded HTTP sockets to that link's IPv4 source; paired printers use JNA-mapped Classic RFCOMM/SPP with Windows SDP lookup and provider-select readiness. Per-connection fixed stages and native error numbers are exported without identifiers or raw exception text. The same coordinator and printer session run the full flow, while a prepared preview is retained locally and the user must type PRINT before opening the printer connection. Receive-only and status-only operations consume no paper. Token input is hidden and ephemeral. Local selection/path UI is separate from exported diagnostics. See [the Windows hardware procedure and result](windows-live.md): the user confirmed Sony receive/save with 0.4.1 and the complete Sony → Windows → Xiaomi print with 0.4.3 on the tested setup. Physical Linux/Orange Pi integration remains untested.
+`WindowsLive` is an explicit interactive mode with separate physical-job state. Its Windows adapters discover a selected camera link and bind bounded HTTP sockets to that link's IPv4 source; paired printers use JNA-mapped Classic RFCOMM/SPP with Windows SDP lookup and provider-select readiness. Per-connection fixed stages and native error numbers are exported without identifiers or raw exception text. The same coordinator and printer session run the full flow, while a prepared preview is retained locally and the user must type PRINT before opening the printer connection. Receive-only and status-only operations consume no paper. Token input is hidden and ephemeral. Local selection/path UI is separate from exported diagnostics. See [the Windows hardware procedure and result](windows-live.md): the user confirmed Sony receive/save with 0.4.1 and the complete Sony → Windows → Xiaomi print with 0.4.3 on the tested setup. Orange Pi results are recorded separately in [the Linux field protocol](linux-field-protocol.md).
 
 ## MVP 5 autonomous service
 
@@ -76,6 +76,43 @@ before joining the camera; reboot makes setup reachable again. There is no
 per-photo prompt in normal operation. A single worker receives before printing,
 so a long print can delay the next camera transfer. An uncertain job requires
 checking the printer via setup; it is never automatically resubmitted.
+
+Several photos can be sent in one power-on. Each loop pass scans for the camera
+network once; the result is present, absent or unknown (the scan failed). An
+unknown scan neither checks the camera nor starts a new selection generation;
+the print step still runs and the next successful scan decides. A presence that
+follows an observed absence starts a new generation and is checked at once.
+After a successful transfer the camera usually stays visible, offering its last
+selection; the loop is then in re-check mode. It checks the camera again on the
+next pass after a successful print, because nothing is scanned during a print
+(up to four minutes), and otherwise after a pause counted from the start of the
+pass that ran the previous check: `FIRST_RECHECK_MS` (60 s), doubling after
+every check that finds only a known photo or fails before a photo is
+fingerprinted, up to `MAX_RECHECK_MS` (300 s). An observed absence or a newly
+queued photo resets the pause. Before the first successful transfer of a
+presence, and while the queue is full or a job needs attention (no radio
+connection is made), the check is retried every 5 seconds. Only a newly queued
+photo resets the print back-off. The SHA-256 of the received bytes, checked
+against the queue and the print history before any decoding, stays the only
+duplicate guard, so a repeated selection is downloaded again in full (about
+11-14 MB and a Wi-Fi join per check) but never printed twice. A photo dropped
+after a refusal is also treated as known for the rest of its generation, in
+memory only, so a re-check does not submit it again; the owner sends it again
+after the camera network has gone away. Presence is logged only when it changes:
+`SERVICE_CAMERA_PRESENT`, `SERVICE_CAMERA_ABSENT`, or `SERVICE_CAMERA_WAIT`
+with the scan's failure category. The simulated devices use 2 s and 10 s pauses
+so the packaged smoke test can send a series within its waits.
+
+**Deliberate deviation from the MVP 4 design.** The [MVP 4 design](superpowers/specs/2026-10-12-mvp4-headless-design.md)
+required waiting for the camera network to disappear before rearming. In the
+code that meant a new photo was accepted only after a scan without the camera;
+no scan ran during a transfer or a print (up to four minutes) and a failed scan
+reused the earlier result, so a photo chosen quickly or during a print was not
+fetched until an absence was seen; this is reasoning from the code, not a board
+observation. The owner replaced that rule with the re-check above (issue #20).
+The 60 s and 300 s values are starting points for the first field session,
+which measures scan duration, how long the camera keeps its network after a
+completed transfer and what a second connection does on the camera screen.
 
 The local page uses generated credentials, sessions, CSRF and exact Host/Origin
 checks. Credentials are private persisted configuration, never diagnostic

@@ -31,10 +31,11 @@ object SimulationRunner {
             SimulationScenario.DROPPED_AFTER_SUBMIT, SimulationScenario.MANUAL_RECOVERY -> PrinterFault.DROP_AFTER_SUBMIT
             SimulationScenario.UNCERTAIN_COMPLETION -> PrinterFault.NEVER_FINISH
             SimulationScenario.POWER_CUT -> PrinterFault.POWER_CUT
+            SimulationScenario.REFUSED_SUBMIT -> PrinterFault.REFUSE_SUBMIT
             else -> PrinterFault.NONE
         }
         val camera = SimulatedSony(source, cameraFault)
-        val printer = SimulatedPrinter(printerFault, crash)
+        val printer = SimulatedPrinter(printerFault, crash = crash)
         val clock = SimulationClock()
         fun coordinator(journal: FileBridgeJournal, sony: SimulatedSony = camera, xiaomi: SimulatedPrinter = printer) =
             PrintCoordinator(sony, xiaomi, JvmPrintImagePreparer(), journal, stateDir.resolve("cache"),
@@ -95,6 +96,8 @@ object SimulationRunner {
             SimulationScenario.DUPLICATE_PHOTO ->
                 outcome.outcome == BridgeOutcome.DUPLICATE_SUPPRESSED && submissions == 1 && prints == 1 && camera.downloads == 2
             SimulationScenario.MANUAL_RECOVERY -> outcome.outcome == BridgeOutcome.PRINTED && submissions == 2 && prints == 1
+            SimulationScenario.REFUSED_SUBMIT -> outcome == BridgeResult(BridgeOutcome.PRINTER_FAILED, "BUSY") &&
+                printer.refusals == 1 && submissions == 0 && prints == 0
             else -> outcome.outcome == expected.first && outcome.category == expected.second &&
                 prints == 0 && submissions == if (expected.first == BridgeOutcome.UNKNOWN_OUTCOME) 1 else 0
         }
@@ -111,7 +114,7 @@ object SimulationRunner {
         SimulationScenario.NO_SELECTED_JPEG -> BridgeOutcome.CAMERA_FAILED to "NO_JPEG"
         SimulationScenario.INTERRUPTED_TRANSFER -> BridgeOutcome.CAMERA_FAILED to "TRUNCATED_JPEG"
         SimulationScenario.PRINTER_OFFLINE -> BridgeOutcome.PRINTER_FAILED to "PRINTER_OFFLINE"
-        SimulationScenario.PRINTER_BUSY -> BridgeOutcome.PRINTER_FAILED to "BUSY"
+        SimulationScenario.PRINTER_BUSY, SimulationScenario.REFUSED_SUBMIT -> BridgeOutcome.PRINTER_FAILED to "BUSY"
         SimulationScenario.DROPPED_AFTER_SUBMIT -> BridgeOutcome.UNKNOWN_OUTCOME to "DISCONNECTED"
         SimulationScenario.UNCERTAIN_COMPLETION -> BridgeOutcome.UNKNOWN_OUTCOME to "TIMEOUT"
         SimulationScenario.POWER_CUT -> BridgeOutcome.UNKNOWN_OUTCOME to "SIMULATED_POWER_LOSS"

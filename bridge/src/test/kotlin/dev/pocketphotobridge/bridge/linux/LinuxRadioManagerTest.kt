@@ -84,12 +84,14 @@ class LinuxRadioManagerTest {
                 assertTrue("Setup AP pairwise cipher uses CCMP", data.lineSequence().any { it == "pairwise=ccmp;" })
                 assertTrue("Setup AP group cipher uses CCMP", data.lineSequence().any { it == "group=ccmp;" })
                 assertTrue(data.contains("method=shared"))
+                // Off 192.168.50.0/24, the factory LAN of common home routers (#14).
+                assertTrue("Setup AP uses its dedicated subnet", data.lineSequence().any { it == "address1=10.212.77.1/24" })
                 assertFalse(data.contains("autoconnect=true"))
             }
             LinuxCommandResult(0, "")
         }
         val manager = LinuxRadioManager(files, "wlan0", events::add, command, files.resolve("profiles"))
-        assertEquals("192.168.50.1", manager.startSetup("PPB; Test", "private-password").hostAddress)
+        assertEquals("10.212.77.1", manager.startSetup("PPB; Test", "private-password").hostAddress)
         assertTrue(command.calls.all { !it.joinToString().contains("private-password") && !it.joinToString().contains("PPB; Test") })
         assertTrue(events.none { it.contains("private-password") || it.contains("PPB; Test") })
         manager.stopSetup()
@@ -111,6 +113,79 @@ class LinuxRadioManagerTest {
         assertFalse(command.calls.any { it.contains("camera-password") })
         link.close()
         manager.close()
+    }
+
+    @Test fun `setup stopped is reported only when a hotspot was active`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val manager = LinuxRadioManager(files, "wlan0", events::add, cameraCommands(), files.resolve("profiles"))
+        manager.connectCamera("DIRECT-camera", "camera-password").close()
+        assertFalse(events.contains("LINUX_SETUP_STOPPED"))
+        manager.startSetup("setup", "hotspot-password")
+        manager.connectCamera("DIRECT-camera", "camera-password").close()
+        manager.close()
+        assertEquals(1, events.count { it == "LINUX_SETUP_STOPPED" })
+    }
+
+    @Test fun `a joined camera network without a usable route is told apart from a failed join`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val joined = LinuxRadioManager(files, "wlan0", events::add, cameraCommands(), files.resolve("profiles"))
+        joined.connectCamera("DIRECT-camera", "camera-password").close()
+        joined.close()
+        assertEquals(listOf("LINUX_CAMERA_ACTIVATED", "LINUX_CAMERA_CONNECTED"), events)
+        events.clear()
+        val noRoute = LinuxRadioManager(files, "wlan0", events::add, cameraCommands(gateway = "8.8.8.8"), files.resolve("profiles"))
+        val failure = assertThrows(LinuxRadioFailure::class.java) { noRoute.connectCamera("DIRECT-camera", "camera-password") }
+        noRoute.close()
+        assertEquals(LinuxRadioFailureCode.CAMERA_ROUTE_UNSAFE, failure.code)
+        assertEquals(listOf("LINUX_CAMERA_ACTIVATED"), events)
+    }
+
+    @Test fun `a failed camera activation reports nmcli exit and numeric device state and reason only`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val commands = FakeCommands { args -> when {
+            args.contains("up") -> LinuxCommandResult(4, "Error: secret camera-password DIRECT-camera")
+            args.takeLast(5) == listOf("-g", "GENERAL.STATE,GENERAL.REASON", "device", "show", "wlan0") ->
+                LinuxCommandResult(0, "30 (disconnected)\n53 (The Wi-Fi network DIRECT-camera could not be found)\n")
+            args.contains("show") -> LinuxCommandResult(2, "Error: unknown field")
+            else -> LinuxCommandResult(0, "")
+        } }
+        val manager = LinuxRadioManager(files, "wlan0", events::add, commands, files.resolve("profiles"))
+        val failure = assertThrows(LinuxRadioFailure::class.java) { manager.connectCamera("DIRECT-camera", "camera-password") }
+        manager.close()
+        assertEquals(LinuxRadioFailureCode.COMMAND_FAILED, failure.code)
+        assertEquals(listOf("LINUX_CAMERA_ACTIVATION_FAILED nm_exit=4 nm_state=30 nm_reason=53"), events)
+    }
+
+    @Test fun `a failed camera activation whose device query fails reports only the nmcli exit`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val commands = FakeCommands { args -> when {
+            args.contains("up") -> LinuxCommandResult(4, "")
+            args.contains("show") -> LinuxCommandResult(10, "")
+            else -> LinuxCommandResult(0, "")
+        } }
+        val manager = LinuxRadioManager(files, "wlan0", events::add, commands, files.resolve("profiles"))
+        val failure = assertThrows(LinuxRadioFailure::class.java) { manager.connectCamera("DIRECT-camera", "camera-password") }
+        manager.close()
+        assertEquals(LinuxRadioFailureCode.COMMAND_FAILED, failure.code)
+        assertEquals(listOf("LINUX_CAMERA_ACTIVATION_FAILED nm_exit=4"), events)
+    }
+
+    @Test fun `a camera activation cancelled during the device query reports cancellation`() {
+        val files = Files.createTempDirectory("linux-radio-test")
+        val events = mutableListOf<String>()
+        val commands = FakeCommands { args -> when {
+            args.contains("up") -> LinuxCommandResult(4, "")
+            args.contains("GENERAL.STATE,GENERAL.REASON") -> throw LinuxRadioFailure(LinuxRadioFailureCode.CANCELLED)
+            else -> LinuxCommandResult(0, "")
+        } }
+        val manager = LinuxRadioManager(files, "wlan0", events::add, commands, files.resolve("profiles"))
+        val failure = assertThrows(LinuxRadioFailure::class.java) { manager.connectCamera("DIRECT-camera", "camera-password") }
+        manager.close()
+        assertEquals(LinuxRadioFailureCode.CANCELLED, failure.code)
     }
 
     @Test fun `gateway from another interface or public or missing is rejected`() {

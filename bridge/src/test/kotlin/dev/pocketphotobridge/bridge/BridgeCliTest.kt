@@ -18,6 +18,11 @@ class BridgeCliTest {
         return code to bytes.toString("UTF-8")
     }
 
+    @Test fun theFirstLineNamesTheVersionAndTheBuildCommit() = root { directory ->
+        val first = run(directory.resolve("unused"), "--help").second.lineSequence().first()
+        assertTrue(first, Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+\\+([0-9a-f]{7,40}|dev) \\| headless bridge").matches(first))
+    }
+
     @Test fun helpAndHardwareRefusalNeverCreateStateOrReadConfiguration() = root { directory ->
         val state = directory.resolve("unused")
         assertEquals(0, run(state, "--help").first)
@@ -42,6 +47,15 @@ class BridgeCliTest {
         assertFalse(report.contains("{\""))
     }
 
+    @Test fun aRefusedSubmissionReportsItsCodeInTheSimulationReport() = root { directory ->
+        val (code, text) = run(directory, "--simulate-failure=refused-submit")
+        assertEquals(2, code)
+        val report = Files.readString(directory.resolve("diagnostics.txt"))
+        for (output in listOf(text, report)) {
+            assertTrue(output.contains("PRINTER_SUBMIT_REFUSED code=8006")); assertFalse(output.contains("DIAGNOSTIC_REDACTED"))
+        }
+    }
+
     @Test fun acknowledgementNeverReplaysUnknownSelection() = root { directory ->
         assertEquals(3, run(directory, "--simulate-failure=dropped-after-submit").first)
         assertEquals(3, run(directory, "--simulate").first)
@@ -55,9 +69,9 @@ class BridgeCliTest {
 
     @Test fun explorerDefaultAndExplicitSuiteProduceCheckedSuccessAndPermitRepeatRuns() = root { directory ->
         val first = run(directory)
-        assertEquals(0, first.first); assertTrue(first.second.contains("SIMULATION_SUITE_PASS checks=14"))
+        assertEquals(0, first.first); assertTrue(first.second.contains("SIMULATION_SUITE_PASS checks=15"))
         val second = run(directory, "--simulate-all")
-        assertEquals(0, second.first); assertTrue(second.second.contains("SIMULATION_SUITE_PASS checks=14"))
+        assertEquals(0, second.first); assertTrue(second.second.contains("SIMULATION_SUITE_PASS checks=15"))
     }
 
     @Test fun arbitraryArgumentAndDamagedStateNeverLeakExceptionMessagesOrResetGuard() = root { directory ->

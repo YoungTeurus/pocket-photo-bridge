@@ -6,11 +6,10 @@ Keep the complete extracted folder together, including `runtime`, `lib`/`app`,
 `licenses`, and `deploy`. Android and the existing `WindowsLive.cmd` manual
 hardware workflow remain available.
 
-Linux radio support is a pilot awaiting Orange Pi hardware validation. The
-Windows simulation proves controller and setup behavior using synthetic devices;
-it cannot access radios or print paper. Wi-Fi AP support, board drivers, BlueZ
-pairing, discovered SPP channels, reconnect, and physical printing still need
-testing on the target board. Use a board-supported 64-bit Debian/Ubuntu image.
+Linux radio support is a pilot. Earlier 0.5.0 builds printed two single photos
+on the Orange Pi Zero 2W; [the Linux field protocol](linux-field-protocol.md)
+records what is and is not validated there. The Windows simulation proves controller and
+setup behavior using synthetic devices; it cannot access radios or print paper. Use a board-supported 64-bit Debian/Ubuntu image.
 An Armbian Community image is not certified for this bridge; an image's name or
 successful boot does not establish working Wi-Fi AP/Bluetooth support.
 
@@ -68,10 +67,16 @@ use the authenticated setup page described below.
    instructions. Enable SSH, create your account, and connect the board to your
    home network or Ethernet for this one-time installation. Update the OS.
    A supported Wi-Fi AP interface and Bluetooth Classic adapter are required.
-2. Download `pocket-photo-bridge-linux-arm64-0.5.0` from the same successful
-   **Headless bridge** run. Extract the outer ZIP to obtain
+2. Open this repository's
+   [Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases),
+   choose the release (tag `v0.5.0` for this version) and download
    `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz` and its `.tar.gz.sha256` file.
-   The Linux x64 artifact is for an x64 machine; do not install it on ARM64.
+   Releases do not expire; a build from an untagged branch is still available
+   as the `pocket-photo-bridge-linux-arm64-0.5.0` artifact of a **Headless
+   bridge** run for 30 days (extract GitHub's outer ZIP). The checksum detects
+   transfer corruption only; the bundle's `BUILD` file (`0.5.0+<commit>`) names
+   the source commit. The Linux x64 package is for an x64 machine; do not
+   install it on ARM64.
 3. In Windows PowerShell, replace `YOUR_USER@BOARD_LAN_IP` with your board's SSH
    account and address, then copy the two files:
 
@@ -91,9 +96,13 @@ use the authenticated setup page described below.
 
    The installer requires a terminal to display credentials privately. Do not
    pipe its output to a log or share a screenshot of its credential lines. It
-   installs `network-manager`, `dnsmasq-base`, `nftables`, `bluez` (including `sdptool`), `libbluetooth3`,
+   installs `network-manager`, `wpasupplicant`, `dnsmasq-base`, `nftables`, `bluez` (including `sdptool`), `libbluetooth3`,
    `iproute2`, `libfreetype6`, and `fontconfig` with apt, uses the bundled runtime, and enables
-   `pocket-photo-bridge.service`. No board-side compilation is involved.
+   `pocket-photo-bridge.service`. No board-side compilation is involved. When
+   `dpkg-query` reports all of these packages as installed (an upgrade), it
+   skips apt, so an upgrade should need no internet uplink (not yet verified on
+   the board; see the upgrade steps below). It prints the installed
+   build (`0.5.0+<commit>`) and names its release directory after it.
 
    The dedicated setup AP explicitly disables optional PMF (`pmf=1`) because
    the tested Orange Pi UWE5622 driver cannot initialize that mode. It remains
@@ -116,9 +125,10 @@ use the authenticated setup page described below.
 
 5. Save the displayed unique `PocketPhoto-...` SSID, Wi-Fi password, and
    administrator password privately. Disconnecting Wi-Fi for setup can end the
-   SSH session; Ethernet is useful during installation. Connect your phone or
+   SSH session; Ethernet is useful during installation. The hotspot uses
+   `10.212.77.0/24`; keep any wired network on a different subnet. Connect your phone or
    Windows computer to that dedicated hotspot, then open
-   `http://192.168.50.1:8080/` and sign in. This HTTP address is available only on
+   `http://10.212.77.1:8080/` and sign in. This HTTP address is available only on
    the setup AP. Ignore the client's warning that this hotspot has no Internet.
 
    Setup responses use `Referrer-Policy: same-origin`: browser form submissions
@@ -132,7 +142,7 @@ and permits private state, NetworkManager profile writes, local DBus, and radio
 sockets. State is root-owned, mode `0700`, under `/var/lib/pocket-photo-bridge`;
 bootstrap/configuration files inside `setup` are private. The application lives
 under `/opt/pocket-photo-bridge/releases`, selected by an atomic `current`
-symlink. The setup listener binds only `192.168.50.1:8080`; Windows binds only
+symlink. The setup listener binds only `10.212.77.1:8080`; Windows binds only
 loopback. Do not deploy this pilot on an unrelated multiuser server.
 
 ## Configure once, then print automatically
@@ -158,14 +168,18 @@ after it finishes. A failed pairing reports a fixed category in diagnostics.
 After configuration, every reboot opens setup for 60 seconds. Signing in and
 interacting with the page holds setup open; otherwise the hotspot and HTTP
 server stop before the board joins the camera network. Reboot to enter setup
-again. A single radio alternates between these modes; the setup page is
+again. With **Keep waiting photos across power cycles** off, that reboot
+discards photos still waiting for the printer before setup opens. A single radio alternates between these modes; the setup page is
 unreachable while the bridge is connected to the camera.
 
 For normal use, power on the bridge and printer in either order, then use the
 RX100 VII's selected-photo transfer for one JPEG. The bridge durably stores the
 validated original before acknowledging the camera, prepares the print, and
-prints automatically. Printer off/busy keeps the captured image queued. The
-same JPEG bytes are automatically printed once, including after restart.
+prints automatically. Printer off/busy keeps the captured image queued: within
+the same boot, including a service restart, it prints once the printer is
+available. After a reboot or power cut with the retention setting off, photos
+not yet submitted are discarded; send them again from the camera. The same JPEG
+bytes are never printed twice automatically, also across reboots.
 There is no per-photo approval in normal operation. Leave queued state intact
 when restarting, upgrading, or diagnosing the bridge.
 
@@ -175,6 +189,15 @@ If the printer may have accepted a job but completion was lost, the bridge
 shows an unknown print and blocks automatic submissions. Check the physical
 printer and its paper output. Reboot the bridge, join setup, sign in, and use
 the page's **I checked the printer** acknowledgement only after that check.
+
+Rebooting into setup discards photos still waiting for the printer when
+**Keep waiting photos across power cycles** is off; the unknown print's record
+itself is kept. The discard happens when the service starts, before setup is
+reachable, so switching the setting on in that setup session protects only
+later boots: check it in setup and save; it applies from the next device boot.
+With shell access over Ethernet or a serial console,
+`sudo systemctl restart pocket-photo-bridge.service` opens the setup window
+within the same boot and keeps waiting photos.
 The acknowledgement retains duplicate-prevention records; it does not reprint
 the ambiguous photo. Keep the photo/queue state rather than deleting files to
 clear the warning. Deliberate reprints are outside this milestone.
@@ -182,9 +205,56 @@ clear the warning. Deliberate reprints are outside this milestone.
 ## Diagnostics, credentials, and upgrades
 
 From authenticated setup, download **Diagnostics** and return that redacted
-text, the downloaded package version/architecture, your board/OS model, and a
+text (its `build` field names version and commit), the package architecture, your board/OS model, and a
 brief description of camera/printer power order and the physical outcome.
-Diagnostics contain fixed stage/category/count information. Do not send the
+Diagnostics contain fixed stage/category/count information.
+
+Each run of the service or of a probe (`--linux-status-only`,
+`--linux-receive-only`) starts with a header line such as
+`Pocket Photo Bridge 0.5.0+1a2b3c4 | headless service run=3 uptime_s=42`: the version and build commit (`dev` for a build made without one),
+a run counter, and the kernel uptime in whole seconds when the process started
+(omitted where the kernel does not report it). Each event line starts with the
+whole seconds since that start; there is no wall-clock time, because the board
+has no backed-up clock. An unchanged state or camera-scan failure is written
+once. A print attempt that fails the same way as the one before, and a
+re-check of a still-visible camera that ends as the one before (for example
+`DUPLICATE_SUPPRESSED`), leave none of their steps (radio steps included);
+instead a line ending in `count=N` is written after 1, 2, 4, 8 ... such
+repeats, so hours of idling, of a camera left on its send screen or of a
+switched-off printer do not push earlier events out. The system journal still
+shows every step as it happens. While a photo waits, a failed print attempt
+(printer off, busy, or refusing the job) is retried after 2, 4, 8 ... seconds, at
+most every 30 seconds; a new photo or a successful print starts again at 2 seconds.
+A job the printer refuses is logged as `PRINTER_SUBMIT_REFUSED code=N`; a busy
+refusal (`code=8006`) keeps the photo queued; any other code drops the photo.
+To print it, leave the camera's send screen until the bridge logs
+`SERVICE_CAMERA_ABSENT`, then send it again; while the camera stays visible the
+bridge treats it as already received (`DUPLICATE_SUPPRESSED`). Photos removed from the queue
+because they were already submitted or were refused this way are logged as `BRIDGE_QUEUE_RECONCILED count=N`. The run that was in place before the
+upgrade to run headers is kept as a previous run without a run counter.
+
+A failed camera or printer step names its own category, for example
+`CAMERA_ROUTE_UNSAFE`, `COMMAND_FAILED` or `COMMAND_TIMEOUT` for the camera
+Wi-Fi and `SPP_UNAVAILABLE` when the printer is off or out of range, instead of
+`IO_ERROR`. Joining the camera Wi-Fi logs `LINUX_CAMERA_ACTIVATED` before the
+address and route are checked and `LINUX_CAMERA_CONNECTED` after; a line
+without the first means the join itself failed. A failed join logs
+`LINUX_CAMERA_ACTIVATION_FAILED nm_exit=<n> nm_state=<n> nm_reason=<n>`:
+nmcli's exit status (for example 3 timeout, 4 activation failed, 10 no such
+network) and NetworkManager's numeric device state and reason read right after
+it. Association and address assignment happen in the same nmcli step, so only
+these numbers tell them apart. Whether NetworkManager still holds the reason at
+that moment on the board's image is not yet confirmed; record it in the field
+protocol. `LINUX_SETUP_STOPPED` appears only when a running hotspot was stopped.
+The camera transfer logs `SONY_SELECTION count=<items>` and
+`SONY_JPEG_BYTES count=<bytes>`.
+
+At start the previous run moves to `diagnostics.1.txt` and older runs shift up
+to `diagnostics.5.txt`; anything older is dropped. A probe, reboot, crash restart
+or service restart therefore no longer erases the service's history. The
+download keeps the current run in `events` and adds `previousRuns`, oldest
+first, each with its `header` and `events`. Every line is checked again when it
+is served; a line that is not a known event is left out. Do not send the
 private state directory, images, configuration/bootstrap files, printer token,
 hotspot password, administrator password, or the installer's credential output.
 
@@ -198,7 +268,7 @@ sudo systemctl status pocket-photo-bridge.service --no-pager
 
 ### Physical Linux probes without printing
 
-Hardware-validation builds also provide two explicit commands using the saved
+Current builds provide two explicit commands using the saved
 configuration. Stop the service first: both probes acquire its persistent queue
 and print-journal locks and fail if another owner is active. Preserve all state.
 
@@ -219,8 +289,9 @@ transport actions. The existing native ABI check remains a separate test.
 The receive probe disconnects the current Wi-Fi, including an SSH connection on
 that radio. Arrange independent access or a tested timed network recovery before
 starting it. Do not start the normal service with queued photos until automatic
-printing is intended. Queued photos remain available to the normal service after
-restart, and existing duplicate/uncertainty records are retained.
+printing is intended. A queued probe photo is printed by the next service start
+in the same boot; a reboot with the retention setting off discards it. Existing
+duplicate/uncertainty records are always retained.
 
 To redisplay your existing bootstrap credentials locally, first stop the service
 so it no longer owns the state, run the command in a private terminal, then
@@ -233,7 +304,24 @@ sudo systemctl start pocket-photo-bridge.service
 ```
 
 For an upgrade, verify and extract the new matching portable archive and run its
-installer in the same way. It stops the service before switching releases,
+installer in the same way. Ethernet or a serial console is the recommended
+path. With the packages already installed the installer skips apt, so an
+upgrade over the setup hotspot without internet should also work, but this has
+not yet been verified on the board. Over the hotspot:
+
+1. Sign in to the setup page and keep interacting with it, or choose
+   **Keep setup open**; otherwise the hotspot stops 60 seconds after boot and
+   takes the SSH session with it.
+2. Copy the archive and run the installer over SSH as above. Expect the SSH
+   session to drop when the installer stops the service, because stopping it
+   takes the hotspot down; the installer's last lines may never appear.
+3. Rejoin the hotspot, which the new service opens again for 60 seconds, sign
+   in, and check the `build` field in the setup status or Diagnostics. An
+   unchanged build means the installer stopped and restored the previous
+   release. Over Ethernet or a serial console,
+   `readlink /opt/pocket-photo-bridge/current` names the installed release.
+
+The installer stops the service before switching releases,
 reuses existing bootstrap/configuration, and retains all queue and print-history
 state. A stopped process may leave an uncertain print; resolve it by checking
 the printer as described above. Do not run two service instances with the same

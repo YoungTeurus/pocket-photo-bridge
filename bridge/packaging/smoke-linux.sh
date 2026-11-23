@@ -4,7 +4,10 @@ set -euo pipefail
 
 repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 case "$(uname -m)" in x86_64) architecture=x64 ;; aarch64|arm64) architecture=arm64 ;; *) exit 1 ;; esac
-archive=${1:-"$repository/bridge/build/portable/linux-$architecture/PocketPhotoBridge-0.5.0-linux-$architecture.tar.gz"}
+version=$(<"$repository/bridge/VERSION")
+# The commit being built: CI passes the same GITHUB_SHA to Gradle as -PbuildCommit; other builds report dev.
+build="$version+${GITHUB_SHA:-dev}"
+archive=${1:-"$repository/bridge/build/portable/linux-$architecture/PocketPhotoBridge-$version-linux-$architecture.tar.gz"}
 work="$repository/bridge/build/portable/Linux smoke extraction with spaces"
 reports="$repository/bridge/build/reports/smoke/linux"
 rm -rf -- "$work" "$reports"
@@ -17,6 +20,7 @@ launcher="$image/bin/bridge"
 for file in "$launcher" "$image/runtime/bin/java" "$image/runtime/lib/modules" "$image/licenses/mizink-LICENSE.txt" "$image/licenses/PocketPhotoBridge-LICENSE.txt" "$image/licenses/jna/LICENSE.txt" "$image/mvp5-deployment.md" "$image/deploy/linux/install.sh" "$image/deploy/linux/pocket-photo-bridge.service"; do
     [[ -f "$file" ]] || { printf '%s\n' 'The extracted Linux portable distribution is incomplete.' >&2; exit 1; }
 done
+[[ $(<"$image/BUILD") == "$build" ]] || { printf 'The bundle BUILD file does not name %s.\n' "$build" >&2; exit 1; }
 [[ -x "$launcher" ]] || { printf '%s\n' 'The distribution launcher is not executable.' >&2; exit 1; }
 [[ -d "$image/runtime/legal" ]] || { printf '%s\n' 'Runtime legal notices are absent.' >&2; exit 1; }
 unset JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS
@@ -58,6 +62,8 @@ run_case() {
 
 run_case help 0 --help
 require_line help --simulate-all
+[[ $(head -n 1 "$reports/help.stdout.txt") == "Pocket Photo Bridge $build | headless bridge" ]] || {
+    printf 'The CLI banner does not name %s.\n' "$build" >&2; exit 1; }
 run_case native-bindings 0 --linux-native-check
 require_line native-bindings '^NO_PHYSICAL_PRINT$'
 run_case suite 0 --simulate-all "--state-dir=$work/state with spaces/suite"
@@ -69,7 +75,7 @@ run_case duplicate 0 --simulate "--state-dir=$normal_state"
 require_line duplicate '^SIMULATED_PRINTS count=0$'
 run_case crop 0 --simulate --crop "--state-dir=$work/state with spaces/crop"
 require_line crop '^SIMULATED_PRINTS count=1$'
-for scenario in missing-ssid camera-offline camera-timeout no-selected-jpeg interrupted-transfer printer-offline printer-busy; do
+for scenario in missing-ssid camera-offline camera-timeout no-selected-jpeg interrupted-transfer printer-offline printer-busy refused-submit; do
     run_case "$scenario" 2 "--simulate-failure=$scenario" "--state-dir=$work/state with spaces/$scenario"
     require_line "$scenario" '^SIMULATED_PRINTS count=0$'
 done
@@ -89,6 +95,6 @@ run_case acknowledge 0 --acknowledge-checked-printer --confirm "--state-dir=$cra
 require_line acknowledge '^SIMULATED_PRINTS count=0$'
 run_case after-acknowledge 0 --simulate "--state-dir=$crash_state"
 require_line after-acknowledge '^SIMULATED_PRINTS count=0$'
-python3 "$repository/bridge/packaging/smoke-service.py" "$launcher" "$work/service state with spaces" >"$reports/service-http.txt"
+python3 "$repository/bridge/packaging/smoke-service.py" "$launcher" "$work/service state with spaces" "$build" >"$reports/service-http.txt"
 checks=$((checks + 1))
 printf 'SMOKE_LINUX_PASS checks=%s bundled_runtime=true\n' "$checks" | tee "$reports/summary.txt"

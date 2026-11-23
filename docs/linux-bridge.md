@@ -1,15 +1,18 @@
 # Linux portable bridge and pilot service (0.5.0)
 
-Version 0.5.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. The proposed 4 GB board still needs actual hardware validation.
+Version 0.5.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. Earlier 0.5.0 builds were installed and printed on the board; [the Linux field protocol](linux-field-protocol.md) records what was and was not physically validated.
 
 The Sony/printer protocols, bounded JPEG preparation and durable duplicate guard remain shared with the proven Android and separate [Windows live workflow](windows-live.md). Those Windows adapters refuse Linux. The old unsupported `--hardware` command still exits `64`; the Linux pilot runs explicitly with `--service`. Windows/Android physical success is evidence for those workflows and does not establish Linux radio success.
 
 ## Run the offline simulation
 
-Download `pocket-photo-bridge-linux-arm64-0.5.0` (ARM64/AArch64 board) or
-`pocket-photo-bridge-linux-x64-0.5.0` (x64 Linux) from a successful **Headless
-bridge** Actions run. Extract GitHub's outer artifact ZIP to obtain the native
-portable `.tar.gz` and its `.tar.gz.sha256` file. These packages include Java 17
+Download the ARM64/AArch64 board package `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz`
+and its `.tar.gz.sha256` file from the repository's
+[Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases) (tag
+`v0.5.0`). The x64 package `pocket-photo-bridge-linux-x64-0.5.0` and untagged
+builds are **Headless bridge** Actions artifacts kept for 30 days; extract
+GitHub's outer artifact ZIP to obtain the native portable `.tar.gz` and its
+`.tar.gz.sha256` file. The bundle's `BUILD` file names `version+commit`. These packages include Java 17
 and need no system Java or JDK. The separate `pocket-photo-bridge-jvm-0.5.0`
 artifact remains available for developers with their own matching Java runtime.
 
@@ -68,8 +71,15 @@ TOML schema or token on the service command line is needed.
 
 The first unconfigured boot stays in a dedicated setup AP; configured reboots
 offer a 60-second setup window. An authenticated interaction holds setup open.
+The 60 seconds are a deliberate deviation from the 30 seconds of the
+[approved MVP 5 design](superpowers/specs/2026-10-12-mvp5-autonomous-linux-design.md),
+whose text is left unchanged: pull request #9 lengthened the window while
+making setup reachable and usable on the Orange Pi, and its regression test
+requires a full sixty-second reachable window, so that there is time to join
+the hotspot and sign in before the board leaves setup. No joining time was
+measured; field session 1 measures power-on to operation.
 The unique SSID starts with `PocketPhoto-`, and only the setup interface
-serves `http://192.168.50.1:8080/`. The hotspot and HTTP listener stop before
+serves `http://10.212.77.1:8080/`. The hotspot and HTTP listener stop before
 joining the camera network. Reboot to enter setup again. The state root is
 `/var/lib/pocket-photo-bridge`, root-owned and private. Upgrades retain the queue,
 configuration, bootstrap secrets, and print-history records within the current
@@ -90,10 +100,26 @@ retain photos while the printer is offline or busy and block automatic
 submission after uncertain acceptance. Resolve unknown jobs only after checking
 the physical printer, through authenticated setup; keep duplicate records intact.
 
-Actual Wi-Fi AP support, hotspot-to-camera transitions, Bluetooth coexistence,
-SPP discovery, headless boot, pairing, permissions, photo selection/rearming,
-JPEG rendering, printer firmware responses, reconnect, power cuts and battery
-behavior must still be exercised on the Orange Pi and printer. Use a
+Several photos can be sent in one power-on, including choosing the next one
+while the previous one prints. The service scans for the camera network about
+once a second, but not during a transfer or a print. While the camera stays
+visible after a successful transfer it is checked again right after each
+successful print, and otherwise after 60 seconds, doubling up to 300 seconds
+while it keeps offering an already received photo; a newly received photo or the
+camera network going away resets the pause to 60 seconds. Each such check joins
+the camera network and downloads the offered photo again in full; a photo
+already queued or printed is recognised by its content and never printed twice.
+A photo dropped after a printer refusal is not fetched again while the camera
+stays visible; send it again after the camera's network has gone away. A failed
+scan changes nothing until the next successful one. The journal and diagnostics
+record `SERVICE_CAMERA_PRESENT`, `SERVICE_CAMERA_ABSENT` and
+`SERVICE_CAMERA_WAIT category=...` only when the scan result changes. This
+replaces the MVP 4 rule of waiting for the camera network to disappear, a
+deliberate deviation recorded in [the architecture](architecture.md).
+
+Earlier 0.5.0 builds printed two single photos on the Orange Pi;
+[the Linux field protocol](linux-field-protocol.md) records what is and is not
+validated there, and the next session's programme. Use a
 board-supported 64-bit Debian/Ubuntu image; Armbian Community images are not
 certified by this project. Linux ARM64 CI executes the extracted native bundle's
 real JVM simulations and authenticated HTTP server on an ARM64 hosted runner;
@@ -101,7 +127,7 @@ it provides no evidence about Orange Pi radios or physical printer output.
 
 ## Build and CI
 
-The Windows x64, Linux x64 and Linux ARM64 jobs use Java 17.0.12 and pinned Actions. Headless builds do not configure Android or require its SDK:
+The Windows x64, Linux x64 and Linux ARM64 jobs use Java 17.0.12 and pinned Actions. `bridge/VERSION` is the only version source; CI passes `-PbuildCommit=<commit>` and a local build reports `version+dev`. To publish a release, set `bridge/VERSION` and push the tag `v<version>`: a release job, the only job with write access, refuses a tag that does not match and publishes the tested Linux ARM64 archive with its SHA-256 file. Headless builds do not configure Android or require its SDK:
 
 ```bash
 ./gradlew --no-daemon -PheadlessOnly=true :sony:test :printer:test :bridge:test :bridge:installDist :bridge:distZip :bridge:distTar
@@ -109,4 +135,4 @@ bash bridge/packaging/package-linux.sh
 bash bridge/packaging/smoke-linux.sh # native architecture selected automatically
 ```
 
-The Linux smoke script checks the portable checksum, extracts into a path with spaces, and checks normal, crop, duplicate, deterministic faults, suite and power-cut recovery in bounded child processes with system Java excluded. It also checks the read-only Linux native bindings and authenticates against the real extracted service HTTP server, verifying redacted status/diagnostics without saving bootstrap output. HTTP controls prove capture retention while the printer is off or busy, completion when available, and duplicate suppression. Safe reports upload as `bridge-verification-linux-x64` and `bridge-verification-linux-arm64`. The existing Android workflow remains separate. Portable bundles include deployment files, documentation, project/mizink MIT notices, JNA licenses, and the bundled Java runtime/module legal notices.
+The Linux smoke script checks the portable checksum, extracts into a path with spaces, and checks normal, crop, duplicate, deterministic faults, suite and power-cut recovery in bounded child processes with system Java excluded. It also checks the read-only Linux native bindings and authenticates against the real extracted service HTTP server, verifying redacted status/diagnostics without saving bootstrap output. HTTP controls prove a second photo selected as soon as the first is queued (no camera absence in between), capture retention while the printer is off or busy, completion when available, and duplicate suppression. Safe reports upload as `bridge-verification-linux-x64` and `bridge-verification-linux-arm64`. The existing Android workflow remains separate. Portable bundles include deployment files, documentation, project/mizink MIT notices, JNA licenses, and the bundled Java runtime/module legal notices.

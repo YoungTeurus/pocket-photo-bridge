@@ -18,6 +18,13 @@ import java.util.UUID
 /** Identity is displayed only by the authenticated local UI. */
 data class LinuxPrinterDevice(val address: String, val name: String)
 
+/**
+ * The setup hotspot's own address on its /24. Kept off 192.168.50.0/24 and the other
+ * common router, phone-hotspot and NetworkManager defaults so a wired debug LAN never
+ * shares the hotspot subnet; 192.168.122.0/24 is the camera network.
+ */
+const val SETUP_HOTSPOT_ADDRESS = "10.212.77.1"
+
 /** Exclusive single-radio setup/camera modes. All credentials are in temporary root-private NM keyfiles. */
 class LinuxRadioManager internal constructor(private val stateDir: Path, private val wifiInterface: String,
     private val report: (String) -> Unit, private val runner: LinuxCommandRunner, private val profileDir: Path) : AutoCloseable {
@@ -52,7 +59,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
             setupActive = true
             configureUweSetupSecurity()
             reportRadio(report, "LINUX_SETUP_STARTED")
-            return InetAddress.getByAddress(byteArrayOf(192.toByte(), 168.toByte(), 50, 1))
+            return InetAddress.getByName(SETUP_HOTSPOT_ADDRESS)
         } catch (failure: Throwable) {
             // NM already owns an active AP if security adjustment fails. Keep
             // ownership until teardown succeeds; deleting a keyfile is insufficient.
@@ -62,13 +69,14 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
     }
 
     @Synchronized fun stopSetup() {
+        val wasActive = setupActive
         if (setupActive) {
             // Do not permit a transition to camera if NetworkManager could not stop the AP.
             deactivate("connection", "down", "uuid", setupUuid)
             setupActive = false
         }
         cleanupProfile(profileDir.resolve(setupProfileName), setupUuid)
-        reportRadio(report, "LINUX_SETUP_STOPPED")
+        if (wasActive) reportRadio(report, "LINUX_SETUP_STOPPED")
     }
 
     @Synchronized fun isCameraPresent(ssid: String): Boolean {
@@ -85,8 +93,10 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         try {
             writeProfile(profile, profileText(cameraUuid, ssid, password, hotspot = false))
             nm("connection", "load", profile.toString())
-            nm("connection", "up", "uuid", cameraUuid, "ifname", wifiInterface)
+            activateCamera()
             cameraActive = true
+            // Joined; address and route are verified next, so a later failure means "joined but unusable".
+            reportRadio(report, "LINUX_CAMERA_ACTIVATED")
             val candidate = cameraCandidate()
             verifyRoute(candidate)
             val transport = BoundCameraHttpTransport(candidate, verifyRoute = { verifyRoute(candidate) })
@@ -205,7 +215,21 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         val state = nm("-g", "GENERAL.STATE", "device", "show", wifiInterface).trim()
         if (!Regex("30(?: \\([^\\r\\n]*\\))?").matches(state)) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
     }
+    /** Association and DHCP both happen inside one `connection up`; only its exit status and the
+     * device's numeric state and reason tell them apart. Never forward the tool's text. */
+    private fun activateCamera() {
+        val result = nmResult("connection", "up", "uuid", cameraUuid, "ifname", wifiInterface)
+        if (result.exitCode == 0) return
+        val device = try { nm("-g", "GENERAL.STATE,GENERAL.REASON", "device", "show", wifiInterface).lines() }
+            catch (failure: LinuxRadioFailure) { if (failure.code == LinuxRadioFailureCode.CANCELLED) throw failure; emptyList() }
+        fun field(name: String, value: Int?, max: Int) = value?.takeIf { it in 0..max }?.let { " $name=$it" } ?: ""
+        fun leading(line: Int) = device.getOrNull(line)?.let { Regex("([0-9]{1,4})(?: .*)?").matchEntire(it.trim()) }?.groupValues?.get(1)?.toInt()
+        reportRadio(report, "LINUX_CAMERA_ACTIVATION_FAILED" + field("nm_exit", result.exitCode, 255) +
+            field("nm_state", leading(0), 1000) + field("nm_reason", leading(1), 1000))
+        radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
+    }
     private fun nm(vararg arguments: String): String = command(listOf("/usr/bin/nmcli", "--wait", "15") + arguments, 20_000)
+    private fun nmResult(vararg arguments: String) = run(listOf("/usr/bin/nmcli", "--wait", "15") + arguments, 20_000)
 
     /** UWE5622 firmware rejects AP association when NM advertises PSK-SHA256,
      * even with PMF disabled. Only alter our current AP, before announcing it. */
@@ -251,9 +275,13 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
         catch (_: Exception) { radioFail(LinuxRadioFailureCode.PROFILE_UNSAFE) }
     }
 
-    private fun command(arguments: List<String>, timeout: Long): String {
+    private fun run(arguments: List<String>, timeout: Long): LinuxCommandResult {
         checkRadioInterrupted()
-        val result = try { runner.run(arguments, timeout) } catch (failure: Throwable) { throw safeRadioFailure(failure) }
+        return try { runner.run(arguments, timeout) } catch (failure: Throwable) { throw safeRadioFailure(failure) }
+    }
+
+    private fun command(arguments: List<String>, timeout: Long): String {
+        val result = run(arguments, timeout)
         if (result.exitCode != 0) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
         if (result.output.toByteArray(Charsets.UTF_8).size > 65_536) radioFail(LinuxRadioFailureCode.COMMAND_FAILED)
         return result.output
@@ -305,7 +333,7 @@ class LinuxRadioManager internal constructor(private val stateDir: Path, private
 
         [ipv4]
         method=${if (hotspot) "shared" else "auto"}
-        ${if (hotspot) "address1=192.168.50.1/24" else ""}
+        ${if (hotspot) "address1=$SETUP_HOTSPOT_ADDRESS/24" else ""}
         never-default=true
         ignore-auto-dns=true
 

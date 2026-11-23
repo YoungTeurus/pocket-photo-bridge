@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repository=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-version=0.5.0
+version=$(<"$repository/bridge/VERSION")
 case "$(uname -m)" in
     x86_64) architecture=x64 ;;
     aarch64|arm64) architecture=arm64 ;;

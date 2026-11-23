@@ -169,7 +169,7 @@ private class LiveReport(private val ui: LiveUi) {
         if (Files.isSymbolicLink(destination)) throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR)
         val temporary = Files.createTempFile(state, "diagnostic-", ".tmp")
         try {
-            Files.writeString(temporary, "Pocket Photo Bridge ${dev.pocketphotobridge.bridge.BridgeCli.VERSION} | Windows live devices\n" + lines.joinToString("\n") + "\n")
+            Files.writeString(temporary, "Pocket Photo Bridge ${dev.pocketphotobridge.bridge.BridgeCli.BUILD} | Windows live devices\n" + lines.joinToString("\n") + "\n")
             Files.move(temporary, destination, ATOMIC_MOVE, REPLACE_EXISTING)
         } finally { Files.deleteIfExists(temporary) }
     }

@@ -52,6 +52,41 @@ class LinuxBluetoothSocketTest {
         assertEquals(1, fake.closed)
     }
 
+    @Test fun `bytes buffered before a hangup are read before EOF closes transport`() {
+        val fake = FakeSocket()
+        val connection = adapter(fake).connect("AA:BB:CC:DD:EE:FF", 7, 500)
+        fake.ready = LinuxPoll.READ or LinuxPoll.HANGUP
+        fake.receives.addAll(listOf(3, 0))
+        assertArrayEquals(byteArrayOf(1, 2, 3), connection.read(500))
+        assertEquals(0, fake.closed)
+        failure(PrinterFailureCode.DISCONNECTED) { connection.read(500) }
+        assertEquals(1, fake.closed)
+    }
+
+    @Test fun `bytes buffered before a reset are read before the socket error closes transport`() {
+        val fake = FakeSocket()
+        val connection = adapter(fake).connect("AA:BB:CC:DD:EE:FF", 7, 500)
+        fake.ready = LinuxPoll.READ or LinuxPoll.ERROR or LinuxPoll.HANGUP
+        fake.receives.add(3)
+        fake.receiveFailure = IllegalStateException("ECONNRESET")
+        assertArrayEquals(byteArrayOf(1, 2, 3), connection.read(500))
+        assertEquals(0, fake.closed)
+        failure(PrinterFailureCode.DISCONNECTED) { connection.read(500) }
+        assertEquals(1, fake.closed)
+    }
+
+    @Test fun `error or hangup without readable data disconnects at once`() {
+        for (flags in listOf(LinuxPoll.ERROR, LinuxPoll.HANGUP, LinuxPoll.ERROR or LinuxPoll.HANGUP)) {
+            val fake = FakeSocket()
+            val connection = adapter(fake).connect("AA:BB:CC:DD:EE:FF", 7, 500)
+            fake.ready = flags
+            fake.receives.add(3)
+            failure(PrinterFailureCode.DISCONNECTED) { connection.read(500) }
+            assertEquals(listOf(3), fake.receives.toList())
+            assertEquals(1, fake.closed)
+        }
+    }
+
     @Test fun `close interrupts active poll without recycling descriptor`() {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
@@ -113,6 +148,7 @@ class LinuxBluetoothSocketTest {
         var errorChecks = 0
         var sendAdvance = 0L
         var pollHook: (() -> Unit)? = null
+        var receiveFailure: Exception? = null
         val sends = ArrayDeque<Int>()
         val receives = ArrayDeque<Int>()
         val sent = ByteArrayOutputStream()
@@ -123,7 +159,7 @@ class LinuxBluetoothSocketTest {
         override fun poll(socket: Int, events: Int, timeoutMillis: Int): Int { this.events += events; timeouts += timeoutMillis; pollHook?.invoke(); if (ready == 0) millis += timeoutMillis; return ready }
         override fun connectSucceeded(socket: Int): Boolean { errorChecks++; return succeeded }
         override fun send(socket: Int, bytes: ByteArray, offset: Int, count: Int): Int { millis += sendAdvance; val sentCount = sends.removeFirstOrNull() ?: count; if (sentCount > 0) sent.write(bytes, offset, sentCount); return sentCount }
-        override fun receive(socket: Int, bytes: ByteArray): Int { val count = receives.removeFirstOrNull() ?: 1; if (count > 0) repeat(count) { bytes[it] = (it + 1).toByte() }; return count }
+        override fun receive(socket: Int, bytes: ByteArray): Int { val count = receives.removeFirstOrNull() ?: receiveFailure?.let { throw it } ?: 1; if (count > 0) repeat(count) { bytes[it] = (it + 1).toByte() }; return count }
         override fun shutdown(socket: Int) { shutdown++ }
         override fun close(socket: Int) { closed++ }
     }

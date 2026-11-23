@@ -22,15 +22,18 @@ class SetupServerTest {
         var throwSecret = false
         var stage = "SETUP"
         var pairingTask: dev.pocketphotobridge.bridge.service.PairingTask? = null
-        override fun status(): Map<String, Any> = mapOf("stage" to if (pairingTask?.pending == true) "PAIRING" else stage, "category" to "READY", "queued" to 2, "prints" to 3,
+        var build: Any = "0.5.0+0123abc"
+        override fun status(): Map<String, Any> = mapOf("build" to build, "stage" to if (pairingTask?.pending == true) "PAIRING" else stage, "category" to "READY", "queued" to 2, "prints" to 3,
             "unresolved" to true, "simulation" to true, "adminPassword" to "never-disclose", "log" to "private-token",
             "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name")
         override fun configuration() = saved
-        override fun diagnostics(): Map<String, Any> = status() + mapOf("events" to listOf(
-            "BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
-            "LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111",
-            "SONY_TRANSFER_START", "PRIVATE_TOKEN private-token", "SONY_TRANSFER_START password=private-token",
-            "SONY_TRANSFER_START category=private-token", "LINUX_BLUETOOTH_CONNECT reason=private-token native_error=111"))
+        var events = listOf(
+            "0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
+            "1 LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111",
+            "2 SONY_TRANSFER_START", "PRIVATE_TOKEN private-token", "3 PRIVATE_TOKEN", "4 SONY_TRANSFER_START password=private-token",
+            "5 SONY_TRANSFER_START category=private-token", "6 LINUX_BLUETOOTH_CONNECT reason=private-token native_error=111")
+        var runs: Map<String, Any> = emptyMap()
+        override fun diagnostics(): Map<String, Any> = status() + mapOf("events" to events) + runs
         override fun saveConfig(config: ServiceConfiguration) { if (throwSecret) error("private-token"); saved = config }
         override fun acknowledgeCheckedPrinter() { acknowledged++ }
         override fun startOperation() { run++ }
@@ -147,11 +150,60 @@ class SetupServerTest {
         client.login()
         val diagnostics = client.request("/diagnostics").body
         val events = JsonParser.parseString(diagnostics).asJsonObject.getAsJsonArray("events").map { it.asString }
-        assertTrue(events.contains("BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB"))
-        assertTrue(events.contains("LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111"))
-        assertTrue(events.contains("SONY_TRANSFER_START"))
+        assertTrue(events.contains("0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB"))
+        assertTrue(events.contains("1 LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111"))
+        assertTrue(events.contains("2 SONY_TRANSFER_START"))
         assertFalse(diagnostics.contains("PRIVATE_TOKEN"))
         assertFalse(diagnostics.contains("private-token"))
+    }
+
+    @Test fun diagnosticsExportAcceptsTheSameEventsAsTheDiagnosticsFile() = server { client, backend, _ ->
+        val accepted = listOf("1 SERVICE_CAMERA_WAIT category=COMMAND_FAILED", "2 BRIDGE_CAMERA_CONNECTING",
+            "3 BRIDGE_PRINTER_CONNECTING", "4 SERVICE_CONFIG_SAVED", "5 SONY_JPEG_BYTES count=13805942", "6 SONY_SELECTION count=1",
+            "7 LINUX_CAMERA_ACTIVATED", "8 LINUX_CAMERA_ACTIVATION_FAILED nm_exit=4 nm_state=30 nm_reason=53")
+        backend.events = accepted + backend.events
+        client.login()
+        val events = JsonParser.parseString(client.request("/diagnostics").body).asJsonObject.getAsJsonArray("events").map { it.asString }
+        assertEquals(accepted + listOf("0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
+            "1 LINUX_BLUETOOTH_CONNECT reason=FAILED native_error=111", "2 SONY_TRANSFER_START"), events)
+    }
+
+    @Test fun diagnosticsAddPreviousRunsOldestFirstAndStayWithinTheSmokeSizeLimitAtTheCap() = server { client, backend, _ ->
+        client.login()
+        fun header(run: Int) = "Pocket Photo Bridge ${dev.pocketphotobridge.bridge.BridgeCli.BUILD} | headless service run=$run uptime_s=9999999999"
+        // The longest valid line, and the shortest line with four escaped '=' (most JSON bytes per file byte).
+        for (line in listOf("999999999 LINUX_HARDWARE_VALIDATION_PENDING category=KEY_OR_PROFILE_REJECTED count=67108864 queued=16 native_error=4095",
+            "0 SONY_ACTIONS count=0 queued=0 reason=OK category=BUSY")) {
+            backend.events = List(5_000) { line } + "999999999 SERVICE_STOPPED"
+            backend.runs = mapOf("header" to header(999999999), "previousRuns" to
+                (1..8).map { mapOf("header" to header(it), "events" to List(5_000) { line } + "PRIVATE_TOKEN private-token") })
+            val body = client.request("/diagnostics").body
+            assertTrue("Diagnostics exceed the packaged smoke limit", body.toByteArray(Charsets.UTF_8).size <= 65536)
+            val json = JsonParser.parseString(body).asJsonObject
+            assertEquals(header(999999999), json["header"].asString)
+            assertEquals("999999999 SERVICE_STOPPED", json.getAsJsonArray("events").last().asString)
+            val runs = json.getAsJsonArray("previousRuns").map { it.asJsonObject }
+            assertEquals((4..8).map(::header), runs.map { it["header"].asString })
+            runs.forEach { run ->
+                val events = run.getAsJsonArray("events").map { it.asString }
+                assertTrue(events.size >= 50); assertTrue(events.all { it == line })
+            }
+            assertFalse(body.contains("private-token"))
+        }
+    }
+
+    @Test fun statusAndDiagnosticsCarryOnlyAWellFormedBuild() = server { client, backend, _ ->
+        client.login()
+        fun builds() = listOf("/status", "/diagnostics").map { JsonParser.parseString(client.request(it).body).asJsonObject["build"]?.asString }
+        for (valid in listOf("0.5.0+0123abc", "10.20.300+dev", "0.5.0+0123456789abcdef0123456789abcdef01234567")) {
+            backend.build = valid
+            assertEquals(listOf(valid, valid), builds())
+        }
+        for (invalid in listOf("0.5.0", "0.5.0+012345", "0.5.0+0123456789abcdef0123456789abcdef012345678", "0.5.0+0123ABC",
+                "0.5.0+private-token", "0.5+dev", "v0.5.0+dev", "0.5.0+dev ", "0.5.0+dev\n<script>", "0.5.0-rc1+dev", 50)) {
+            backend.build = invalid
+            assertEquals(listOf(null, null), builds())
+        }
     }
 
     @Test fun exposesFixedControllerStagesAndSubmissionCounts() = server { client, backend, _ ->
