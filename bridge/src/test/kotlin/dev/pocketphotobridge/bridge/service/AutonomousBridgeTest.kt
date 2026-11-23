@@ -739,6 +739,7 @@ class AutonomousBridgeTest {
             it.capture(SelectionTrigger("selected"))
             val outcome = it.printNext()
             assertEquals(ServiceState.NEEDS_ATTENTION, outcome.state); assertFalse(outcome.printAttemptFailed)
+            assertEquals(CaptureStep.BLOCKED, it.capture(SelectionTrigger("next")).captureStep)
         }
         val broken = CameraWifiConnector { throw IOException("camera gone") }
         bridge(state.resolveSibling("camera"), broken).use {

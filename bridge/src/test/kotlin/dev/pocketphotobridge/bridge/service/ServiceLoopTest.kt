@@ -113,4 +113,14 @@ class ServiceLoopTest {
         loop.runUntil(actions, 1_700_000, camera = true)
         assertEquals(listOf(1_502_000L, 1_622_000), actions.checkedAt)
     }
+    @Test fun inReCheckModeAFailedCheckDoublesThePauseButQueueFullOrNeedsAttentionRetriesAfterFiveSeconds() {
+        val actions = Actions(); val policy = BootModePolicy(0); policy.requestOperation()
+        val loop = loop(policy, actions)
+        loop.tick(0, true, true)
+        actions.captureStep = CaptureStep.RETRY
+        loop.runUntil(actions, 400_000, camera = true)
+        actions.captureStep = CaptureStep.BLOCKED
+        loop.runUntil(actions, 431_000, camera = true)
+        assertEquals(listOf(0L, 60_000, 180_000, 420_000, 425_000, 430_000), actions.checkedAt)
+    }
 }

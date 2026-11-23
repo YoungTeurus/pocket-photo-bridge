@@ -12,8 +12,11 @@ interface ServiceLoopActions {
 /** FAILED: the printer was unreachable, busy or refusing. IDLE: nothing printed and nothing failed, such as an empty queue. */
 enum class PrintStep { IDLE, PRINTED, FAILED }
 
-/** RETRY tries the selection again; the others end it, and only a NEW_PHOTO resets the print back-off. */
-enum class CaptureStep { RETRY, DUPLICATE, NEW_PHOTO }
+/**
+ * The outcome of a camera check. RETRY: the check failed (join, address, camera protocol). BLOCKED: no radio
+ * connection was made (queue full, needs attention). Only a NEW_PHOTO resets the print back-off.
+ */
+enum class CaptureStep { RETRY, BLOCKED, DUPLICATE, NEW_PHOTO }
 
 /**
  * Single worker. A camera presence starts a selection generation; while the camera stays visible after a
@@ -47,14 +50,17 @@ class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> L
             // A print is a blind window: whatever the camera offered meanwhile is fetched right after it.
             if (now >= nextCapture || recheck && printed) {
                 printed = false
-                when (actions.capture(SelectionTrigger("$boot:$epoch"))) {
+                val step = actions.capture(SelectionTrigger("$boot:$epoch"))
+                when (step) {
                     // A new photo is worth an immediate attempt and a fresh back-off; a duplicate changes nothing.
                     CaptureStep.NEW_PHOTO -> { recheck = true; recheckPause = FIRST_RECHECK_MS; nextPrint = now; printPause = 2_000 }
                     CaptureStep.DUPLICATE -> { recheck = true; recheckPause = minOf(recheckPause * 2, MAX_RECHECK_MS) }
-                    CaptureStep.RETRY -> { }
+                    // A failed check of a camera that already gave its photo costs like finding that photo again.
+                    CaptureStep.RETRY -> if (recheck) recheckPause = minOf(recheckPause * 2, MAX_RECHECK_MS)
+                    CaptureStep.BLOCKED -> { }
                 }
                 // Counted from this pass's start, so a long transfer or print does not stretch the pause.
-                nextCapture = now + if (recheck) recheckPause else 5_000
+                nextCapture = now + if (recheck && step != CaptureStep.BLOCKED) recheckPause else 5_000
             }
         }
         if (now >= nextPrint) {

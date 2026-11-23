@@ -28,7 +28,8 @@ data class ServiceSnapshot(val state: ServiceState, val queued: Int, val categor
     }
     val captureStep get() = when {
         category == "DUPLICATE_SUPPRESSED" -> CaptureStep.DUPLICATE
-        state == ServiceState.QUEUED && category != "QUEUE_FULL" -> CaptureStep.NEW_PHOTO
+        category == "QUEUE_FULL" || state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR) -> CaptureStep.BLOCKED
+        state == ServiceState.QUEUED -> CaptureStep.NEW_PHOTO
         else -> CaptureStep.RETRY
     }
 }

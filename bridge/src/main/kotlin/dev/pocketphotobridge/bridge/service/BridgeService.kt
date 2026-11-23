@@ -121,7 +121,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 diagnostics.emit("SERVICE_OPERATION")
             }
             override fun capture(trigger: SelectionTrigger): CaptureStep = synchronized(bridgeLock) {
-                if (bridge.snapshot().state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR)) return CaptureStep.RETRY
+                if (bridge.snapshot().state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR)) return CaptureStep.BLOCKED
                 bridge.capture(trigger)
             }.captureStep
             override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printStep
