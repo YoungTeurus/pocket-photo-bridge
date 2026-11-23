@@ -141,9 +141,11 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
    `NEEDS_ATTENTION` for an unknown print waiting for **I checked the
    printer**, and sheets). If setup does not appear after a cut, do not cut
    the power again: over the serial console run
-   `sudo journalctl -u pocket-photo-bridge -b --no-pager` and copy
-   `/var/lib/pocket-photo-bridge/diagnostics*.txt` before further restarts
-   rotate them, then record the last `SERVICE_FAILED` category.
+   `sudo journalctl -u pocket-photo-bridge -b --no-pager` and copy the
+   diagnostics so the failing run is kept as well (the state directory is
+   readable only by root, so the pattern is expanded there):
+   `sudo sh -c 'cd /var/lib/pocket-photo-bridge && tar -cf - diagnostics*.txt' > ~/diagnostics.tar`,
+   then record the last `SERVICE_FAILED` category.
 7. **Retention.** With retention off, read the queue count with one photo
    waiting (printer off), reboot, and read it again from setup: expected 1, then
    0 with `BRIDGE_BOOT_QUEUE_DISCARDED count=1`. The "retention on" half is not
@@ -171,11 +173,12 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
     `sudo systemctl stop pocket-photo-bridge.service` over the serial console
     once in setup and once in operation while the camera is connected. Expected
     each time: `nmcli connection show --active` lists no connection owned by
-    the bridge, the hotspot is gone from the phone, and
-    `sudo tail -n 3 /var/lib/pocket-photo-bridge/diagnostics.txt` ends with
-    `SERVICE_STOPPED`. Record whether a bridge connection was still listed (not
-    the network names) and the last diagnostic line, then start the service
-    again.
+    the bridge, the hotspot is gone from the phone, and the last lines of
+    `sudo tail -n 3 /var/lib/pocket-photo-bridge/diagnostics.txt` contain
+    `SERVICE_STOPPED`, followed in setup by `LINUX_SETUP_STOPPED`, with no
+    `SERVICE_RADIO_CLEANUP_FAILED`. Record whether a bridge connection was still
+    listed (not the network names) and the last two diagnostic lines, then
+    start the service again.
 
 Also record, for the conditional work: whether any power cut damaged the
 persistent state (setup `stage` is `STATE_ERROR`); whether the printer still
