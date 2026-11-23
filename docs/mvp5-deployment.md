@@ -206,7 +206,12 @@ has no backed-up clock. An unchanged state or camera-scan failure is written
 once. A print attempt that fails the same way as the one before leaves none of
 its steps (radio steps included); instead a line ending in `count=N` is written
 after 1, 2, 4, 8 ... such retries, so hours of idling or of a switched-off
-printer do not push earlier events out. The run that was in place before the
+printer do not push earlier events out. While a photo waits, a failed print attempt
+(printer off, busy, or refusing the job) is retried after 2, 4, 8 ... seconds, at
+most every 30 seconds; a new photo or a successful print starts again at 2 seconds.
+A job the printer refuses is logged as `PRINTER_SUBMIT_REFUSED code=N`; a busy
+refusal (`code=8006`) keeps the photo queued. Photos removed from the queue
+because they were already submitted are logged as `BRIDGE_QUEUE_RECONCILED count=N`. The run that was in place before the
 upgrade to run headers is kept as a previous run without a run counter.
 
 A failed camera or printer step names its own category, for example

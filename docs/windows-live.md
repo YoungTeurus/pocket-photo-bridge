@@ -65,7 +65,7 @@ Expected success includes `SONY_SELECTION count=1`, a real `SONY_JPEG_BYTES coun
 4. Inspect the local preview. At the paper-consumption prompt, type the exact word **PRINT** to authorize one copy. Any other answer cancels, before printer connection or job reservation.
 5. Wait for the printer to finish. Expected success includes `LIVE_PRINT_CONFIRMED`, `PRINTER_JOB_RESERVED`, `PRINTER_UPLOAD`, `PRINTER_PRINT_FINISHED` and `BRIDGE_PRINTED`, exit 0. Confirm the physical output before claiming success.
 
-The same image's content is suppressed on later selections, including after restarting the EXE. This intentionally prevents automatic duplicate paper consumption. Intentional reprinting is outside this milestone; do not delete state to bypass the guard.
+The same image's content is suppressed on later selections, including after restarting the EXE. This intentionally prevents automatic duplicate paper consumption. Intentional reprinting is outside this milestone; do not delete state to bypass the guard. This flow also suppresses a photo whose print job the printer refused as busy (`-8006`); only the autonomous Linux service keeps such a photo queued and retries it.
 
 ## Unknown outcomes and recovery
 
