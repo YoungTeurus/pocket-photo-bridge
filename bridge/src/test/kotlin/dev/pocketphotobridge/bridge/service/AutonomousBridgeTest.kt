@@ -503,6 +503,44 @@ class AutonomousBridgeTest {
         }
     }
 
+    /** Forwards to [device] and stops the process at the first frame [stop] picks, before or after sending it. */
+    private fun stoppingPrinter(device: SimulatedPrinter, after: Boolean, stop: (PrinterFrame, String) -> Boolean) = PrinterConnector {
+        val transport = device.connect()
+        object : PrinterTransport {
+            private val cipher = PrinterCipher(SIMULATION_TOKEN)
+            override fun write(bytes: ByteArray) {
+                val frame = PrinterProtocol.decode(bytes)
+                val stopping = stop(frame, if (frame.channel == 1) cipher.crypt(frame.body).toString(Charsets.UTF_8) else "")
+                if (stopping && !after) throw PowerCut()
+                transport.write(bytes)
+                if (stopping) throw PowerCut()
+            }
+            override fun read(timeoutMs: Long) = transport.read(timeoutMs)
+            override fun close() { try { transport.close() } finally { cipher.close() } }
+        }
+    }
+
+    @Test fun processStopDuringUploadOrAfterConfirmationNeedsAttentionAndKeepsThePhoto() {
+        val stops = listOf<Pair<Boolean, (PrinterFrame, String) -> Boolean>>(
+            false to { frame, _ -> frame.channel == 2 },
+            true to { _, request -> "confirm_job" in request })
+        for ((after, stop) in stops) root { state ->
+            val device = SimulatedPrinter()
+            bridge(state, printer = stoppingPrinter(device, after, stop)).use {
+                it.capture(SelectionTrigger("first"))
+                try { it.printNext(); fail("Expected a process stop") } catch (_: PowerCut) { }
+                assertEquals(1, device.submissions)
+            }
+            val ready = SimulatedPrinter()
+            bridge(state, printer = ready).use {
+                assertEquals(ServiceState.NEEDS_ATTENTION, it.printNext().state)
+                assertEquals(1, it.snapshot().queued)
+                assertEquals(0, ready.submissions)
+                assertTrue(ready.methods.isEmpty())
+            }
+        }
+    }
+
     @Test fun checkAcknowledgementRemovesOnlySubmittedPhotoAndPreservesOtherQueuedCapture() = root { state ->
         var camera = SimulatedSony(photo())
         val second = javaClass.getResourceAsStream("/simulation/sony-selected-next.jpg")!!.use { it.readBytes() }
