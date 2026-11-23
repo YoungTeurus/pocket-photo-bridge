@@ -22,7 +22,8 @@ class SetupServerTest {
         var throwSecret = false
         var stage = "SETUP"
         var pairingTask: dev.pocketphotobridge.bridge.service.PairingTask? = null
-        override fun status(): Map<String, Any> = mapOf("stage" to if (pairingTask?.pending == true) "PAIRING" else stage, "category" to "READY", "queued" to 2, "prints" to 3,
+        var build: Any = "0.5.0+0123abc"
+        override fun status(): Map<String, Any> = mapOf("build" to build, "stage" to if (pairingTask?.pending == true) "PAIRING" else stage, "category" to "READY", "queued" to 2, "prints" to 3,
             "unresolved" to true, "simulation" to true, "adminPassword" to "never-disclose", "log" to "private-token",
             "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name")
         override fun configuration() = saved
@@ -188,6 +189,20 @@ class SetupServerTest {
                 assertTrue(events.size >= 50); assertTrue(events.all { it == line })
             }
             assertFalse(body.contains("private-token"))
+        }
+    }
+
+    @Test fun statusAndDiagnosticsCarryOnlyAWellFormedBuild() = server { client, backend, _ ->
+        client.login()
+        fun builds() = listOf("/status", "/diagnostics").map { JsonParser.parseString(client.request(it).body).asJsonObject["build"]?.asString }
+        for (valid in listOf("0.5.0+0123abc", "10.20.300+dev", "0.5.0+0123456789abcdef0123456789abcdef01234567")) {
+            backend.build = valid
+            assertEquals(listOf(valid, valid), builds())
+        }
+        for (invalid in listOf("0.5.0", "0.5.0+012345", "0.5.0+0123456789abcdef0123456789abcdef012345678", "0.5.0+0123ABC",
+                "0.5.0+private-token", "0.5+dev", "v0.5.0+dev", "0.5.0+dev ", "0.5.0+dev\n<script>", "0.5.0-rc1+dev", 50)) {
+            backend.build = invalid
+            assertEquals(listOf(null, null), builds())
         }
     }
 
