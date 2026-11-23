@@ -59,6 +59,31 @@ class FileBridgeJournalTest {
         FileBridgeJournal(root).use { assertTrue(it.unresolved) }
     }
 
+    @Test fun withdrawnRefusalClearsReservationAndSubmittedMarkAcrossReopen() = directory { root ->
+        FileBridgeJournal(root).use { journal ->
+            journal.consumeEvent("first")
+            journal.selectPhoto(photoA)
+            val stale = journal.reserve()
+            journal.withdraw(stale)
+            assertFalse(journal.unresolved)
+            assertFalse(journal.wasSubmitted(photoA))
+            journal.selectPhoto(photoB)
+            journal.reserve()
+            journal.withdraw(stale)
+            assertTrue("A stale withdrawal cannot clear a new reservation", journal.unresolved)
+            assertTrue(journal.wasSubmitted(photoB))
+        }
+        FileBridgeJournal(root).use { journal ->
+            assertFalse(journal.wasSubmitted(photoA))
+            assertTrue(journal.wasSubmitted(photoB))
+            assertFalse("Event tombstones are untouched", journal.consumeEvent("first"))
+            journal.acknowledgeCheckedPrinter()
+            journal.selectPhoto(photoA)
+            journal.reserve()
+            assertTrue(journal.wasSubmitted(photoA))
+        }
+    }
+
     @Test fun manualAcknowledgementKeepsPhotoAndEventTombstones() = directory { root ->
         FileBridgeJournal(root).use { journal ->
             journal.consumeEvent("first")

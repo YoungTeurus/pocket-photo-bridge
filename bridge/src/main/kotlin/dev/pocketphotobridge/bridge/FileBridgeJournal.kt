@@ -111,6 +111,16 @@ class FileBridgeJournal(directory: Path) : PrintJobGuard, AutoCloseable {
         selectedPhoto = null
     }
 
+    /** A refusal proven retryable: clears the reservation and its photo's submitted mark in one durable update. */
+    @Synchronized fun withdraw(reservation: String) {
+        checkOpen()
+        // Without the photo this process reserved, the reservation stays unresolved (fail closed).
+        val photo = selectedPhoto ?: return
+        if (state.reservation != reservation) return
+        update(state.copy(photos = state.photos - photo, reservation = null))
+        selectedPhoto = null
+    }
+
     @Synchronized override fun acknowledgeCheckedPrinter() {
         checkOpen()
         if (state.reservation != null) update(state.copy(reservation = null))
