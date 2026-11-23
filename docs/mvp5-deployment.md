@@ -96,11 +96,12 @@ use the authenticated setup page described below.
 
    The installer requires a terminal to display credentials privately. Do not
    pipe its output to a log or share a screenshot of its credential lines. It
-   installs `network-manager`, `dnsmasq-base`, `nftables`, `bluez` (including `sdptool`), `libbluetooth3`,
+   installs `network-manager`, `wpasupplicant`, `dnsmasq-base`, `nftables`, `bluez` (including `sdptool`), `libbluetooth3`,
    `iproute2`, `libfreetype6`, and `fontconfig` with apt, uses the bundled runtime, and enables
    `pocket-photo-bridge.service`. No board-side compilation is involved. When
    `dpkg-query` reports all of these packages as installed (an upgrade), it
-   skips apt, so an upgrade needs no internet uplink. It prints the installed
+   skips apt, so an upgrade should need no internet uplink (not yet verified on
+   the board; see the upgrade steps below). It prints the installed
    build (`0.5.0+<commit>`) and names its release directory after it.
 
    The dedicated setup AP explicitly disables optional PMF (`pmf=1`) because
@@ -303,8 +304,24 @@ sudo systemctl start pocket-photo-bridge.service
 ```
 
 For an upgrade, verify and extract the new matching portable archive and run its
-installer in the same way; with the packages already installed this works over
-the setup hotspot without internet. It stops the service before switching releases,
+installer in the same way. Ethernet or a serial console is the recommended
+path. With the packages already installed the installer skips apt, so an
+upgrade over the setup hotspot without internet should also work, but this has
+not yet been verified on the board. Over the hotspot:
+
+1. Sign in to the setup page and keep interacting with it, or choose
+   **Keep setup open**; otherwise the hotspot stops 60 seconds after boot and
+   takes the SSH session with it.
+2. Copy the archive and run the installer over SSH as above. Expect the SSH
+   session to drop when the installer stops the service, because stopping it
+   takes the hotspot down; the installer's last lines may never appear.
+3. Rejoin the hotspot, which the new service opens again for 60 seconds, sign
+   in, and check the `build` field in the setup status or Diagnostics. An
+   unchanged build means the installer stopped and restored the previous
+   release. Over Ethernet or a serial console,
+   `readlink /opt/pocket-photo-bridge/current` names the installed release.
+
+The installer stops the service before switching releases,
 reuses existing bootstrap/configuration, and retains all queue and print-history
 state. A stopped process may leave an uncertain print; resolve it by checking
 the printer as described above. Do not run two service instances with the same
