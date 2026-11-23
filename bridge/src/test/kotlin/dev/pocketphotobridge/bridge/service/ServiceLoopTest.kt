@@ -17,7 +17,7 @@ class ServiceLoopTest {
         val presence = mutableListOf<Boolean?>()
         var clock = 0L
         override fun enterOperation() { transitions++ }
-        override fun cameraPresence(present: Boolean?) { presence += present }
+        override fun cameraPresence(scan: Result<Boolean>) { presence += scan.getOrNull() }
         override fun capture(trigger: SelectionTrigger): CaptureStep { captures++; checkedAt += clock; triggers += trigger.id; return captureStep }
         override fun printNext(): PrintStep {
             prints++; printedAt += clock; clock += printTakesMs
@@ -25,6 +25,8 @@ class ServiceLoopTest {
         }
     }
     private fun loop(policy: BootModePolicy, actions: Actions) = ServiceLoop(policy, { actions.clock }, actions)
+    /** A scan with a fixed result; null is a scan that throws. */
+    private fun ServiceLoop.tick(now: Long, enabled: Boolean, camera: Boolean?) = tick(now, enabled) { camera ?: throw java.io.IOException("scan") }
     /** The service ticks about once a second. */
     private fun ServiceLoop.runUntil(actions: Actions, end: Long, camera: Boolean = false) {
         while (actions.clock < end) { actions.clock += 1_000; tick(actions.clock, true, camera) }
@@ -144,5 +146,34 @@ class ServiceLoopTest {
         val loop = loop(policy, actions)
         for (scan in listOf(true, true, null, null, true, false, false, null, false)) { actions.clock += 1_000; loop.tick(actions.clock, true, scan) }
         assertEquals(listOf(true, null, true, false, null, false), actions.presence)
+    }
+    @Test fun theScanStartsWithOperationSoTheFirstReportIsARealResult() {
+        val actions = Actions(); val loop = loop(BootModePolicy(0, windowMs = 30_000), actions)
+        var scans = 0
+        for (now in listOf(0L, 29_000)) loop.tick(now, true) { scans++; true }
+        assertEquals(0, scans)
+        loop.tick(30_000, true) { scans++; false }
+        assertEquals(1, actions.transitions); assertEquals(1, scans)
+        assertEquals(listOf<Boolean?>(false), actions.presence)
+    }
+    @Test fun inReCheckModeOnlyASuccessfulPrintBringsTheNextCheckForward() {
+        val actions = Actions(); val policy = BootModePolicy(0); policy.requestOperation()
+        val loop = loop(policy, actions)
+        // Before a successful transfer a print does not bring the check forward.
+        actions.printStep = PrintStep.PRINTED; actions.captureStep = CaptureStep.RETRY
+        loop.tick(0, true, true)
+        loop.runUntil(actions, 4_000, camera = true)
+        assertEquals(listOf(0L), actions.checkedAt)
+        actions.captureStep = CaptureStep.NEW_PHOTO
+        loop.runUntil(actions, 5_000, camera = true)
+        actions.captureStep = CaptureStep.DUPLICATE
+        loop.runUntil(actions, 6_000, camera = true)
+        assertEquals(listOf(0L, 5_000, 6_000), actions.checkedAt)
+        // An idle or failed print waits out the pause, now doubled to 120 s.
+        actions.printStep = PrintStep.IDLE
+        loop.runUntil(actions, 60_000, camera = true)
+        actions.printFails = true
+        loop.runUntil(actions, 126_000, camera = true)
+        assertEquals(listOf(0L, 5_000, 6_000, 126_000), actions.checkedAt)
     }
 }

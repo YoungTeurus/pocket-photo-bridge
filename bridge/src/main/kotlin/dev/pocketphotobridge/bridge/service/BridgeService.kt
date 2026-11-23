@@ -106,7 +106,6 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     private var server: SetupServer? = null
     private val loop: ServiceLoop
     private var closed = false
-    private var scanFailure = "IO_ERROR"
 
     init {
         if (devices is SimulatedServiceDevices && configuration.get() == null) {
@@ -121,15 +120,11 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 synchronized(bridgeLock) { bridge.close(); bridge = openBridge() }
                 diagnostics.emit("SERVICE_OPERATION")
             }
-            override fun capture(trigger: SelectionTrigger): CaptureStep = synchronized(bridgeLock) {
-                if (bridge.snapshot().state in setOf(ServiceState.NEEDS_ATTENTION, ServiceState.STATE_ERROR)) return CaptureStep.BLOCKED
-                bridge.capture(trigger)
-            }.captureStep
+            override fun capture(trigger: SelectionTrigger) = synchronized(bridgeLock) { bridge.capture(trigger) }.captureStep
             override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printStep
-            override fun cameraPresence(present: Boolean?) = diagnostics.emit(when (present) {
-                true -> "SERVICE_CAMERA_PRESENT"; false -> "SERVICE_CAMERA_ABSENT"
-                null -> "SERVICE_CAMERA_WAIT category=$scanFailure"
-            })
+            override fun cameraPresence(scan: Result<Boolean>) = diagnostics.emit(scan.fold(
+                { if (it) "SERVICE_CAMERA_PRESENT" else "SERVICE_CAMERA_ABSENT" },
+                { "SERVICE_CAMERA_WAIT category=${BridgeService.category(it as Exception)}" }))
         }, devices.firstRecheckMs, devices.maxRecheckMs)
     }
 
@@ -156,12 +151,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         try {
             while (running.get() && !worker.isInterrupted) {
                 val config = configuration.get()
-                // A failed scan is unknown, never a stale earlier result.
-                val presence = if (loop.operating && config != null) {
-                    try { devices.cameraPresent(config) }
-                    catch (failure: Exception) { scanFailure = BridgeService.category(failure); null }
-                } else null
-                loop.tick(monotonicNow(), config?.autoPrintEnabled == true && !pairing.pending, presence)
+                // Enabled implies a saved configuration, so the scan always has one.
+                loop.tick(monotonicNow(), config?.autoPrintEnabled == true && !pairing.pending) { devices.cameraPresent(requireNotNull(config)) }
                 Thread.sleep(1_000)
             }
         } catch (_: InterruptedException) { worker.interrupt() }

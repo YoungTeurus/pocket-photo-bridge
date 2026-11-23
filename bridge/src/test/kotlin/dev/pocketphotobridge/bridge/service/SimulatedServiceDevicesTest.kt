@@ -26,7 +26,7 @@ class SimulatedServiceDevicesTest {
             override fun printNext(): PrintStep { duringPrint(); return bridge.printNext().printStep }
         })
         fun passes(count: Int, stepMs: Long = 1_000) = repeat(count) {
-            time += stepMs; loop.tick(time, true, devices.cameraPresent(devices.configuration))
+            time += stepMs; loop.tick(time, true) { devices.cameraPresent(devices.configuration) }
         }
     }
 
@@ -106,7 +106,7 @@ class SimulatedServiceDevicesTest {
             assertEquals(listOf(CaptureStep.NEW_PHOTO, CaptureStep.DUPLICATE), service.steps)
             assertEquals(0, printer.submissions)
             // The camera network goes away; the owner then sends the same photo again.
-            service.time += 1_000; service.loop.tick(service.time, true, false)
+            service.time += 1_000; service.loop.tick(service.time, true) { false }
             devices.simulationAction("duplicate-photo")
             service.passes(1)
             assertEquals(CaptureStep.NEW_PHOTO, service.steps.last())
