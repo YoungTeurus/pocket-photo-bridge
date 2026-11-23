@@ -215,15 +215,20 @@ a run counter, and the kernel uptime in whole seconds when the process started
 (omitted where the kernel does not report it). Each event line starts with the
 whole seconds since that start; there is no wall-clock time, because the board
 has no backed-up clock. An unchanged state or camera-scan failure is written
-once. A print attempt that fails the same way as the one before leaves none of
-its steps (radio steps included); instead a line ending in `count=N` is written
-after 1, 2, 4, 8 ... such retries, so hours of idling or of a switched-off
-printer do not push earlier events out. While a photo waits, a failed print attempt
+once. A print attempt that fails the same way as the one before, and a
+re-check of a still-visible camera that ends as the one before (for example
+`DUPLICATE_SUPPRESSED`), leave none of their steps (radio steps included);
+instead a line ending in `count=N` is written after 1, 2, 4, 8 ... such
+repeats, so hours of idling, of a camera left on its send screen or of a
+switched-off printer do not push earlier events out. The system journal still
+shows every step as it happens. While a photo waits, a failed print attempt
 (printer off, busy, or refusing the job) is retried after 2, 4, 8 ... seconds, at
 most every 30 seconds; a new photo or a successful print starts again at 2 seconds.
 A job the printer refuses is logged as `PRINTER_SUBMIT_REFUSED code=N`; a busy
-refusal (`code=8006`) keeps the photo queued; any other code drops the photo,
-so send it again from the camera to print it. Photos removed from the queue
+refusal (`code=8006`) keeps the photo queued; any other code drops the photo.
+To print it, leave the camera's send screen until the bridge logs
+`SERVICE_CAMERA_ABSENT`, then send it again; while the camera stays visible the
+bridge treats it as already received (`DUPLICATE_SUPPRESSED`). Photos removed from the queue
 because they were already submitted or were refused this way are logged as `BRIDGE_QUEUE_RECONCILED count=N`. The run that was in place before the
 upgrade to run headers is kept as a previous run without a run counter.
 

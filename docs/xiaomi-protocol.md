@@ -57,7 +57,7 @@ Policy for a correlated, well-formed negative reply to `print_job` (no job was c
 | Code | Autonomous Linux service | Windows and simulation flows |
 | --- | --- | --- |
 | `-8006` (busy) | Keep and retry: the photo stays queued and is retried at the service loop's back-off. | Report `BUSY`, keep the photo suppressed. |
-| Any other negative code | Drop and forget: release the reservation and the submitted mark, then remove the photo and its files from the queue (`BRIDGE_QUEUE_RECONCILED count=1`) and count it in the snapshot's `dropped` until the next successful print. The refusal counts as a failed attempt for the back-off. Nothing is retried automatically; sending the photo again from the camera prints it. | Report `JOB_REJECTED`, keep the photo suppressed. |
+| Any other negative code | Drop and forget: release the reservation and the submitted mark, then remove the photo and its files from the queue (`BRIDGE_QUEUE_RECONCILED count=1`) and count it in the snapshot's `dropped` until the next successful print. The refusal counts as a failed attempt for the back-off. Nothing is retried automatically; sending the photo again from the camera prints it once the bridge has seen the camera's network go away (`SERVICE_CAMERA_ABSENT`). | Report `JOB_REJECTED`, keep the photo suppressed. |
 
 A lost, malformed, truncated or uncorrelated reply is not a refusal: the reservation stays unresolved and blocks automatic resubmission until the printer is checked.
 

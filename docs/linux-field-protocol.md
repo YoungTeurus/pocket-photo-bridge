@@ -128,8 +128,11 @@ Session 1 runs on a tagged release with retention **off**, as the owner decided
    if refused) and the number of sheets.
 5. **Refusal with another code.** If the printer can be made to refuse a job
    with a code other than `8006` (for example cover open or no paper), record
-   the code, then send the same photo again from the camera: it must print
-   once. Otherwise record "not provoked".
+   the code. While the camera stays visible, a re-check logs
+   `DUPLICATE_SUPPRESSED` and nothing prints. Then leave the camera's send
+   screen until the bridge logs `SERVICE_CAMERA_ABSENT`, and send the same
+   photo again: it must print once. Record whether `SERVICE_CAMERA_ABSENT`
+   appeared before the re-send. Otherwise record "not provoked".
 6. **Four targeted power cuts** (pull the bridge's power): during receive,
    during upload to the printer, after the printer reports finished, and while
    idle. Before each cut read the queue count; after each, reboot into setup,
