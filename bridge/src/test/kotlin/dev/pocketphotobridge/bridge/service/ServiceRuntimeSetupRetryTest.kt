@@ -28,9 +28,10 @@ class ServiceRuntimeSetupRetryTest {
         val pauses = mutableListOf<Long>()
         var report: (String) -> Unit = { }
         var interfaces = emptySet<String>()
+        var startedOn: String? = null
         override fun wifiInterfaceExists(name: String) = name in interfaces
         override fun startSetup(credentials: SetupCredentials, wifiInterface: String): InetSocketAddress {
-            starts += clock; clock += attemptMs
+            starts += clock; clock += attemptMs; startedOn = wifiInterface
             if (starts.size <= failures) { report("LINUX_SETUP_STOPPED"); throw LinuxRadioFailure(LinuxRadioFailureCode.COMMAND_FAILED) }
             return InetSocketAddress("127.0.0.1", 0)
         }
@@ -48,7 +49,7 @@ class ServiceRuntimeSetupRetryTest {
     private class Run(val events: List<String>, val failure: Throwable?)
 
     /** Runs the service until setup opens, then stops it the way the shutdown hook does. */
-    private fun run(radio: SlowRadio): Run {
+    private fun run(radio: SlowRadio, whileOpen: (ServiceRuntime) -> Unit = { }): Run {
         val root = Files.createTempDirectory("setup-retry-")
         try {
             val state = root.resolve("state")
@@ -60,12 +61,14 @@ class ServiceRuntimeSetupRetryTest {
             val diagnostics = ServiceDiagnostics(state, output, radio::now, null)
             radio.report = diagnostics::emit
             var failure: Throwable? = null
+            var runtime: ServiceRuntime? = null
             val service = Thread {
-                try { ServiceRuntime(state, radio, diagnostics, output).use { it.run() } }
+                try { ServiceRuntime(state, radio, diagnostics, output).use { runtime = it; it.run() } }
                 catch (thrown: Throwable) { failure = thrown } finally { finished.countDown() }
             }
             service.start()
             assertTrue(finished.await(60, TimeUnit.SECONDS))
+            if (failure == null) whileOpen(runtime!!)
             service.interrupt(); service.join(60_000)
             assertFalse(service.isAlive)
             return Run(diagnostics.events(), failure)
@@ -117,6 +120,19 @@ class ServiceRuntimeSetupRetryTest {
                 assertTrue(it.backend().wifiInterfaceExists("wlan9"))
             }
         } finally { root.toFile().deleteRecursively() }
+    }
+
+    @Test fun theInterfaceTheSetupHotspotIsUpOnIsAcceptedWhateverTheSystemCheckAnswers() {
+        // The system check answers no to every name, as it would on a driver that exposes neither sysfs entry.
+        val radio = SlowRadio(failures = 0, attemptMs = 0)
+        var own = false
+        var other = true
+        run(radio) {
+            own = it.backend().wifiInterfaceExists(radio.startedOn!!)
+            other = it.backend().wifiInterfaceExists("wlan9")
+        }
+        assertTrue(own)
+        assertFalse(other)
     }
 
     @Test fun onLinuxOnlyAWirelessInterfaceCountsAsAWifiInterface() {

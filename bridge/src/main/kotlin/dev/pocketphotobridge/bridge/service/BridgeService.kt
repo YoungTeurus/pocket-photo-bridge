@@ -141,6 +141,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     fun run() {
         val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
         val address = startSetup(initialInterface)
+        setupInterface = initialInterface
         // The setup window counts from the moment the hotspot is up, however many attempts that took.
         policy.beginWindow(monotonicNow())
         server = SetupServer(address, credentials.adminPassword, backend()).also { it.start() }
@@ -163,6 +164,9 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             diagnostics.emit("SERVICE_STOPPED")
         }
     }
+
+    /** The interface the setup hotspot is up on. Serving the page proves it, so a save keeps it even if the system check says no. */
+    @Volatile private var setupInterface: String? = null
 
     /** A slow radio cold start is retried; the unit restarts the process after the limit. */
     private fun startSetup(wifiInterface: String): InetSocketAddress {
@@ -215,7 +219,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             configStore.save(config); configuration.set(config)
             diagnostics.emit("SERVICE_CONFIG_SAVED")
         }
-        override fun wifiInterfaceExists(name: String) = devices.wifiInterfaceExists(name)
+        override fun wifiInterfaceExists(name: String) = name == setupInterface || devices.wifiInterfaceExists(name)
         override fun startOperation() {
             check(!pairing.pending) { "PAIRING_IN_PROGRESS" }
             check(requiredConfiguration().autoPrintEnabled) { "AUTOMATIC_PRINTING_DISABLED" }
