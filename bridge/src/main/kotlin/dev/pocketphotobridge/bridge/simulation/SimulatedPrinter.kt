@@ -31,7 +31,8 @@ class SimulationClock {
 }
 
 /** Parses actual encrypted protocol traffic, but never connects to radios or prints. */
-class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE,
+/** [refusalCode] is the negative error code a [PrinterFault.REFUSE_SUBMIT] printer answers print_job with. */
+class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE, private val refusalCode: Long = PrinterSession.BUSY_CODE,
     private val crash: () -> Unit = { throw SimulatedPowerLoss() }) : PrinterConnector {
     var submissions: Int = 0
         private set
@@ -39,7 +40,7 @@ class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE,
         private set
     var uploadedFrames: Int = 0
         private set
-    /** print_job requests answered with the busy error; they create no job. */
+    /** print_job requests answered with [refusalCode]; they create no job. */
     var refusals: Int = 0
         private set
     private var uploaded: ByteArray? = null
@@ -128,7 +129,7 @@ class SimulatedPrinter(private val fault: PrinterFault = PrinterFault.NONE,
                     if (fault == PrinterFault.REFUSE_SUBMIT) {
                         cleaned = false
                         refusals++
-                        return enqueue(id, "{\"id\":$id,\"error\":{\"code\":${PrinterSession.BUSY_CODE}}}")
+                        return enqueue(id, "{\"id\":$id,\"error\":{\"code\":$refusalCode}}")
                     }
                     job = Job(nextJobId++, size.toInt())
                     cleaned = false

@@ -35,7 +35,7 @@ object SimulationRunner {
             else -> PrinterFault.NONE
         }
         val camera = SimulatedSony(source, cameraFault)
-        val printer = SimulatedPrinter(printerFault, crash)
+        val printer = SimulatedPrinter(printerFault, crash = crash)
         val clock = SimulationClock()
         fun coordinator(journal: FileBridgeJournal, sony: SimulatedSony = camera, xiaomi: SimulatedPrinter = printer) =
             PrintCoordinator(sony, xiaomi, JvmPrintImagePreparer(), journal, stateDir.resolve("cache"),

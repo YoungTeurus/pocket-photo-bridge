@@ -5,6 +5,7 @@ import dev.pocketphotobridge.bridge.linux.LinuxRadioFailure
 import dev.pocketphotobridge.printer.PrintJobGuard
 import dev.pocketphotobridge.printer.PrinterDiagnostic
 import dev.pocketphotobridge.printer.PrinterFailure
+import dev.pocketphotobridge.printer.PrinterFailureCode
 import dev.pocketphotobridge.printer.PrinterImageLayout
 import dev.pocketphotobridge.printer.PrinterSession
 import dev.pocketphotobridge.printer.PrinterStage
@@ -16,7 +17,8 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 enum class ServiceState { WAITING_CAMERA, RECEIVING, QUEUED, WAITING_PRINTER, PRINTING, PRINTED, NEEDS_ATTENTION, STATE_ERROR }
-data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null) {
+/** [dropped] counts photos forgotten after a printer refusal since the last successful print. */
+data class ServiceSnapshot(val state: ServiceState, val queued: Int, val category: String? = null, val dropped: Int = 0) {
     /** The print step failed: the printer was unreachable, busy or refusing. An empty queue or a job needing attention is not a failure. */
     val printAttemptFailed get() = state == ServiceState.WAITING_PRINTER
     val captureStep get() = when {
@@ -52,7 +54,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             journal.resolve(reservation)
             journalHash = readJournalHash()
         }
-        // Only this unattended service retries a busy refusal; the journal's own guard keeps suppressing it.
+        // Only this unattended service forgets a refused photo; the journal's own guard keeps suppressing it.
         override fun release(reservation: String) {
             checkJournalDisk()
             journal.withdraw(reservation)
@@ -68,6 +70,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
     private var failed = false
     private var current = ServiceSnapshot(ServiceState.WAITING_CAMERA, queue.size)
     private var retries = 0
+    private var dropped = 0
     private val seriesRefusals = mutableSetOf<Long>()
 
     init {
@@ -162,7 +165,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
             if (retrying) attempts.hold()
             result(ServiceState.WAITING_PRINTER); emit("BRIDGE_PRINTER_CONNECTING")
             var printingReported = false
-            printer.connect().use { transport ->
+            try { printer.connect().use { transport ->
                 val progress: (PrinterDiagnostic) -> Unit = { diagnostic ->
                     if (diagnostic.stage in PROGRESS) emit("PRINTER_${diagnostic.stage.name}")
                     if (diagnostic.stage == PrinterStage.SUBMIT_REFUSED) { refusal = diagnostic.code; emit(diagnostic.safeText()) }
@@ -176,8 +179,17 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
                     }
                 }
                 PrinterSession(transport, token(), progress, now, pause).use { it.print(prepared, guard) }
+            } } catch (rejected: PrinterFailure) {
+                // The guard already forgot the refused photo; dropping it after that lets the camera send it again.
+                if (rejected.code == PrinterFailureCode.JOB_REJECTED && refusal != null) {
+                    queue.remove(entry)
+                    dropped++
+                    emit("BRIDGE_QUEUE_RECONCILED count=1")
+                }
+                throw rejected
             }
             queue.remove(entry)
+            dropped = 0
             return result(ServiceState.PRINTED)
         } catch (failure: Exception) {
             if (failure is InterruptedException) Thread.currentThread().interrupt()
@@ -252,7 +264,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         else -> ServiceState.WAITING_CAMERA
     }
     private fun result(state: ServiceState, category: String? = null): ServiceSnapshot {
-        val next = ServiceSnapshot(state, queue.size, category)
+        val next = ServiceSnapshot(state, queue.size, category, dropped)
         // An unchanged state is not re-emitted, so idle hours cannot evict the run.
         if (next == current) return current
         current = next

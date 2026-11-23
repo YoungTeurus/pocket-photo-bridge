@@ -240,6 +240,31 @@ class AutonomousBridgeTest {
         }
     }
 
+    @Test fun aRefusalWithAnotherCodeDropsThePhotoSoSendingItAgainPrintsItOnce() = root { state ->
+        var printer = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT, refusalCode = -8100)
+        val logs = mutableListOf<String>()
+        val camera = CameraWifiConnector { SimulatedSony(photo()).connect(it) }
+        bridge(state, camera, PrinterConnector { printer.connect() }, report = logs::add).use {
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("selected")).captureStep)
+            val refused = it.printNext()
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 0, "JOB_REJECTED", dropped = 1), refused)
+            assertTrue(refused.printAttemptFailed)
+            assertEquals(refused, it.snapshot())
+            assertTrue(imageFiles(state).isEmpty())
+            assertEquals(1, printer.refusals); assertEquals(0, printer.submissions)
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("again")).captureStep)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_PRINTER, 0, "JOB_REJECTED", dropped = 2), it.printNext())
+            printer = SimulatedPrinter()
+            assertEquals(CaptureStep.NEW_PHOTO, it.capture(SelectionTrigger("third")).captureStep)
+            assertEquals(ServiceSnapshot(ServiceState.PRINTED, 0), it.printNext())
+            assertEquals(CaptureStep.DUPLICATE, it.capture(SelectionTrigger("fourth")).captureStep)
+            assertEquals(ServiceSnapshot(ServiceState.WAITING_CAMERA, 0), it.printNext())
+            assertEquals(1, printer.submissions); assertEquals(1, printer.completedJobs)
+        }
+        assertEquals(2, logs.count { it == "PRINTER_SUBMIT_REFUSED code=8100" })
+        assertEquals(2, logs.count { it == "BRIDGE_QUEUE_RECONCILED count=1" })
+    }
+
     @Test fun radioFailuresKeepTheirOwnCategoryInsteadOfIoError() = root { state ->
         val logs = mutableListOf<String>()
         val camera = CameraWifiConnector { throw LinuxRadioFailure(LinuxRadioFailureCode.CAMERA_ROUTE_UNSAFE) }
