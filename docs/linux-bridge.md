@@ -1,6 +1,6 @@
 # Linux portable bridge and pilot service (0.5.0)
 
-Version 0.5.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. The proposed 4 GB board still needs actual hardware validation.
+Version 0.5.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. Earlier 0.5.0 builds were installed and printed on the board; [the Linux field protocol](linux-field-protocol.md) records what was and was not physically validated.
 
 The Sony/printer protocols, bounded JPEG preparation and durable duplicate guard remain shared with the proven Android and separate [Windows live workflow](windows-live.md). Those Windows adapters refuse Linux. The old unsupported `--hardware` command still exits `64`; the Linux pilot runs explicitly with `--service`. Windows/Android physical success is evidence for those workflows and does not establish Linux radio success.
 
@@ -71,6 +71,13 @@ TOML schema or token on the service command line is needed.
 
 The first unconfigured boot stays in a dedicated setup AP; configured reboots
 offer a 60-second setup window. An authenticated interaction holds setup open.
+The 60 seconds are a deliberate deviation from the 30 seconds of the
+[approved MVP 5 design](superpowers/specs/2026-10-12-mvp5-autonomous-linux-design.md),
+whose text is left unchanged: pull request #9 lengthened the window while
+making setup reachable and usable on the Orange Pi, and its regression test
+requires a full sixty-second reachable window, so that there is time to join
+the hotspot and sign in before the board leaves setup. No joining time was
+measured; field session 1 measures power-on to operation.
 The unique SSID starts with `PocketPhoto-`, and only the setup interface
 serves `http://10.212.77.1:8080/`. The hotspot and HTTP listener stop before
 joining the camera network. Reboot to enter setup again. The state root is
@@ -110,10 +117,17 @@ record `SERVICE_CAMERA_PRESENT`, `SERVICE_CAMERA_ABSENT` and
 replaces the MVP 4 rule of waiting for the camera network to disappear, a
 deliberate deviation recorded in [the architecture](architecture.md).
 
-Actual Wi-Fi AP support, hotspot-to-camera transitions, Bluetooth coexistence,
-SPP discovery, headless boot, pairing, permissions, photo selection/re-checks,
-JPEG rendering, printer firmware responses, reconnect, power cuts and battery
-behavior must still be exercised on the Orange Pi and printer. Use a
+On the Orange Pi, earlier 0.5.0 builds (pull request #9) passed the setup AP,
+authenticated setup, installation and upgrade with state preserved, cold boots
+into operation, and two single-photo prints, one after waiting for the printer
+to be switched on. Photo series and re-checks, refused jobs, power cuts during
+receive or printing, the queue count across a reboot (not independently
+observed), SD-card hash comparison, print quality, memory and temperature,
+long-session Bluetooth coexistence and battery behavior are not yet validated.
+Both builds predate later changes such as the `10.212.77.1` hotspot address,
+run headers and the re-check of a still-visible camera. See
+[the Linux field protocol](linux-field-protocol.md) for the recorded results
+and the next session's programme. Use a
 board-supported 64-bit Debian/Ubuntu image; Armbian Community images are not
 certified by this project. Linux ARM64 CI executes the extracted native bundle's
 real JVM simulations and authenticated HTTP server on an ARM64 hosted runner;

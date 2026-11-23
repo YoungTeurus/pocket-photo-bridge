@@ -3,8 +3,10 @@
 The JVM service uses the existing Sony `SonyTransferSession` and Xiaomi
 `PrinterSession`. The Linux layer supplies Wi-Fi attachment, source-bound HTTP
 and a classic RFCOMM byte stream. It does not contain a second camera or printer
-protocol implementation. Linux AP support, pairing, SDP discovery, reconnect and
-physical printing remain **pending Orange Pi validation**.
+protocol implementation. Earlier 0.5.0 builds brought up the setup AP and
+printed two single photos on the Orange Pi, one after the printer was switched
+on; [the Linux field protocol](linux-field-protocol.md) records those results
+and what is not yet validated.
 
 ## NetworkManager and private credentials
 
@@ -147,6 +149,7 @@ On the Orange Pi, verify AP driver support and credentials; the setup listener a
 10.212.77.1; hotspot teardown before camera join; DHCP route discovery with
 `never-default`; Sony transfer using the selected source; actual pairing and SDP
 SPP channel; printer-off/on reconnect; interrupted receive; printer completion;
-and power-order/reboot retention. A successful cloud self-test or a prior Windows
+and power-order/reboot retention. Results and the session programme are kept in
+[the Linux field protocol](linux-field-protocol.md). A successful cloud self-test or a prior Windows
 or Android physical print does not establish Linux radio or physical-print
 success.
