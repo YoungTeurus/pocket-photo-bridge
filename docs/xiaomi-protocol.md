@@ -50,7 +50,7 @@ Pocket Photo Bridge accepts a user-owned token locally on the printer screen and
 - `clean_data {delay_times:0}` without waiting for a nonexistent acknowledgment, then `print_job {copies:1,channel:64,job_type:0,file_size}`.
 - JPEG upload: channel 2, encoding 2, 924 JPEG bytes plus little-endian job id in each encrypted frame; one-based packages and multipart flag. Pacing follows the reference.
 - `confirm_job [job_id]` requires `["OK"]`; `job_info [job_id]` is polled and must explicitly report the same job `finished`. Idle alone is insufficient. `mixed_status` supplies known phases during processing.
-- `-8006` is the reference's `ERR_BUSY`, "busy / not yet ready" ([printer.py at 85335b6](https://github.com/fliptheweb/mi-portable-photo-printer/blob/85335b639f3d818c3fe9a892e328864fc3d37250/mizink/printer.py)). Its `_start_job` retries a `-8006` reply to `print_job` with back-off for up to 30 s, which implies the printer created no job. The bridge sends one `print_job` per session, 300 ms after `clean_data`. On a correlated, well-formed `-8006` reply to `print_job`, the Windows and simulation flows report `BUSY` without retrying and keep the photo suppressed; the autonomous Linux service clears the reservation and the photo's submitted mark and retries the still-queued photo at its back-off. Every refusal is logged as `PRINTER_SUBMIT_REFUSED code=N` (the code's magnitude). No `-8006` reply from the TEJ4007CN has been recorded yet.
+- `-8006` is the reference's `ERR_BUSY`, "busy / not yet ready" ([printer.py at 85335b6](https://github.com/fliptheweb/mi-portable-photo-printer/blob/85335b639f3d818c3fe9a892e328864fc3d37250/mizink/printer.py)). Its `_start_job` retries a `-8006` reply to `print_job` with back-off for up to 30 s, which implies the printer created no job. The bridge sends one `print_job` per session, 300 ms after `clean_data`. On a correlated, well-formed `-8006` reply to `print_job`, the Windows and simulation flows report `BUSY` without retrying and keep the photo suppressed; the autonomous Linux service clears the reservation and the photo's submitted mark and retries the still-queued photo at its back-off. Every refusal is logged as `PRINTER_SUBMIT_REFUSED code=N` (the code's magnitude). No `-8006` reply from the TEJ4007CN has been recorded yet. Other printer faults stop generically; exact paper/cover/battery error-code mappings have not been established for TEJ4007CN. Check the printer physically rather than treating an unknown code as success.
 
 Policy for a correlated, well-formed negative reply to `print_job` (no job was created, so the file upload and `confirm_job` are never sent):
 
@@ -66,7 +66,6 @@ Codes observed in the field (fill in from `PRINTER_SUBMIT_REFUSED code=N` lines 
 | Code | Date | Printer state seen | Notes |
 | --- | --- | --- | --- |
 | _none recorded yet_ | | | |
- Other printer faults stop generically; exact paper/cover/battery error-code mappings have not been established for TEJ4007CN. Check the printer physically rather than treating an unknown code as success.
 
 Connection/read/write/RPC deadlines are bounded, and the protocol's full job deadline is four minutes. Cancellation closes the socket and interrupts upload/polling; no undocumented printer cancel method is sent. A job already accepted by the printer may still produce a sheet.
 
