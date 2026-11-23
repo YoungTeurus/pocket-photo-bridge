@@ -3,8 +3,8 @@
 Description=Pocket Photo Bridge autonomous Linux pilot
 Requires=NetworkManager.service bluetooth.service
 After=NetworkManager.service bluetooth.service
-StartLimitIntervalSec=120
-StartLimitBurst=5
+# Never latch failed: the setup hotspot must come back without a power cycle.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -16,8 +16,9 @@ UMask=0077
 Environment="PATH=/usr/sbin:/usr/bin:/sbin:/bin"
 UnsetEnvironment=JAVA_HOME JDK_HOME JRE_HOME JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS
 ExecStart=/opt/pocket-photo-bridge/current/bin/bridge --service --state-dir=/var/lib/pocket-photo-bridge
+# The process already retries the hotspot for two minutes; systemctl stop is never restarted.
 Restart=on-failure
-RestartSec=5
+RestartSec=30
 TimeoutStopSec=45
 KillSignal=SIGTERM
 NoNewPrivileges=true

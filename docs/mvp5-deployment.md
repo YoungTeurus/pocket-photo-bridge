@@ -188,6 +188,22 @@ again. With **Keep waiting photos across power cycles** off, that reboot
 discards photos still waiting for the printer before setup opens. A single radio alternates between these modes; the setup page is
 unreachable while the bridge is connected to the camera.
 
+If the hotspot cannot start, for example because the Wi-Fi driver is still
+loading after power-on or the radio is blocked, the service tries again 5
+seconds after each failed attempt. It starts no new attempt two minutes after
+the first one (an attempt already running then may finish) and exits with
+`SERVICE_FAILED`; systemd starts it again 30 seconds later, as often as needed,
+so the hotspot appears once the radio works, without a power cycle. The setup
+window counts from the moment the hotspot is up, however long that took. Until
+then nothing prints: operation begins only after setup. A failed attempt is
+logged as `SERVICE_SETUP_FAILED category=<category> count=<n>`, where `n` is the
+number of failed attempts so far in that run; it is written after 1, 2, 4, 8 ...
+failures, whenever the category changes, and once more when the hotspot comes up
+or the run gives up. `sudo systemctl stop` stops the service without a restart.
+Setup refuses to save a Wi-Fi interface the board does not have
+(`WIFI_INTERFACE_NOT_FOUND`) and keeps the configuration saved before, because
+the hotspot itself starts on the saved interface.
+
 For normal use, power on the bridge and printer in either order, then use the
 RX100 VII's selected-photo transfer for one JPEG. The bridge durably stores the
 validated original before acknowledging the camera, prepares the print, and
