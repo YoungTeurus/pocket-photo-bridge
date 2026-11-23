@@ -57,10 +57,18 @@ interface AttemptLog {
     companion object { val NONE = object : AttemptLog { override fun hold() {}; override fun release(keep: Boolean) {} } }
 }
 
+/** What the service drives; after a failed reopen a stand-in reports the state error in its place, never a closed bridge. */
+interface ServiceBridge : AutoCloseable {
+    fun capture(trigger: SelectionTrigger): ServiceSnapshot
+    fun printNext(): ServiceSnapshot
+    fun snapshot(): ServiceSnapshot
+    fun acknowledgeCheckedPrinter(): ServiceSnapshot
+}
+
 class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, private val printer: PrinterConnector,
     private val images: PrintImagePreparer, private val token: () -> String, private val crop: Boolean = false,
     private val report: (String) -> Unit = {}, private val now: () -> Long = { System.nanoTime() / 1_000_000 },
-    private val pause: (Long) -> Unit = { Thread.sleep(it) }, private val attempts: AttemptLog = AttemptLog.NONE) : AutoCloseable {
+    private val pause: (Long) -> Unit = { Thread.sleep(it) }, private val attempts: AttemptLog = AttemptLog.NONE) : ServiceBridge {
     private val queue = DurableCaptureQueue(stateDir)
     private val journal: FileBridgeJournal
     private var journalHash: String? = null
@@ -129,7 +137,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         } catch (_: Exception) { return stateError() }
     }
 
-    @Synchronized fun capture(trigger: SelectionTrigger): ServiceSnapshot {
+    @Synchronized override fun capture(trigger: SelectionTrigger): ServiceSnapshot {
         // A re-check that ends as the last check did leaves none of its lines. Only a check that could repeat
         // is held: a first transfer is written as it happens, so a power cut during it leaves its steps.
         if (lastCapture?.let { it.category != null && it.captureStep != CaptureStep.NEW_PHOTO } == true) attempts.hold()
@@ -196,7 +204,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         }
     }
 
-    @Synchronized fun printNext(): ServiceSnapshot {
+    @Synchronized override fun printNext(): ServiceSnapshot {
         val previous = lastPrint
         val retrying = previous?.state == ServiceState.WAITING_PRINTER && previous.category != null
         var refusal: Long? = null
@@ -264,7 +272,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         return outcome
     }
 
-    @Synchronized fun snapshot(): ServiceSnapshot {
+    @Synchronized override fun snapshot(): ServiceSnapshot {
         try {
             checkState()
             val base = if (journal.unresolved) result(ServiceState.NEEDS_ATTENTION, current.category ?: "UNRESOLVED_JOB")
@@ -273,7 +281,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
         } catch (_: Exception) { return stateError().copy(discardedAtBoot = queue.discardedThisBoot) }
     }
 
-    @Synchronized fun acknowledgeCheckedPrinter(): ServiceSnapshot {
+    @Synchronized override fun acknowledgeCheckedPrinter(): ServiceSnapshot {
         try {
             checkState()
             guard.acknowledgeCheckedPrinter()

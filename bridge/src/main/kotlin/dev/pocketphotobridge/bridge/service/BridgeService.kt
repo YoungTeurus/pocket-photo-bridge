@@ -103,7 +103,9 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         devices.pairPrinter(address)
         printerCache.set(devices.printers())
     }, diagnostics::emit)
-    private var bridge: AutonomousBridge
+    private var bridge: ServiceBridge
+    /** Counted per process run: a state error never ends the process, so it cannot restart and reset the count; per boot would need a new stored marker. */
+    private var reopens = 0
     private var server: SetupServer? = null
     private val loop: ServiceLoop
     private var closed = false
@@ -121,8 +123,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 synchronized(bridgeLock) { bridge.close(); bridge = openBridge() }
                 diagnostics.emit("SERVICE_OPERATION")
             }
-            override fun capture(trigger: SelectionTrigger) = synchronized(bridgeLock) { bridge.capture(trigger) }.captureStep
-            override fun printNext() = synchronized(bridgeLock) { bridge.printNext() }.printStep
+            override fun capture(trigger: SelectionTrigger) = step { it.capture(trigger) }.captureStep
+            override fun printNext() = step { it.printNext() }.printStep
             override fun cameraPresence(scan: Result<Boolean>) = diagnostics.emit(scan.fold(
                 { if (it) "SERVICE_CAMERA_PRESENT" else "SERVICE_CAMERA_ABSENT" },
                 { "SERVICE_CAMERA_WAIT category=${BridgeService.category(it as Exception)}" }))
@@ -137,6 +139,27 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         configuration.get()?.crop ?: false, diagnostics::emit, devices::now, devices::pause, diagnostics).also { bridge ->
             bootId?.let { bridge.beginBoot(it, configuration.get()?.keepQueueAcrossBoots == true) }
         }
+
+    /**
+     * A state error in operation gets one reopen, which re-verifies the state from disk. A failed reopen leaves a stand-in
+     * that reports the state error, so that occurrence gets no other. Never an exit: the unit's restart would loop through setup.
+     */
+    private fun step(action: (ServiceBridge) -> ServiceSnapshot): ServiceSnapshot = synchronized(bridgeLock) {
+        val outcome = action(bridge)
+        if (outcome.state != ServiceState.STATE_ERROR || bridge is StateErrorBridge || reopens >= MAX_STATE_REOPENS) return outcome
+        reopens++
+        try { bridge.close() } catch (_: Exception) { }
+        bridge = try {
+            openBridge().also { reopened ->
+                if (reopened.snapshot().state == ServiceState.STATE_ERROR) { reopened.close(); throw BridgeFailure(BridgeFailureCode.PERSISTENCE_ERROR) }
+                diagnostics.emit("SERVICE_STATE_REOPENED reason=OK count=$reopens")
+            }
+        } catch (failure: Exception) {
+            diagnostics.emit("SERVICE_STATE_REOPENED reason=FAILED category=${BridgeService.category(failure)} count=$reopens")
+            StateErrorBridge(outcome.queued)
+        }
+        outcome
+    }
 
     fun run() {
         val initialInterface = configuration.get()?.wifiInterface ?: System.getenv("POCKET_BRIDGE_WIFI_INTERFACE") ?: "wlan0"
@@ -245,7 +268,19 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     companion object {
         const val SETUP_RETRY_PAUSE_MS = 5_000L
         const val SETUP_RETRY_LIMIT_MS = 120_000L
+        /** Reopens after a runtime state error per process run, one per occurrence. */
+        const val MAX_STATE_REOPENS = 3
     }
+}
+
+/** Stands in after a failed reopen: reports the state error and touches no storage. */
+private class StateErrorBridge(queued: Int) : ServiceBridge {
+    private val error = ServiceSnapshot(ServiceState.STATE_ERROR, queued, "PERSISTENCE_ERROR")
+    override fun capture(trigger: SelectionTrigger) = error
+    override fun printNext() = error
+    override fun snapshot() = error
+    override fun acknowledgeCheckedPrinter() = error
+    override fun close() { }
 }
 
 /** Only fixed codes and counts enter disk/web reports. Bootstrap credentials have a separate output path. */
@@ -374,7 +409,7 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
             setOf("CAMERA_ACK_PENDING", "QUEUE_FULL", "DUPLICATE_SUPPRESSED", "NATIVE_UNAVAILABLE")
         private val STAGES = setOf("DIAGNOSTIC_REDACTED", "SIMULATION_ONLY", "NO_PHYSICAL_PRINT", "LINUX_HARDWARE_VALIDATION_PENDING",
             "SERVICE_FAILED", "SERVICE_SETUP", "SERVICE_SETUP_FAILED", "SERVICE_OPERATION", "SERVICE_STOPPED", "SERVICE_CAMERA_WAIT", "SERVICE_CAMERA_PRESENT", "SERVICE_CAMERA_ABSENT",
-            "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_PAIRING_STARTED",
+            "SERVICE_CONFIG_SAVED", "SERVICE_RADIO_CLEANUP_FAILED", "SERVICE_STATE_REOPENED", "SERVICE_PAIRING_STARTED",
             "SERVICE_PAIRING_FINISHED", "SERVICE_PAIRING_FAILED", "BRIDGE_CAMERA_CONNECTING",
             "BRIDGE_IMAGE_PREPARING", "BRIDGE_PRINTER_CONNECTING", "BRIDGE_BOOT_QUEUE_DISCARDED", "BRIDGE_QUEUE_RECONCILED", "LINUX_SETUP_STARTED", "LINUX_SETUP_STOPPED",
             "LINUX_CAMERA_ACTIVATED", "LINUX_CAMERA_ACTIVATION_FAILED", "LINUX_CAMERA_CONNECTED", "LINUX_PRINTER_PAIRED", "LINUX_SPP_DISCOVERY_START", "LINUX_SPP_DISCOVERED") +
