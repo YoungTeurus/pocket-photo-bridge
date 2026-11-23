@@ -2,7 +2,7 @@ package dev.pocketphotobridge.bridge.service
 
 import dev.pocketphotobridge.bridge.*
 import dev.pocketphotobridge.bridge.images.JvmPrintImagePreparer
-import dev.pocketphotobridge.bridge.simulation.SIMULATION_TOKEN
+import dev.pocketphotobridge.bridge.simulation.*
 import dev.pocketphotobridge.sony.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -10,9 +10,9 @@ import java.nio.file.Files
 
 class SimulatedServiceDevicesTest {
     private fun open(devices: SimulatedServiceDevices, images: PrintImagePreparer = JvmPrintImagePreparer(),
-        camera: CameraWifiConnector = CameraWifiConnector { devices.camera(devices.configuration, it) }) =
-        AutonomousBridge(Files.createTempDirectory("service-series-"), camera,
-            PrinterConnector { devices.printer(devices.configuration) }, images, { SIMULATION_TOKEN },
+        camera: CameraWifiConnector = CameraWifiConnector { devices.camera(devices.configuration, it) },
+        printer: PrinterConnector = PrinterConnector { devices.printer(devices.configuration) }) =
+        AutonomousBridge(Files.createTempDirectory("service-series-"), camera, printer, images, { SIMULATION_TOKEN },
             now = devices.clock::now, pause = devices.clock::pause)
 
     /** The service's own loop around a real bridge; [duringPrint] runs inside each print step before the print. */
@@ -90,6 +90,29 @@ class SimulatedServiceDevicesTest {
         }
         assertEquals(2, devices.safeCounts()["captured"])
         assertEquals(2, devices.safeCounts()["completed"])
+    }
+
+    @Test fun aPhotoDroppedAfterARefusalIsNotFetchedAgainWhileTheCameraStaysButIsAcceptedWhenSentAgain() {
+        val devices = SimulatedServiceDevices()
+        devices.simulationAction("select-photo")
+        var printer = SimulatedPrinter(PrinterFault.REFUSE_SUBMIT, refusalCode = -8100)
+        val refusing = printer
+        open(devices, printer = PrinterConnector { printer.connect() }).use { bridge ->
+            val service = Service(devices, bridge)
+            service.passes(1)
+            assertEquals(1, bridge.snapshot().dropped)
+            printer = SimulatedPrinter()
+            service.passes(1, stepMs = ServiceLoop.FIRST_RECHECK_MS)
+            assertEquals(listOf(CaptureStep.NEW_PHOTO, CaptureStep.DUPLICATE), service.steps)
+            assertEquals(0, printer.submissions)
+            // The camera network goes away; the owner then sends the same photo again.
+            service.time += 1_000; service.loop.tick(service.time, true, false)
+            devices.simulationAction("duplicate-photo")
+            service.passes(1)
+            assertEquals(CaptureStep.NEW_PHOTO, service.steps.last())
+        }
+        assertEquals(1, refusing.refusals)
+        assertEquals(1, printer.submissions); assertEquals(1, printer.completedJobs)
     }
 
     @Test fun aSelectionIsVisibleOnTheNextScanAndStaysOfferedAfterItsTransfer() {
