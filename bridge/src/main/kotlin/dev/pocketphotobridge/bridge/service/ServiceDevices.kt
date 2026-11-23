@@ -33,7 +33,6 @@ class SimulatedServiceDevices : ServiceDevices {
         javaClass.getResourceAsStream("/simulation/$name")!!.use { it.readBytes() }
     }
     private var selected = false
-    private var absencePending = false
     private var index = -1
     private var interrupted = false
     private val printers = mutableListOf(SimulatedPrinter(PrinterFault.OFFLINE))
@@ -41,10 +40,8 @@ class SimulatedServiceDevices : ServiceDevices {
 
     override fun startSetup(credentials: SetupCredentials, wifiInterface: String) = InetSocketAddress("127.0.0.1", 8080)
     override fun stopSetup() { }
-    @Synchronized override fun cameraPresent(configuration: ServiceConfiguration): Boolean {
-        if (absencePending) { absencePending = false; return false }
-        return selected
-    }
+    /** Like the camera, the network stays up after a transfer and keeps offering the last selection. */
+    @Synchronized override fun cameraPresent(configuration: ServiceConfiguration) = selected
     @Synchronized override fun camera(configuration: ServiceConfiguration, trigger: SelectionTrigger): CameraLink {
         if (!selected) throw BridgeFailure(BridgeFailureCode.CAMERA_OFFLINE)
         val device = SimulatedSony(fixtures[index.coerceAtLeast(0)], if (interrupted) SonyFault.INTERRUPTED else SonyFault.NONE)
@@ -53,7 +50,7 @@ class SimulatedServiceDevices : ServiceDevices {
         val link = device.connect(trigger)
         return CameraLink(link.endpoint, link.transport) {
             link.close()
-            synchronized(this) { if (device.completedTransfers > 0 || broken) selected = false }
+            synchronized(this) { if (broken) selected = false }
         }
     }
     @Synchronized override fun printer(configuration: ServiceConfiguration) = printers.last().connect()
@@ -70,7 +67,6 @@ class SimulatedServiceDevices : ServiceDevices {
             "uncertain-print" -> printers += SimulatedPrinter(PrinterFault.DROP_AFTER_SUBMIT)
             else -> throw BridgeFailure(BridgeFailureCode.ARGUMENT_ERROR)
         }
-        if (action in setOf("select-photo", "duplicate-photo", "interrupted-download")) absencePending = true
         if (printers.size > 256 || cameras.size > 256) throw BridgeFailure(BridgeFailureCode.IO_ERROR)
     }
     @Synchronized override fun safeCounts(): Map<String, Any> = mapOf("prints" to printers.sumOf { it.submissions },
