@@ -18,7 +18,11 @@ stay available after CI artifacts expire. Each build names its source commit as
 the diagnostics header and the setup page's `build` field. Earlier 0.5.0 builds
 printed two single photos on the Orange Pi;
 [the Linux field protocol](docs/linux-field-protocol.md) records what is and is
-not validated there.
+not validated there. **Bridge 0.6.0** prepares that service for unattended use:
+diagnostics kept across restarts, a busy or refusing printer, several photos per
+power-on, and recovery without SSH (the setup page always opens and says why
+nothing prints, the hotspot start is retried, a stop takes the radio down).
+None of 0.6.0 has been validated on the board yet.
 
 ## Roadmap
 
@@ -68,15 +72,15 @@ The first tablet experiment on Android API 36 confirmed image preparation and an
 
 ## MVP 4: run on Windows without compiling
 
-The **headless bridge 0.5.0** is separate from the unchanged **Android 0.2.2** application. Synthetic Sony SOAP/HTTP selection and Xiaomi encrypted byte-stream devices exercise the real protocol sessions through the same `PrintCoordinator`. The suite covers normal printing, connection failures, missing/partial selections, busy/offline printer, lost completion, duplicates, restart and checked-printer recovery. A separate-process power-cut experiment proves the persisted unknown-outcome gate. Simulation consumes no physical paper and uses only project-generated photos and a public synthetic fixture key.
+The **headless bridge 0.6.0** is separate from the unchanged **Android 0.2.2** application. Synthetic Sony SOAP/HTTP selection and Xiaomi encrypted byte-stream devices exercise the real protocol sessions through the same `PrintCoordinator`. The suite covers normal printing, connection failures, missing/partial selections, busy/offline printer, lost completion, duplicates, restart and checked-printer recovery. A separate-process power-cut experiment proves the persisted unknown-outcome gate. Simulation consumes no physical paper and uses only project-generated photos and a public synthetic fixture key.
 
 For **real Windows camera/printer testing**, launch **WindowsLive.cmd** from the same portable folder. This adds manual Sony Wi-Fi association, paired Xiaomi Bluetooth Classic/SPP selection, hidden token input, receive-only/status-only probes and a one-copy print requiring the word PRINT. The user confirmed Windows Sony receive/save with 0.4.1 and the complete camera-to-printer flow with 0.4.3 on the tested setup. Version 0.4.2 rotates landscape photos to portrait paper after EXIF correction and adds Bluetooth provider compatibility and native error diagnostics. See [the real-device procedure and hardware result](docs/windows-live.md). Earlier 0.5.0 builds printed two single photos on the Orange Pi; [the Linux field protocol](docs/linux-field-protocol.md) records what is and is not validated.
 
 Version **0.4.3** fixes native error capture: the 0.4.2 printer report stopped at connect with an incorrectly zero-valued error. The adapter now reads JNA's saved per-thread error immediately, so an in-progress connect/read/write remains retryable within its existing deadline. The packaged Windows native check also verifies a real failed-socket error without a radio or print. The subsequent user retest captured normal pending code 10035, completed the connection, uploaded the prepared photo and reached `PRINTER_PRINT_FINISHED` / `BRIDGE_PRINTED`.
 
 1. Open [Actions → Headless bridge](https://github.com/YoungTeurus/pocket-photo-bridge/actions/workflows/bridge.yml) and a successful run for this implementation.
-2. Download `pocket-photo-bridge-windows-x64-0.5.0` and extract GitHub's outer ZIP.
-3. Extract the inner `PocketPhotoBridge-0.5.0-windows-x64.zip`, keep its complete folder together, then double-click **PocketPhotoBridge.exe** for the protocol suite or **WindowsServiceSimulation.cmd** for the automatic service and setup page.
+2. Download `pocket-photo-bridge-windows-x64-0.6.0` and extract GitHub's outer ZIP.
+3. Extract the inner `PocketPhotoBridge-0.6.0-windows-x64.zip`, keep its complete folder together, then double-click **PocketPhotoBridge.exe** for the protocol suite or **WindowsServiceSimulation.cmd** for the automatic service and setup page.
 4. Expect `SIMULATION_ONLY`, `NO_PHYSICAL_PRINT` and `SIMULATION_SUITE_PASS checks=15`. Send back `%LOCALAPPDATA%\PocketPhotoBridge\simulation\diagnostics.txt` if a check fails; it contains fixed stages/counts and no identities, tokens, fingerprints or photo bytes.
 
 The package contains the EXE **and a bundled Java runtime**, including Java desktop imaging. Explicit `--simulate`, `--simulate-all`, `--simulate-failure=<scenario>` and `--help` commands also work in PowerShell. Repeating an ordinary simulation on the same state suppresses its already-consumed selection. Manual acknowledgement clears uncertainty only and never replays its photo. A known rejected submission is conservatively suppressed too; intentional reprinting is outside this milestone. The autonomous Linux service differs: a job the printer refuses as busy (`-8006`) keeps its photo queued and is retried, and a job refused with any other code drops its photo so it can be sent again from the camera after the bridge has seen the camera's network go away; the Windows and simulation flows still suppress both.

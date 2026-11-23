@@ -1,4 +1,4 @@
-# Pocket Photo Bridge 0.5.0: service simulation and Linux pilot
+# Pocket Photo Bridge 0.6.0: service simulation and Linux pilot
 
 The portable downloads contain the application and Java 17 runtime. You do not
 need a JDK, Gradle, Android SDK, or a compiler on Windows or the bridge board.
@@ -15,16 +15,16 @@ successful boot does not establish working Wi-Fi AP/Bluetooth support.
 
 ## Download and run the Windows simulation
 
-1. In this repository's **Actions → Headless bridge**, open a successful 0.5.0
-   run and download `pocket-photo-bridge-windows-x64-0.5.0`.
+1. In this repository's **Actions → Headless bridge**, open a successful 0.6.0
+   run and download `pocket-photo-bridge-windows-x64-0.6.0`.
 2. Extract GitHub's outer artifact ZIP. It contains
-   `PocketPhotoBridge-0.5.0-windows-x64.zip` and its `.zip.sha256` file. In
+   `PocketPhotoBridge-0.6.0-windows-x64.zip` and its `.zip.sha256` file. In
    PowerShell, compare the two SHA256 values before extracting the inner ZIP:
 
    ```powershell
-   Get-FileHash .\PocketPhotoBridge-0.5.0-windows-x64.zip -Algorithm SHA256
-   Get-Content .\PocketPhotoBridge-0.5.0-windows-x64.zip.sha256
-   Expand-Archive .\PocketPhotoBridge-0.5.0-windows-x64.zip .\bridge-0.5.0
+   Get-FileHash .\PocketPhotoBridge-0.6.0-windows-x64.zip -Algorithm SHA256
+   Get-Content .\PocketPhotoBridge-0.6.0-windows-x64.zip.sha256
+   Expand-Archive .\PocketPhotoBridge-0.6.0-windows-x64.zip .\bridge-0.6.0
    ```
 
 3. Open the extracted `PocketPhotoBridge` folder and double-click
@@ -69,27 +69,27 @@ use the authenticated setup page described below.
    A supported Wi-Fi AP interface and Bluetooth Classic adapter are required.
 2. Open this repository's
    [Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases),
-   choose the release (tag `v0.5.0` for this version) and download
-   `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz` and its `.tar.gz.sha256` file.
+   choose the release (tag `v0.6.0` for this version) and download
+   `PocketPhotoBridge-0.6.0-linux-arm64.tar.gz` and its `.tar.gz.sha256` file.
    Releases do not expire; a build from an untagged branch is still available
-   as the `pocket-photo-bridge-linux-arm64-0.5.0` artifact of a **Headless
+   as the `pocket-photo-bridge-linux-arm64-0.6.0` artifact of a **Headless
    bridge** run for 30 days (extract GitHub's outer ZIP). The checksum detects
-   transfer corruption only; the bundle's `BUILD` file (`0.5.0+<commit>`) names
+   transfer corruption only; the bundle's `BUILD` file (`0.6.0+<commit>`) names
    the source commit. The Linux x64 package is for an x64 machine; do not
    install it on ARM64.
 3. In Windows PowerShell, replace `YOUR_USER@BOARD_LAN_IP` with your board's SSH
    account and address, then copy the two files:
 
    ```powershell
-   scp .\PocketPhotoBridge-0.5.0-linux-arm64.tar.gz .\PocketPhotoBridge-0.5.0-linux-arm64.tar.gz.sha256 YOUR_USER@BOARD_LAN_IP:~/
+   scp .\PocketPhotoBridge-0.6.0-linux-arm64.tar.gz .\PocketPhotoBridge-0.6.0-linux-arm64.tar.gz.sha256 YOUR_USER@BOARD_LAN_IP:~/
    ssh -t YOUR_USER@BOARD_LAN_IP
    ```
 
 4. In that interactive SSH session, verify and install:
 
    ```bash
-   sha256sum -c PocketPhotoBridge-0.5.0-linux-arm64.tar.gz.sha256
-   tar -xzf PocketPhotoBridge-0.5.0-linux-arm64.tar.gz
+   sha256sum -c PocketPhotoBridge-0.6.0-linux-arm64.tar.gz.sha256
+   tar -xzf PocketPhotoBridge-0.6.0-linux-arm64.tar.gz
    cd PocketPhotoBridge
    sudo ./deploy/linux/install.sh
    ```
@@ -102,7 +102,7 @@ use the authenticated setup page described below.
    `dpkg-query` reports all of these packages as installed (an upgrade), it
    skips apt, so an upgrade should need no internet uplink (not yet verified on
    the board; see the upgrade steps below). It prints the installed
-   build (`0.5.0+<commit>`) and names its release directory after it.
+   build (`0.6.0+<commit>`) and names its release directory after it.
 
    The dedicated setup AP explicitly disables optional PMF (`pmf=1`) because
    the tested Orange Pi UWE5622 driver cannot initialize that mode. It remains
@@ -280,7 +280,7 @@ Diagnostics contain fixed stage/category/count information.
 
 Each run of the service or of a probe (`--linux-status-only`,
 `--linux-receive-only`) starts with a header line such as
-`Pocket Photo Bridge 0.5.0+1a2b3c4 | headless service run=3 uptime_s=42`: the version and build commit (`dev` for a build made without one),
+`Pocket Photo Bridge 0.6.0+1a2b3c4 | headless service run=3 uptime_s=42`: the version and build commit (`dev` for a build made without one),
 a run counter, and the kernel uptime in whole seconds when the process started
 (omitted where the kernel does not report it). Each event line starts with the
 whole seconds since that start; there is no wall-clock time, because the board

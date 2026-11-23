@@ -1,19 +1,19 @@
-# Linux portable bridge and pilot service (0.5.0)
+# Linux portable bridge and pilot service (0.6.0)
 
-Version 0.5.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. Earlier 0.5.0 builds were installed and printed on the board; [the Linux field protocol](linux-field-protocol.md) records what was and was not physically validated.
+Version 0.6.0 provides native Linux x64 and ARM64 portable bundles, offline simulations, an authenticated setup server, and autonomous Linux pilot adapters. The Orange Pi Zero 2W target needs a **64-bit Linux OS**; an x64 Windows runtime cannot be used there. Earlier 0.5.0 builds were installed and printed on the board; [the Linux field protocol](linux-field-protocol.md) records what was and was not physically validated.
 
 The Sony/printer protocols, bounded JPEG preparation and durable duplicate guard remain shared with the proven Android and separate [Windows live workflow](windows-live.md). Those Windows adapters refuse Linux. The old unsupported `--hardware` command still exits `64`; the Linux pilot runs explicitly with `--service`. Windows/Android physical success is evidence for those workflows and does not establish Linux radio success.
 
 ## Run the offline simulation
 
-Download the ARM64/AArch64 board package `PocketPhotoBridge-0.5.0-linux-arm64.tar.gz`
+Download the ARM64/AArch64 board package `PocketPhotoBridge-0.6.0-linux-arm64.tar.gz`
 and its `.tar.gz.sha256` file from the repository's
 [Releases](https://github.com/YoungTeurus/pocket-photo-bridge/releases) (tag
-`v0.5.0`). The x64 package `pocket-photo-bridge-linux-x64-0.5.0` and untagged
+`v0.6.0`). The x64 package `pocket-photo-bridge-linux-x64-0.6.0` and untagged
 builds are **Headless bridge** Actions artifacts kept for 30 days; extract
 GitHub's outer artifact ZIP to obtain the native portable `.tar.gz` and its
 `.tar.gz.sha256` file. The bundle's `BUILD` file names `version+commit`. These packages include Java 17
-and need no system Java or JDK. The separate `pocket-photo-bridge-jvm-0.5.0`
+and need no system Java or JDK. The separate `pocket-photo-bridge-jvm-0.6.0`
 artifact remains available for developers with their own matching Java runtime.
 
 On Debian/Ubuntu, install the native font dependencies used by headless Java
@@ -22,8 +22,8 @@ desktop imaging. For the ARM64 bundle:
 ```bash
 sudo apt-get update
 sudo apt-get install --no-install-recommends libfreetype6 fontconfig
-sha256sum -c PocketPhotoBridge-0.5.0-linux-arm64.tar.gz.sha256
-tar -xzf PocketPhotoBridge-0.5.0-linux-arm64.tar.gz
+sha256sum -c PocketPhotoBridge-0.6.0-linux-arm64.tar.gz.sha256
+tar -xzf PocketPhotoBridge-0.6.0-linux-arm64.tar.gz
 cd PocketPhotoBridge
 ./runtime/bin/java -version
 ./runtime/bin/java --list-modules | grep -E '^(java.desktop|jdk.httpserver)@'
@@ -60,7 +60,7 @@ Acknowledgement keeps event/photo tombstones and clears only the uncertainty gat
 
 ## Linux autonomous pilot and hardware validation
 
-Use [0.5.0 deployment instructions](mvp5-deployment.md) for Windows SSH transfer,
+Use [0.6.0 deployment instructions](mvp5-deployment.md) for Windows SSH transfer,
 the bundled-runtime installer, private bootstrap credentials, authenticated
 setup, and normal power-order operation. The installer requires NetworkManager,
 BlueZ (including `sdptool`), `libbluetooth3`, `iproute2`, FreeType and fontconfig.
