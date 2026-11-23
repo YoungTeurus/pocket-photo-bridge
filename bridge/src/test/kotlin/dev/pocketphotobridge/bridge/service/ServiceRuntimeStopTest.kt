@@ -19,7 +19,8 @@ import java.util.concurrent.TimeUnit
 
 class ServiceRuntimeStopTest {
     /** A radio whose cleanup notes whether it could run: the bounded command runner refuses an interrupted thread. */
-    private class Radio(private val hotspotFails: Boolean = false, private val quickPauses: Int = 0) : ServiceDevices {
+    private class Radio(private val hotspotFails: Boolean = false, private val quickPauses: Int = 0,
+        private val holdAttempt: Int = 0) : ServiceDevices {
         override val simulation = false
         val attempted = CountDownLatch(1)
         /** Entered by the first retry pause that really waits, after [quickPauses] that do not. */
@@ -30,8 +31,11 @@ class ServiceRuntimeStopTest {
         val holding = CountDownLatch(1)
         @Volatile var holdStopSetup = false
         @Volatile var cleanup: String? = null
+        private var attempts = 0
         override fun startSetup(credentials: SetupCredentials, wifiInterface: String): InetSocketAddress {
             attempted.countDown()
+            // A slow radio cold start: this attempt runs until the stop cancels it.
+            if (++attempts == holdAttempt) holdUntilInterrupted()
             if (hotspotFails) throw LinuxRadioFailure(LinuxRadioFailureCode.COMMAND_FAILED)
             return InetSocketAddress("127.0.0.1", 0)
         }
@@ -160,5 +164,14 @@ class ServiceRuntimeStopTest {
             assertEquals("SERVICE_SETUP_FAILED category=COMMAND_FAILED count=3",
                 file.map { it.substringAfter(' ') }.last { it.startsWith("SERVICE_SETUP_FAILED") })
         }) { _, _ -> radio.pausing.count == 0L }
+    }
+
+    @Test fun aStopDuringAHotspotAttemptIsNotCountedAsAFailedAttempt() {
+        // Three failures, the third due no line of its own, then the stop cancels the fourth attempt while it runs.
+        val radio = Radio(hotspotFails = true, quickPauses = Int.MAX_VALUE, holdAttempt = 4)
+        stopWhen(radio, onDisk = { file ->
+            assertEquals("SERVICE_SETUP_FAILED category=COMMAND_FAILED count=3",
+                file.map { it.substringAfter(' ') }.last { it.startsWith("SERVICE_SETUP_FAILED") })
+        }) { _, _ -> radio.holding.count == 0L }
     }
 }

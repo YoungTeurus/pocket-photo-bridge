@@ -240,6 +240,10 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 if (unreported) report()
                 return address
             } catch (failure: LinuxRadioFailure) {
+                // An attempt the stop cancelled is the stop, not a failed attempt; the count so far is written first.
+                if (failure.code == LinuxRadioFailureCode.CANCELLED && !running.get()) {
+                    diagnostics.release(keep = true); if (unreported) report(); throw failure
+                }
                 // A retry's own lines stay only when it fails differently from the attempt before it.
                 val repeated = failure.code == last
                 diagnostics.release(keep = !repeated)
