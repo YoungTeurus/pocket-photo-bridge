@@ -19,24 +19,34 @@ import java.util.concurrent.TimeUnit
 
 class ServiceRuntimeStopTest {
     /** A radio whose cleanup notes whether it could run: the bounded command runner refuses an interrupted thread. */
-    private class Radio(private val hotspotFails: Boolean) : ServiceDevices {
+    private class Radio(private val hotspotFails: Boolean = false) : ServiceDevices {
         override val simulation = false
         val attempted = CountDownLatch(1)
+        /** Entered by a radio step that holds the radio until the stop's interrupt reaches it. */
+        val holding = CountDownLatch(1)
+        @Volatile var holdStopSetup = false
         @Volatile var cleanup: String? = null
         override fun startSetup(credentials: SetupCredentials, wifiInterface: String): InetSocketAddress {
             attempted.countDown()
             if (hotspotFails) throw LinuxRadioFailure(LinuxRadioFailureCode.COMMAND_FAILED)
             return InetSocketAddress("127.0.0.1", 0)
         }
-        override fun close() {
+        /** Like the radio manager, steps and cleanup share one lock. */
+        @Synchronized override fun close() {
             cleanup = if (Thread.currentThread().isInterrupted) "REFUSED_INTERRUPTED" else "RAN"
         }
-        override fun stopSetup() { }
+        /** Like the bounded command runner: an interrupt cancels the command and stays pending for the caller. */
+        private fun holdUntilInterrupted(): Nothing {
+            holding.countDown()
+            try { Thread.sleep(120_000) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+            throw LinuxRadioFailure(LinuxRadioFailureCode.CANCELLED)
+        }
+        @Synchronized override fun stopSetup() { if (holdStopSetup) holdUntilInterrupted() }
         override fun cameraPresent(configuration: ServiceConfiguration) = false
         override fun camera(configuration: ServiceConfiguration, trigger: SelectionTrigger): CameraLink = throw UnsupportedOperationException()
         override fun printer(configuration: ServiceConfiguration): PrinterTransport = throw UnsupportedOperationException()
         override fun printers() = emptyList<SetupPrinter>()
-        override fun pairPrinter(address: String) = throw UnsupportedOperationException()
+        @Synchronized override fun pairPrinter(address: String) = holdUntilInterrupted()
     }
 
     /** Starts the service, waits for [ready], stops it as a termination signal does and checks what the stop left behind. */
@@ -68,16 +78,40 @@ class ServiceRuntimeStopTest {
         } finally { root.toFile().deleteRecursively() }
     }
 
+    private fun setupServed(diagnostics: ServiceDiagnostics) = diagnostics.events().any { it.endsWith(" SERVICE_SETUP") }
+
     @Test fun aStopDuringOperationRecordsItAndCleansUpTheRadio() {
-        val radio = Radio(hotspotFails = false)
+        val radio = Radio()
         var started = false
         stopWhen(radio) { runtime, diagnostics ->
-            if (!started && diagnostics.events().any { it.endsWith(" SERVICE_SETUP") }) {
+            if (!started && setupServed(diagnostics)) {
                 started = true
                 runtime.backend().saveConfig(SimulatedServiceDevices().configuration)
                 runtime.backend().startOperation()
             }
             diagnostics.events().any { it.endsWith(" SERVICE_OPERATION") }
+        }
+    }
+
+    @Test fun aRadioStepCancelledByTheStopLeavesTheInterruptPendingAndTheCleanupStillRuns() {
+        val radio = Radio().apply { holdStopSetup = true }
+        var started = false
+        stopWhen(radio) { runtime, diagnostics ->
+            if (!started && setupServed(diagnostics)) {
+                started = true
+                runtime.backend().saveConfig(SimulatedServiceDevices().configuration)
+                runtime.backend().startOperation()
+            }
+            radio.holding.count == 0L
+        }
+    }
+
+    @Test fun aStopDuringPrinterPairingStillCleansUpTheRadioWithinTheWait() {
+        val radio = Radio()
+        var started = false
+        stopWhen(radio) { runtime, diagnostics ->
+            if (!started && setupServed(diagnostics)) { started = true; runtime.backend().pairPrinter("02:00:00:00:00:01") }
+            radio.holding.count == 0L
         }
     }
 
