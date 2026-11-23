@@ -162,7 +162,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         }
     }
 
-    private fun backend() = object : SetupBackend {
+    internal fun backend() = object : SetupBackend {
         override fun status(): Map<String, Any> {
             val snapshot = synchronized(bridgeLock) { bridge.snapshot() }
             return linkedMapOf<String, Any>("build" to BridgeCli.BUILD, "mode" to if (loop.operating) "OPERATION" else "SETUP",
