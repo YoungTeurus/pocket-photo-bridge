@@ -133,7 +133,7 @@ class AutonomousBridge(stateDir: Path, private val camera: CameraWifiConnector, 
                     emit("SONY_" + it.safeText())
                 }, validateJpeg = { source ->
                     checkActive()
-                    images.validateSource(source)
+                    // A repeat is recognised without decoding; preparation decodes and validates a new source.
                     val fingerprint = DurableCaptureQueue.fingerprint(source.toPath())
                     if (queue.contains(fingerprint) || journal.wasSubmitted(fingerprint) || fingerprint in droppedPhotos) duplicate = true
                     else {
