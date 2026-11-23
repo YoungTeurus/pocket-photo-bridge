@@ -36,16 +36,17 @@ class ServiceLoop(private val policy: BootModePolicy, private val clock: () -> L
     private var printPause = 2_000L
     private var recheckPause = FIRST_RECHECK_MS
 
-    fun tick(now: Long, enabled: Boolean, cameraAvailable: Boolean) {
+    /** [cameraAvailable] is null when the scan failed: unknown, so neither a check nor a rearm; the print step still runs. */
+    fun tick(now: Long, enabled: Boolean, cameraAvailable: Boolean?) {
         if (!operating) {
             if (!policy.shouldOperate(now, enabled)) return
             actions.enterOperation()
             operating = true
         }
         if (!enabled) return
-        if (!cameraAvailable) {
+        if (cameraAvailable == false) {
             present = false; recheck = false; printed = false; nextCapture = 0; recheckPause = FIRST_RECHECK_MS
-        } else {
+        } else if (cameraAvailable == true) {
             if (!present) { epoch = Math.addExact(epoch, 1); present = true }
             // A print is a blind window: whatever the camera offered meanwhile is fetched right after it.
             if (now >= nextCapture || recheck && printed) {

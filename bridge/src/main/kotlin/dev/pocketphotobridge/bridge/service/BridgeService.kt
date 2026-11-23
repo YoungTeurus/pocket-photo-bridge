@@ -148,15 +148,15 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
         val worker = Thread.currentThread()
         val shutdown = Thread({ running.set(false); worker.interrupt() }, "bridge-shutdown")
         Runtime.getRuntime().addShutdownHook(shutdown)
-        var lastPresence = false
         try {
             while (running.get() && !worker.isInterrupted) {
                 val config = configuration.get()
-                if (loop.operating && config != null) {
-                    try { lastPresence = devices.cameraPresent(config) }
-                    catch (failure: Exception) { diagnostics.emit("SERVICE_CAMERA_WAIT category=${BridgeService.category(failure)}") }
-                }
-                loop.tick(monotonicNow(), config?.autoPrintEnabled == true && !pairing.pending, lastPresence)
+                // A failed scan is unknown, never a stale earlier result.
+                val presence = if (loop.operating && config != null) {
+                    try { devices.cameraPresent(config) }
+                    catch (failure: Exception) { diagnostics.emit("SERVICE_CAMERA_WAIT category=${BridgeService.category(failure)}"); null }
+                } else null
+                loop.tick(monotonicNow(), config?.autoPrintEnabled == true && !pairing.pending, presence)
                 Thread.sleep(1_000)
             }
         } catch (_: InterruptedException) { worker.interrupt() }

@@ -13,9 +13,10 @@ class ServiceLoopTest {
         var printTakesMs = 0L
         val printedAt = mutableListOf<Long>()
         val checkedAt = mutableListOf<Long>()
+        val triggers = mutableListOf<String>()
         var clock = 0L
         override fun enterOperation() { transitions++ }
-        override fun capture(trigger: SelectionTrigger): CaptureStep { captures++; checkedAt += clock; return captureStep }
+        override fun capture(trigger: SelectionTrigger): CaptureStep { captures++; checkedAt += clock; triggers += trigger.id; return captureStep }
         override fun printNext(): PrintStep {
             prints++; printedAt += clock; clock += printTakesMs
             return if (printFails) PrintStep.FAILED else printStep
@@ -122,5 +123,18 @@ class ServiceLoopTest {
         actions.captureStep = CaptureStep.BLOCKED
         loop.runUntil(actions, 431_000, camera = true)
         assertEquals(listOf(0L, 60_000, 180_000, 420_000, 425_000, 430_000), actions.checkedAt)
+    }
+    @Test fun aFailedScanIsUnknownSoTheLoopNeitherChecksNorRearmsButStillPrints() {
+        val actions = Actions(); val policy = BootModePolicy(0); policy.requestOperation()
+        val loop = loop(policy, actions)
+        loop.tick(0, true, true)
+        actions.captureStep = CaptureStep.DUPLICATE
+        while (actions.clock < 100_000) { actions.clock += 1_000; loop.tick(actions.clock, true, null) }
+        assertEquals(listOf(0L), actions.checkedAt)
+        assertEquals(51, actions.prints)
+        // The next successful scan decides: the camera never left, so this is the same selection generation.
+        loop.runUntil(actions, 101_000, camera = true)
+        assertEquals(listOf(0L, 101_000), actions.checkedAt)
+        assertEquals(1, actions.triggers.distinct().size)
     }
 }
