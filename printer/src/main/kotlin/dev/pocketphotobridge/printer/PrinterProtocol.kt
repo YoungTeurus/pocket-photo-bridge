@@ -29,6 +29,8 @@ interface PrintJobGuard {
     val unresolved: Boolean
     fun reserve(): String
     fun resolve(reservation: String)
+    /** A refusal proven retryable: clears the reservation; guards that keep suppression treat it as resolve. */
+    fun release(reservation: String) = resolve(reservation)
     fun acknowledgeCheckedPrinter()
 }
 data class PrinterFrame(val channel: Int, val sequence: Long, val body: ByteArray,

@@ -14,11 +14,13 @@ class PrinterSessionTest {
     private class Guard : PrintJobGuard {
         override var unresolved = false
         var reservations = 0
+        val outcomes = mutableListOf<String>()
         override fun reserve(): String {
             if (unresolved) throw PrinterFailure(PrinterFailureCode.UNRESOLVED_JOB)
             unresolved = true; reservations++; return "synthetic-reservation"
         }
-        override fun resolve(reservation: String) { unresolved = false }
+        override fun resolve(reservation: String) { unresolved = false; outcomes += "resolve" }
+        override fun release(reservation: String) { unresolved = false; outcomes += "release" }
         override fun acknowledgeCheckedPrinter() { unresolved = false }
     }
     /** How the final job_info reply arrives when the printer hangs up right after it. */
@@ -26,7 +28,7 @@ class PrinterSessionTest {
     private inner class CameraIndependentPrinter(
         val guard: Guard = Guard(),
         val processing: Boolean = false,
-        val rejection: Boolean = false,
+        val rejectionCode: Long? = null,
         val lostMethod: String? = null,
         val neverFinished: Boolean = false,
         val wrongJob: Boolean = false,
@@ -69,7 +71,7 @@ class PrinterSessionTest {
             }
             val reply = when {
                 malformedError && method == "print_job" -> "{\"id\":$id,\"error\":\"unknown\"}"
-                rejection && method == "print_job" -> "{\"id\":$id,\"error\":{\"code\":-8006}}"
+                rejectionCode != null && method == "print_job" -> "{\"id\":$id,\"error\":{\"code\":$rejectionCode}}"
                 nullError -> "{\"id\":$id,\"error\":null,\"result\":$result}"
                 else -> "{\"id\":$id,\"result\":$result}"
             }
@@ -133,11 +135,30 @@ class PrinterSessionTest {
         assertFalse(printer.guard.unresolved)
     }
     @Test fun knownJobRejectionReleasesGuardWithoutRetry() {
-        val printer = CameraIndependentPrinter(rejection = true)
+        val printer = CameraIndependentPrinter(rejectionCode = -8006)
         fails(PrinterFailureCode.BUSY) { session(printer).print(jpeg(), printer.guard) }
         assertFalse(printer.guard.unresolved)
         assertEquals(1, printer.methods.count { it == "print_job" })
         assertTrue(printer.fileFrames.isEmpty())
+    }
+    @Test fun busyRefusalReleasesTheReservationWhileOtherRefusalsResolveItAndDoubtfulRepliesDoNeither() {
+        val busy = CameraIndependentPrinter(rejectionCode = -8006)
+        val busyEvents = mutableListOf<PrinterDiagnostic>()
+        fails(PrinterFailureCode.BUSY) { session(busy, busyEvents).print(jpeg(), busy.guard) }
+        assertEquals(listOf("release"), busy.guard.outcomes)
+        assertEquals("PRINTER_SUBMIT_REFUSED code=8006", busyEvents.single { it.stage == PrinterStage.SUBMIT_REFUSED }.safeText())
+        val other = CameraIndependentPrinter(rejectionCode = -8100)
+        val otherEvents = mutableListOf<PrinterDiagnostic>()
+        fails(PrinterFailureCode.JOB_REJECTED) { session(other, otherEvents).print(jpeg(), other.guard) }
+        assertEquals(listOf("resolve"), other.guard.outcomes)
+        assertEquals("PRINTER_SUBMIT_REFUSED code=8100", otherEvents.single { it.stage == PrinterStage.SUBMIT_REFUSED }.safeText())
+        for (doubtful in listOf(CameraIndependentPrinter(malformedError = true), CameraIndependentPrinter(lostMethod = "print_job"))) {
+            val events = mutableListOf<PrinterDiagnostic>()
+            try { session(doubtful, events).print(jpeg(), doubtful.guard); fail("Expected a doubtful reply") } catch (_: PrinterFailure) { }
+            assertTrue(doubtful.guard.unresolved)
+            assertEquals(emptyList<String>(), doubtful.guard.outcomes)
+            assertTrue(events.none { it.stage == PrinterStage.SUBMIT_REFUSED })
+        }
     }
     @Test fun lostReservationReplyLeavesUnknownOutcomeAndNeverRetries() {
         val printer = CameraIndependentPrinter(lostMethod = "print_job")
