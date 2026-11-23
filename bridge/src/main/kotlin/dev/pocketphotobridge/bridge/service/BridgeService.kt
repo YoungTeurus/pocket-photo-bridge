@@ -185,6 +185,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
             configStore.save(config); configuration.set(config)
             diagnostics.emit("SERVICE_CONFIG_SAVED")
         }
+        override fun wifiInterfaceExists(name: String) = devices.wifiInterfaceExists(name)
         override fun startOperation() {
             check(!pairing.pending) { "PAIRING_IN_PROGRESS" }
             check(requiredConfiguration().autoPrintEnabled) { "AUTOMATIC_PRINTING_DISABLED" }

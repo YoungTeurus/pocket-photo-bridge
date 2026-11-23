@@ -39,6 +39,8 @@ class SetupServerTest {
         var runs: Map<String, Any> = emptyMap()
         override fun diagnostics(): Map<String, Any> = status() + mapOf("events" to events) + runs
         override fun saveConfig(config: ServiceConfiguration) { if (throwSecret) error("private-token"); saved = config }
+        var interfaces = setOf("wlan0")
+        override fun wifiInterfaceExists(name: String) = name in interfaces
         override fun acknowledgeCheckedPrinter() { acknowledged++ }
         override fun startOperation() { run++ }
         override fun staySetup() { held++ }
@@ -301,6 +303,18 @@ class SetupServerTest {
         assertTrue(backend.saved!!.autoPrintEnabled)
         assertTrue(backend.saved!!.crop)
         assertFalse(client.request("/").body.contains("camera-password"))
+    }
+
+    @Test fun aWifiInterfaceTheBoardDoesNotHaveIsRejectedAndTheSavedConfigurationStays() = server { client, backend, _ ->
+        client.login()
+        val form = mapOf("csrf" to client.csrfPage(), "cameraSsid" to "DIRECT-camera", "cameraPassword" to "camera-password",
+            "printerAddress" to "AA:BB:CC:DD:EE:FF", "printerToken" to "0123456789abcdef01234567", "wifiInterface" to "wlan0")
+        assertEquals(303, client.request("/config", form).code)
+        val stored = backend.saved
+        val rejected = client.request("/config", form + mapOf("cameraSsid" to "DIRECT-other", "wifiInterface" to "wlxtypo9"))
+        assertEquals(400, rejected.code)
+        assertEquals("WIFI_INTERFACE_NOT_FOUND", rejected.body)
+        assertSame(stored, backend.saved)
     }
 
     @Test fun waitingQueueRetentionIsAnUncheckedSavedChoice() = server { client, _, _ ->

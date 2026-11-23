@@ -26,6 +26,8 @@ interface SetupBackend {
     fun configuration(): ServiceConfiguration? = null
     fun diagnostics(): Map<String, Any> = status()
     fun saveConfig(config: ServiceConfiguration)
+    /** Answered by the device layer: a saved interface the board lacks would stop every later setup hotspot. */
+    fun wifiInterfaceExists(name: String): Boolean
     fun acknowledgeCheckedPrinter()
     fun startOperation()
     fun staySetup()
@@ -259,6 +261,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         val config = ServiceConfiguration(form["cameraSsid"].orEmpty(), password, form["printerAddress"].orEmpty(), token,
             form["wifiInterface"] ?: "wlan0", form["autoPrintEnabled"] == "on", form["crop"] == "on",
             form["keepQueueAcrossBoots"] == "on")
+        if (!backend.wifiInterfaceExists(config.wifiInterface)) reject(400, "WIFI_INTERFACE_NOT_FOUND")
         backend.saveConfig(config)
     }
 

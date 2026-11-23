@@ -6,6 +6,7 @@ import dev.pocketphotobridge.bridge.setup.*
 import dev.pocketphotobridge.bridge.simulation.*
 import dev.pocketphotobridge.printer.PrinterTransport
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import java.nio.file.Path
 
 interface ServiceDevices : AutoCloseable {
@@ -17,6 +18,8 @@ interface ServiceDevices : AutoCloseable {
     fun printer(configuration: ServiceConfiguration): PrinterTransport
     fun printers(): List<SetupPrinter>
     fun pairPrinter(address: String)
+    /** Simulated devices have every interface. */
+    fun wifiInterfaceExists(name: String): Boolean = true
     fun simulationAction(action: String) { throw UnsupportedOperationException() }
     fun safeCounts(): Map<String, Any> = emptyMap()
     fun now(): Long = System.nanoTime() / 1_000_000
@@ -106,5 +109,7 @@ class LinuxServiceDevices(private val state: Path, private val report: (String) 
     override fun printer(configuration: ServiceConfiguration) = LinuxPrinterConnector(configuration.printerAddress, report).connect()
     override fun printers() = radio().pairedPrinters().map { SetupPrinter(it.address, it.name) }
     override fun pairPrinter(address: String) = radio().pairPrinter(address)
+    // The configuration pattern admits no path separators, so the name stays one entry under /sys/class/net.
+    override fun wifiInterfaceExists(name: String) = Files.isDirectory(Path.of("/sys/class/net", name))
     override fun close() { manager?.close() }
 }
