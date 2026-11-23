@@ -84,12 +84,14 @@ class LinuxRadioManagerTest {
                 assertTrue("Setup AP pairwise cipher uses CCMP", data.lineSequence().any { it == "pairwise=ccmp;" })
                 assertTrue("Setup AP group cipher uses CCMP", data.lineSequence().any { it == "group=ccmp;" })
                 assertTrue(data.contains("method=shared"))
+                // Off 192.168.50.0/24, the factory LAN of common home routers (#14).
+                assertTrue("Setup AP uses its dedicated subnet", data.lineSequence().any { it == "address1=10.212.77.1/24" })
                 assertFalse(data.contains("autoconnect=true"))
             }
             LinuxCommandResult(0, "")
         }
         val manager = LinuxRadioManager(files, "wlan0", events::add, command, files.resolve("profiles"))
-        assertEquals("192.168.50.1", manager.startSetup("PPB; Test", "private-password").hostAddress)
+        assertEquals("10.212.77.1", manager.startSetup("PPB; Test", "private-password").hostAddress)
         assertTrue(command.calls.all { !it.joinToString().contains("private-password") && !it.joinToString().contains("PPB; Test") })
         assertTrue(events.none { it.contains("private-password") || it.contains("PPB; Test") })
         manager.stopSetup()
