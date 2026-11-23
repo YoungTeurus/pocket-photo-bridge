@@ -216,8 +216,8 @@ window counts from the moment the hotspot is up, however long that took. Until
 then nothing prints: operation begins only after setup. A failed attempt is
 logged as `SERVICE_SETUP_FAILED category=<category> count=<n>`, where `n` is the
 number of failed attempts so far in that run; it is written after 1, 2, 4, 8 ...
-failures, whenever the category changes, and once more when the hotspot comes up
-or the run gives up. `sudo systemctl stop` stops the service without a restart.
+failures, whenever the category changes, and once more when the hotspot comes up,
+the run gives up or a stop arrives. `sudo systemctl stop` stops the service without a restart.
 A stop, including the one every upgrade performs, logs `SERVICE_STOPPED` and
 then takes down the setup hotspot or the camera connection the bridge owns,
 also while the hotspot is still being retried; a printer pairing in progress

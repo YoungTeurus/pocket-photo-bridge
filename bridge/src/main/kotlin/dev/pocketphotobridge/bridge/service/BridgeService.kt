@@ -246,7 +246,8 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
                 if (!repeated || Integer.bitCount(failures) == 1 || giveUp) report()
                 if (giveUp) throw failure
             } finally { diagnostics.release(keep = true) }
-            devices.pause(SETUP_RETRY_PAUSE_MS)
+            // A stop usually lands in the pause, since a blocked radio fails fast; the count so far is written first.
+            try { devices.pause(SETUP_RETRY_PAUSE_MS) } catch (stop: InterruptedException) { if (unreported) report(); throw stop }
         }
     }
 
