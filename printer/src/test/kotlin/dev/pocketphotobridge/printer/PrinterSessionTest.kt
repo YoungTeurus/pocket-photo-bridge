@@ -141,7 +141,7 @@ class PrinterSessionTest {
         assertEquals(1, printer.methods.count { it == "print_job" })
         assertTrue(printer.fileFrames.isEmpty())
     }
-    @Test fun busyRefusalReleasesTheReservationWhileOtherRefusalsResolveItAndDoubtfulRepliesDoNeither() {
+    @Test fun everyRefusalReleasesTheReservationWhileDoubtfulRepliesDoNot() {
         val busy = CameraIndependentPrinter(rejectionCode = -8006)
         val busyEvents = mutableListOf<PrinterDiagnostic>()
         fails(PrinterFailureCode.BUSY) { session(busy, busyEvents).print(jpeg(), busy.guard) }
@@ -150,9 +150,10 @@ class PrinterSessionTest {
         val other = CameraIndependentPrinter(rejectionCode = -8100)
         val otherEvents = mutableListOf<PrinterDiagnostic>()
         fails(PrinterFailureCode.JOB_REJECTED) { session(other, otherEvents).print(jpeg(), other.guard) }
-        assertEquals(listOf("resolve"), other.guard.outcomes)
+        assertEquals(listOf("release"), other.guard.outcomes)
         assertEquals("PRINTER_SUBMIT_REFUSED code=8100", otherEvents.single { it.stage == PrinterStage.SUBMIT_REFUSED }.safeText())
-        for (doubtful in listOf(CameraIndependentPrinter(malformedError = true), CameraIndependentPrinter(lostMethod = "print_job"))) {
+        for (doubtful in listOf(CameraIndependentPrinter(malformedError = true), CameraIndependentPrinter(lostMethod = "print_job"),
+                CameraIndependentPrinter(rejectionCode = 0))) {
             val events = mutableListOf<PrinterDiagnostic>()
             try { session(doubtful, events).print(jpeg(), doubtful.guard); fail("Expected a doubtful reply") } catch (_: PrinterFailure) { }
             assertTrue(doubtful.guard.unresolved)
