@@ -143,6 +143,14 @@ def main():
                     require((value["queued"], value["prints"], value["completed"]) == (queued, prints, completed), name + "_counts_changed")
                     time.sleep(1.0)
 
+            def wait_event(name, fragment, seconds):
+                deadline = time.monotonic() + seconds
+                while time.monotonic() < deadline:
+                    if any(fragment in event for event in json.loads(private_get("/diagnostics")).get("events", [])):
+                        return
+                    time.sleep(1.0)
+                raise RuntimeError(name + "_event_timeout")
+
             initial = status()
             require(initial.get("build") == build, "service_build_mismatch")
             require(json.loads(private_get("/diagnostics")).get("build") == build, "diagnostics_build_mismatch")
@@ -158,13 +166,19 @@ def main():
             post("/simulate", action="select-photo")
             wait_counts("series_retention", queued=2, prints=0, completed=0)
             post("/simulate", action="printer-busy")
-            # Print attempts back off 2, 4 and 8 s apart, so 8 s always include a busy attempt.
-            stable_counts("printer_busy_retention", queued=2, prints=0, completed=0, seconds=8)
+            # A busy attempt must actually happen and keep both photos.
+            wait_event("printer_busy_attempt", " BRIDGE_WAITING_PRINTER queued=2 category=BUSY", PRINTER_RETURN_SECONDS)
+            stable_counts("printer_busy_retention", queued=2, prints=0, completed=0, seconds=4)
             post("/simulate", action="printer-ready")
             wait_counts("printer_ready_completion", queued=0, prints=2, completed=2, seconds=PRINTER_RETURN_SECONDS)
             # Offering the first, already printed photo again; re-checks run at most 10 s apart.
+            captured = status()["captured"]
             post("/simulate", action="select-photo")
-            stable_counts("duplicate_suppression", queued=0, prints=2, completed=2, seconds=12)
+            deadline = time.monotonic() + 15
+            while status()["captured"] <= captured:
+                require(time.monotonic() < deadline, "duplicate_suppression_recheck_timeout")
+                time.sleep(1.0)
+            stable_counts("duplicate_suppression", queued=0, prints=2, completed=2, seconds=4)
             private_get("/diagnostics")
             require(process.poll() is None, "service_exited_during_http_smoke")
             process.terminate()
