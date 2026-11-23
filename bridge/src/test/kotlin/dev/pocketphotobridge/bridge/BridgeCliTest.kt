@@ -47,6 +47,15 @@ class BridgeCliTest {
         assertFalse(report.contains("{\""))
     }
 
+    @Test fun aRefusedSubmissionReportsItsCodeInTheSimulationReport() = root { directory ->
+        val (code, text) = run(directory, "--simulate-failure=refused-submit")
+        assertEquals(2, code)
+        val report = Files.readString(directory.resolve("diagnostics.txt"))
+        for (output in listOf(text, report)) {
+            assertTrue(output.contains("PRINTER_SUBMIT_REFUSED code=8006")); assertFalse(output.contains("DIAGNOSTIC_REDACTED"))
+        }
+    }
+
     @Test fun acknowledgementNeverReplaysUnknownSelection() = root { directory ->
         assertEquals(3, run(directory, "--simulate-failure=dropped-after-submit").first)
         assertEquals(3, run(directory, "--simulate").first)

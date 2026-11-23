@@ -160,6 +160,6 @@ private class SimulationReport(private val output: PrintStream) {
     }
 
     companion object {
-        private val SAFE_LINE = Regex("[A-Z][A-Z0-9_]*( (?:(?:count|checks)=[0-9]+|(?:category|reason)=[A-Z][A-Z0-9_]*))*")
+        private val SAFE_LINE = Regex("[A-Z][A-Z0-9_]*( (?:(?:count|checks)=[0-9]+|code=[0-9]{1,8}|(?:category|reason)=[A-Z][A-Z0-9_]*))*")
     }
 }
