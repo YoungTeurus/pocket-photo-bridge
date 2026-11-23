@@ -18,6 +18,11 @@ class BridgeCliTest {
         return code to bytes.toString("UTF-8")
     }
 
+    @Test fun theFirstLineNamesTheVersionAndTheBuildCommit() = root { directory ->
+        val first = run(directory.resolve("unused"), "--help").second.lineSequence().first()
+        assertTrue(first, Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+\\+([0-9a-f]{7,40}|dev) \\| headless bridge").matches(first))
+    }
+
     @Test fun helpAndHardwareRefusalNeverCreateStateOrReadConfiguration() = root { directory ->
         val state = directory.resolve("unused")
         assertEquals(0, run(state, "--help").first)

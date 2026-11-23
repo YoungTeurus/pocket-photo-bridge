@@ -119,6 +119,13 @@ class ServiceDiagnosticsTest {
         assertEquals(headers, report.previousRuns().map { it["header"] })
     }
 
+    @Test fun theFileStartsWithTheBuildTheBinaryReports() {
+        val directory = Files.createTempDirectory("build-header-service-")
+        ServiceDiagnostics(directory, PrintStream(ByteArrayOutputStream()), { 0 }, null).emit("SERVICE_SETUP")
+        val first = Files.readAllLines(directory.resolve("diagnostics.txt")).first()
+        assertTrue(first, Regex("Pocket Photo Bridge [0-9]+\\.[0-9]+\\.[0-9]+\\+([0-9a-f]{7,40}|dev) \\| headless service run=1").matches(first))
+    }
+
     @Test fun aStartRemovesTemporaryFilesLeftByAPowerPull() {
         val directory = Files.createTempDirectory("stale-service-")
         Files.writeString(directory.resolve("diagnostic-123.tmp"), "half written")
