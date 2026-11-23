@@ -306,6 +306,7 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         .map { SetupPrinter(it.address, it.name.take(128).filterNot(Char::isISOControl)) }
 
     private fun safeStatus(raw: Map<String, Any>): Map<String, Any> = linkedMapOf<String, Any>().apply {
+        (raw["build"] as? String)?.takeIf(BUILD::matches)?.let { put("build", it) }
         for (key in listOf("stage", "category", "mode")) {
             val value = raw[key]
             if (value is String && value in STATUS_VALUES) put(key, value)
@@ -385,6 +386,8 @@ class SetupServer(bind: InetSocketAddress, adminPassword: String, private val ba
         private const val SESSION_COOKIE = "setupSession"
         private val SIMULATION_ACTIONS = listOf("select-photo", "duplicate-photo", "printer-on", "printer-off", "printer-busy", "printer-ready", "interrupted-download", "uncertain-print")
         private val SERVICE_STATES = setOf("WAITING_CAMERA", "RECEIVING", "QUEUED", "WAITING_PRINTER", "PRINTING", "PRINTED", "NEEDS_ATTENTION", "STATE_ERROR", "PAIRING")
+        /** The one value that is neither numeric nor an enum: version, plus sign, hexadecimal commit or dev. */
+        private val BUILD = Regex("[0-9]+\\.[0-9]+\\.[0-9]+\\+(?:[0-9a-f]{7,40}|dev)")
         private val STATUS_VALUES = setOf("SETUP", "OPERATION", "STARTING", "STOPPED", "READY", "IDLE", "CAPTURING", "BLOCKED", "UNKNOWN_JOB", "ERROR", "NONE", "OK", "OFFLINE", "PENDING", "CONFIGURATION_REQUIRED", "CAMERA_UNAVAILABLE", "PRINTER_UNAVAILABLE", "NETWORK_UNAVAILABLE", "RADIO_UNAVAILABLE", "SETUP_STATE_UNAVAILABLE", "CAPACITY_REACHED", "INVALID_JPEG", "RECEIVE_INTERRUPTED", "PRINT_UNCERTAIN", "QUEUE_FULL", "CAMERA_ACK_PENDING", "DUPLICATE_SUPPRESSED") + SERVICE_STATES +
             BridgeFailureCode.entries.map { it.name } + PrinterFailureCode.entries.map { it.name } +
             Failure.entries.map { it.name } + LinuxRadioFailureCode.entries.map { it.name }

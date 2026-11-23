@@ -172,7 +172,7 @@ class ServiceRuntime(private val state: Path, private val devices: ServiceDevice
     private fun backend() = object : SetupBackend {
         override fun status(): Map<String, Any> {
             val snapshot = synchronized(bridgeLock) { bridge.snapshot() }
-            return linkedMapOf<String, Any>("mode" to if (loop.operating) "OPERATION" else "SETUP",
+            return linkedMapOf<String, Any>("build" to BridgeCli.VERSION, "mode" to if (loop.operating) "OPERATION" else "SETUP",
                 "stage" to if (pairing.pending) "PAIRING" else snapshot.state.name, "queued" to snapshot.queued, "simulation" to devices.simulation,
                 "configured" to (configuration.get() != null), "autoPrintEnabled" to (configuration.get()?.autoPrintEnabled == true))
                 .apply { (snapshot.category ?: pairing.failure)?.let { put("category", it) }; putAll(devices.safeCounts()) }
