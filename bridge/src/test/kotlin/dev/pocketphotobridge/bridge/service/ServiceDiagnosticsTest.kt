@@ -108,6 +108,15 @@ class ServiceDiagnosticsTest {
         assertEquals(listOf(header(1), header(9), header(10)), start().previousRuns().map { it["header"] })
     }
 
+    @Test fun aPreviousRunThatIsNotTextIsStillRotatedOutOfTheWay() {
+        val directory = Files.createTempDirectory("torn-run-")
+        Files.write(directory.resolve("diagnostics.txt"), byteArrayOf(0xFF.toByte(), 0xFE.toByte(), '\n'.code.toByte()))
+        val output = ByteArrayOutputStream()
+        ServiceDiagnostics(directory, PrintStream(output), { 0 }, null)
+        assertTrue(Files.exists(directory.resolve("diagnostics.1.txt")))
+        assertFalse(output.toString().contains("SERVICE_REPORT_WRITE_FAILED"))
+    }
+
     @Test fun handWrittenSecretsInAnOldRunNeverReachTheNextRun() {
         val directory = Files.createTempDirectory("tampered-service-")
         val header = "Pocket Photo Bridge ${BridgeCli.BUILD} | headless service run=4"

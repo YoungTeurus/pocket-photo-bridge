@@ -302,7 +302,9 @@ class ServiceDiagnostics(private val state: Path, private val output: PrintStrea
     /** A run that only failed to start the hotspot and holds nothing else worth keeping. */
     private fun retryOnly(file: Path): Boolean {
         if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || Files.size(file) > 65536) return false
-        val stages = Files.readAllLines(file).drop(1).map { it.substringAfter(' ').substringBefore(' ') }
+        // A run torn by a power cut may not be text; it is rotated like any other run.
+        val stages = try { Files.readAllLines(file) } catch (_: Exception) { return false }
+            .drop(1).map { it.substringAfter(' ').substringBefore(' ') }
         return "SERVICE_SETUP_FAILED" in stages && stages.all { it in RETRY_STAGES }
     }
     @Synchronized fun emit(message: String) {
