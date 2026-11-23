@@ -23,9 +23,11 @@ class SetupServerTest {
         var stage = "SETUP"
         var pairingTask: dev.pocketphotobridge.bridge.service.PairingTask? = null
         var build: Any = "0.5.0+0123abc"
+        var blockedReason: Any? = null
         override fun status(): Map<String, Any> = mapOf("build" to build, "stage" to if (pairingTask?.pending == true) "PAIRING" else stage, "category" to "READY", "queued" to 2, "prints" to 3,
             "unresolved" to true, "simulation" to true, "adminPassword" to "never-disclose", "log" to "private-token",
-            "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name")
+            "printerToken" to "0123456789abcdef01234567", "cameraSsid" to "sensitive-camera-name", "blocked" to (blockedReason != null)) +
+            (blockedReason?.let { mapOf("blockedReason" to it) } ?: emptyMap())
         override fun configuration() = saved
         var events = listOf(
             "0 BRIDGE_NEEDS_ATTENTION queued=2 category=UNRESOLVED_JOB",
@@ -236,6 +238,32 @@ class SetupServerTest {
         assertEquals(1, backend.acknowledged)
         assertEquals(303, client.request("/run", mapOf("csrf" to csrf)).code)
         assertEquals(1, backend.run)
+    }
+
+    @Test fun eachBlockedReasonIsReportedAsAFixedCodeAndSaidInOnePlainSentence() = server { client, backend, _ ->
+        client.login()
+        val sentences = mapOf(
+            "UNRESOLVED_PRINT" to "The bridge is not accepting or printing photos because the last print may or may not have come out. Check the printer and its paper output, then acknowledge below.",
+            "QUEUE_FULL" to "The bridge is not accepting new photos because the waiting queue is full. Switch the printer on and start operation so the waiting photos print, then send new photos.",
+            "STATE_ERROR" to "The bridge is not accepting or printing photos because it cannot read its saved state. Download the diagnostics below, then restart the bridge; do not delete its state files.")
+        fun status() = JsonParser.parseString(client.request("/status").body).asJsonObject
+        for ((reason, sentence) in sentences) {
+            backend.blockedReason = reason
+            assertEquals(reason, status()["blockedReason"].asString)
+            assertTrue(status()["blocked"].asBoolean)
+            val page = client.request("/").body
+            assertEquals(listOf(sentence), sentences.values.filter(page::contains))
+        }
+        for (unknown in listOf("private-token", "BLOCKED", 3)) {
+            backend.blockedReason = unknown
+            assertNull(status()["blockedReason"])
+            val page = client.request("/").body
+            assertEquals(emptyList<String>(), sentences.values.filter(page::contains))
+            assertFalse(page.contains("private-token"))
+        }
+        backend.blockedReason = null
+        assertFalse(status()["blocked"].asBoolean)
+        assertEquals(emptyList<String>(), sentences.values.filter(client.request("/").body::contains))
     }
 
     @Test fun savesConfigOnlyAfterExplicitOptInAndPreservesBlankSecrets() = server { client, backend, _ ->
