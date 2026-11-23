@@ -31,7 +31,7 @@ object BridgeService {
         output.println("Setup SSID: ${credentials.ssid}")
         output.println("Setup Wi-Fi password: ${credentials.hotspotPassword}")
         output.println("Setup administrator password: ${credentials.adminPassword}")
-        output.println("Setup URL: http://192.168.50.1:8080/")
+        output.println("Setup URL: http://$SETUP_HOTSPOT_ADDRESS:8080/")
         0
     } catch (_: Exception) { output.println("SERVICE_BOOTSTRAP_FAILED category=PERSISTENCE_ERROR"); 2 }
 
